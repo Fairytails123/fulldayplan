@@ -3,57 +3,51 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-  <title>Van Manager - 3 Van Manual Sync</title>
+  <title>Van Manager - Manual Cloud Sync</title>
   <style>
     :root{ --line:#6d8fb0; --accent:#2c5282; --danger:#e53e3e; --bg:#ffffff; --success:#2f855a; }
     *{ box-sizing:border-box; }
-    body{ margin:0; font-family: Arial, sans-serif; background:#f6f7f9; touch-action:none; overscroll-behavior:none; }
-    
+    body{ 
+      margin:0; font-family: Arial, sans-serif; background:#f6f7f9; 
+      /* Changed touch-action to pan-y to allow vertical scrolling */
+      touch-action: pan-y; 
+      overscroll-behavior: none; 
+    }
     .plan-nav { display:flex; background:#fff; padding:10px 16px 0; border-bottom:2px solid #ddd; gap:5px; }
     .nav-tab { padding:10px 20px; border:1px solid #ddd; border-bottom:none; border-radius:8px 8px 0 0; cursor:pointer; font-weight:bold; }
     .nav-tab.active { background:var(--accent); color:#fff; }
-
-    .page{ max-width:1200px; margin:0 auto; padding:16px; display:grid; gap:14px; }
+    .page{ max-width:1200px; margin: 0 auto; padding: 16px; display:grid; gap:14px; }
     .topbar{ background:#fff; border-radius:10px; padding:14px; display:grid; gap:10px; }
     .controls{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
-    
     input[type="text"]{ flex:1; padding:10px; border-radius:8px; border:1px solid #ccc; font-size:16px; }
     button{ padding:10px 15px; border-radius:8px; border:1px solid #ccc; cursor:pointer; font-weight:bold; }
     .btn-submit { background:var(--danger); color:#fff; border:none; }
     .btn-pdf { background:var(--success); color:#fff; border:none; }
     .btn-share { background: #ebf8ff; border: 2px solid #3182ce; color: #2c5282; }
-    .btn-share.synced { background: #c6f6d5; border-color: #38a169; color: #22543d; }
-
+    .btn-fetch { background: #fffaf0; border: 2px solid #ed8936; color: #7b341e; }
+    
     .tray-area { display:flex; gap:10px; min-height:80px; }
     .tiles-tray{ flex:1; display:flex; gap:10px; flex-wrap:wrap; padding:10px; border:2px dashed #cbd5e0; border-radius:8px; background:#f8fafc; }
     #bin { width:80px; display:flex; align-items:center; justify-content:center; background:#fed7d7; border:2px solid #feb2b2; border-radius:8px; color:#c53030; font-size:30px; }
     
-    /* V1 Clean Style */
     .tile, .tile-inbox { 
       background:#fff; border-radius:6px; display:flex; align-items:center; justify-content:center; 
-      text-align:center; box-shadow:0 1px 2px rgba(0,0,0,0.12); cursor:grab; touch-action:none; user-select:none; z-index:100;
+      text-align:center; box-shadow:0 1px 2px rgba(0,0,0,0.12); cursor:grab; 
+      /* Elements themselves prevent default touch to handle drag */
+      touch-action: none; 
+      user-select:none; z-index:100;
       word-break: break-word; line-height: 1.05; overflow: hidden;
     }
     .tile { min-width:110px; min-height:44px; padding:5px; border:1px solid #ddd; }
     .tile-inbox { width:100%; border:none !important; box-shadow: none !important; }
-    
     .layout-card{ background:#fff; border-radius:10px; padding:14px; }
     .van-section { margin-bottom:30px; border-bottom:2px solid #edf2f7; padding-bottom:20px; }
     .card-title{ font-weight:bold; margin-bottom:12px; display:flex; justify-content:space-between; }
-    
-    .two-cols{ display:grid; grid-template-columns:1fr 1fr; gap:20px; }
     .kennel-grid{ border:2px solid var(--line); background:#fff; display:grid; }
     .box{ border:2px solid var(--line); min-height:85px; position:relative; display:flex; align-items:center; justify-content:center; padding:22px 2px 2px 2px; }
     .stop-input{ position:absolute; top:4px; left:4px; width:38px; height:20px; border:1px solid #ccc; border-radius:4px; font-size:11px; text-align:center; z-index:5; }
-    
     .box-inner{ width:100%; height:100%; display:flex; flex-direction:column; gap:6px; pointer-events:auto; justify-content: center; }
-    .box-inner.two .tile-inbox{ height: calc(50% - 3px); } 
-    .box-inner.one .tile-inbox{ height:100%; }
-    
     .is-dragging { position:fixed; z-index:9999 !important; pointer-events:none; opacity:0.8; transform:scale(1.1); box-shadow:0 10px 20px rgba(0,0,0,0.3); }
-    .pdf-exporting .tile-inbox, .pdf-exporting .stop-input { border: none !important; box-shadow: none !important; font-weight: bold !important; }
-
-    @media (max-width:800px) { .two-cols { grid-template-columns:1fr; } }
   </style>
 </head>
 <body>
@@ -67,18 +61,19 @@
       <div class="controls">
         <input id="tileText" type="text" placeholder="Dog Name..." />
         <button id="addTileBtn" type="button">Add Dog</button>
-        <button id="shareBtn" class="btn-share">Share AM Plan</button>
-        <button id="pdfBtn" class="btn-pdf">PDF LANDSCAPE</button>
+        <button id="shareBtn" class="btn-share">Share Plan</button>
+        <button id="fetchBtn" class="btn-fetch">Fetch Cloud</button>
+        <button id="pdfBtn" class="btn-pdf">PDF Export</button>
         <button id="clearBtn" class="btn-danger">Clear Local</button>
       </div>
       <div class="tray-area"><div class="tiles-tray" id="tray"></div><div id="bin">🗑</div></div>
-      <div id="syncTime" style="font-size: 11px; color: #718096; text-align: right;">Last Cloud Sync: Never</div>
+      <div id="syncTime" style="font-size: 11px; color: #718096; text-align: right;">Cloud Version: Never</div>
     </div>
 
     <div class="layout-card" id="printArea">
       <div class="van-section">
         <div class="card-title"><span>Big Van BV</span><span id="currentLabel">AM Plan</span></div>
-        <div class="two-cols">
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
           <div class="kennel-grid">
             <div style="display:grid; grid-template-columns:repeat(3,1fr)"><div class="box" data-box="bv-c1"></div><div class="box" data-box="bv-c2"></div><div class="box" data-box="bv-c3"></div></div>
             <div style="display:grid; grid-template-columns:repeat(2,1fr)"><div class="box" data-box="bv-c4"></div><div class="box" data-box="bv-c5"></div></div>
@@ -91,21 +86,13 @@
           </div>
         </div>
       </div>
-
       <div class="van-section">
         <div class="card-title">Small Van SV</div>
-        <div class="two-cols">
-          <div class="kennel-grid">
-            <div style="display:grid; grid-template-columns:repeat(3,1fr)"><div class="box" data-box="sv-c1"></div><div class="box" data-box="sv-c2"></div><div class="box" data-box="sv-c3"></div></div>
-            <div style="display:grid; grid-template-columns:repeat(2,1fr)"><div class="box" data-box="sv-c4"></div><div class="box" data-box="sv-c5"></div></div>
-          </div>
-          <div class="kennel-grid">
-            <div style="display:grid; grid-template-columns:repeat(3,1fr)"><div class="box" data-box="sv-b1"></div><div class="box" data-box="sv-b2"></div><div class="box" data-box="sv-b3"></div></div>
-            <div style="display:grid; grid-template-columns:repeat(2,1fr)"><div class="box" data-box="sv-b4"></div><div class="box" data-box="sv-b5"></div></div>
-          </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
+          <div class="kennel-grid"><div style="display:grid; grid-template-columns:repeat(3,1fr)"><div class="box" data-box="sv-c1"></div><div class="box" data-box="sv-c2"></div><div class="box" data-box="sv-c3"></div></div></div>
+          <div class="kennel-grid"><div style="display:grid; grid-template-columns:repeat(2,1fr)"><div class="box" data-box="sv-b1"></div><div class="box" data-box="sv-b2"></div></div></div>
         </div>
       </div>
-
       <div class="van-section">
         <div class="card-title">Dispatch Van DV</div>
         <div style="display:grid; grid-template-columns: 1fr 2.2fr 1fr; gap:15px;">
@@ -124,9 +111,9 @@
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
   <script>
     (function(){
-      const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxe_cxA5isf0mgQXyadGYMz8v6stNb9n43n2pQpleyD_jZrkDaouTmoI_Usp8KXH7F_/exec';
+      const SCRIPT_URL = 'PASTE_YOUR_URL_HERE';
       const tray = document.getElementById('tray'), input = document.getElementById('tileText');
-      const shareBtn = document.getElementById('shareBtn'), syncTimeEl = document.getElementById('syncTime');
+      const shareBtn = document.getElementById('shareBtn'), fetchBtn = document.getElementById('fetchBtn'), syncTimeEl = document.getElementById('syncTime');
       const STORAGE_PREFIX = 'van_v4_';
       
       let currentPlan = 'AM';
@@ -134,68 +121,57 @@
 
       function localSave(){ 
         localStorage.setItem(STORAGE_PREFIX + currentPlan, JSON.stringify(state));
-        shareBtn.classList.remove('synced');
-        shareBtn.textContent = `Share ${currentPlan.replace('_',' ')}`;
+      }
+
+      async function cloudFetch(){
+        if(SCRIPT_URL.includes('PASTE_YOUR')) return alert("Set SCRIPT_URL first!");
+        fetchBtn.textContent = "Fetching...";
+        try {
+          const res = await fetch(SCRIPT_URL + '?planId=' + currentPlan);
+          const cloud = await res.json();
+          // OVERWRITE local with cloud
+          state = (cloud && cloud.state !== "{}") ? JSON.parse(cloud.state) : {tiles:{}, placements:{}, stops:{}};
+          syncTimeEl.textContent = `Cloud Version: ${cloud.time}`;
+          localSave();
+          hydrate();
+          fetchBtn.textContent = "Fetch Cloud";
+        } catch(e) { alert("Fetch failed."); fetchBtn.textContent = "Fetch Cloud"; }
       }
 
       async function cloudShare(){
-        if(SCRIPT_URL.includes('URL_HERE')) { alert("Please set SCRIPT_URL first!"); return; }
-        shareBtn.textContent = "Syncing...";
+        if(SCRIPT_URL.includes('PASTE_YOUR')) return alert("Set SCRIPT_URL first!");
+        shareBtn.textContent = "Sharing...";
         try {
           const res = await fetch(SCRIPT_URL, {
             method:'POST', 
             body:JSON.stringify({action:'savePlan', state:state, planId:currentPlan})
           });
           const time = await res.text();
-          syncTimeEl.textContent = `Last Cloud Sync: ${time}`;
-          shareBtn.classList.add('synced');
-          shareBtn.textContent = "Plan Shared!";
-        } catch(e) { 
-          alert("Sync failed. Check your internet."); 
-          shareBtn.textContent = "Retry Share";
-        }
+          syncTimeEl.textContent = `Cloud Version: ${time}`;
+          shareBtn.textContent = "Share Plan";
+        } catch(e) { alert("Sync failed."); shareBtn.textContent = "Share Plan"; }
       }
 
-      async function loadPlan(p){
+      function loadPlan(p){
         currentPlan = p;
-        state = { tiles:{}, placements:{}, stops:{} };
         document.getElementById('currentLabel').textContent = p.replace('_', ' ') + ' Plan';
-        shareBtn.textContent = `Share ${p.replace('_',' ')}`;
-
-        try {
-          const res = await fetch(SCRIPT_URL + '?planId=' + p);
-          const cloud = await res.json();
-          if (cloud && cloud.state !== "{}") {
-            state = JSON.parse(cloud.state);
-            syncTimeEl.textContent = `Last Cloud Sync: ${cloud.time}`;
-          } else {
-            const raw = localStorage.getItem(STORAGE_PREFIX + p);
-            state = raw ? JSON.parse(raw) : {tiles:{}, placements:{}, stops:{}};
-          }
-        } catch(e) {
-          const raw = localStorage.getItem(STORAGE_PREFIX + p);
-          state = raw ? JSON.parse(raw) : {tiles:{}, placements:{}, stops:{}};
-        }
+        const raw = localStorage.getItem(STORAGE_PREFIX + p);
+        state = raw ? JSON.parse(raw) : {tiles:{}, placements:{}, stops:{}};
         hydrate();
       }
 
-      let activeClone = null, dragId = null;
+      let activeClone = null, dragId = null, startX, startY;
 
       function wirePointer(el, tid) {
         el.onpointerdown = (e) => {
-          e.stopPropagation();
+          startX = e.clientX; startY = e.clientY;
           dragId = tid;
-          const longPress = setTimeout(() => {
-            if (!activeClone) {
-              const n = prompt("Edit Dog Name:", state.tiles[tid].text);
-              if (n) { state.tiles[tid].text = n; localSave(); hydrate(); }
-            }
-          }, 700);
-
+          // Set capture so we track even if finger leaves tile
           el.setPointerCapture(e.pointerId);
+
           el.onpointermove = (m) => {
-            if (Math.abs(m.clientX - e.clientX) > 5 || Math.abs(m.clientY - e.clientY) > 5) {
-              clearTimeout(longPress);
+            // Distance check: If user moves > 10px, they are likely dragging, not scrolling
+            if (Math.abs(m.clientX - startX) > 10 || Math.abs(m.clientY - startY) > 10) {
               if (!activeClone) {
                 activeClone = el.cloneNode(true); activeClone.classList.add('is-dragging'); document.body.appendChild(activeClone);
                 el.style.opacity = '0';
@@ -203,21 +179,15 @@
               activeClone.style.left = (m.clientX-50)+'px'; activeClone.style.top = (m.clientY-20)+'px';
             }
           };
+
           el.onpointerup = (u) => {
-            clearTimeout(longPress);
             el.releasePointerCapture(u.pointerId); el.onpointermove = null; el.onpointerup = null; el.style.opacity = '1';
             if (activeClone) {
               const target = document.elementFromPoint(u.clientX, u.clientY);
-              const box = target?.closest('.box');
-              const bin = target?.closest('#bin');
-              
-              Object.keys(state.placements).forEach(k => {
-                state.placements[k] = state.placements[k].filter(id => id !== dragId);
-              });
-
-              if (bin) { 
-                delete state.tiles[dragId]; 
-              } else if (box) { 
+              const box = target?.closest('.box'), bin = target?.closest('#bin');
+              Object.keys(state.placements).forEach(k => state.placements[k] = state.placements[k].filter(id => id !== dragId));
+              if (bin) { delete state.tiles[dragId]; }
+              else if (box) { 
                 if(!state.placements[box.dataset.box]) state.placements[box.dataset.box] = []; 
                 if(state.placements[box.dataset.box].length < 2) state.placements[box.dataset.box].push(dragId); 
               }
@@ -225,6 +195,7 @@
             }
           };
         };
+        el.ondblclick = () => { const n = prompt("Edit:", state.tiles[tid].text); if(n) { state.tiles[tid].text = n; localSave(); hydrate(); } };
       }
 
       function hydrate(){
@@ -238,7 +209,6 @@
           const inner = document.createElement('div'); inner.className = 'box-inner'; box.appendChild(inner);
           const ids = state.placements[box.dataset.box] || [];
           inner.classList.toggle('two', ids.length === 2);
-          inner.classList.toggle('one', ids.length === 1);
           ids.forEach(id => { if(state.tiles[id]) { const t = document.createElement('div'); t.className = 'tile-inbox'; t.textContent = state.tiles[id].text; wirePointer(t, id); inner.appendChild(t); fitText(t); } });
         });
         const placed = new Set(); Object.values(state.placements).forEach(a => a.forEach(id => placed.add(id)));
@@ -256,31 +226,16 @@
         node.style.fontSize = best+'px';
       }
 
-      const handleAddTile = () => { 
+      document.getElementById('addTileBtn').onclick = () => { 
         const t = input.value.trim(); if(!t) return; 
-        const id = 't_'+Date.now(); 
-        state.tiles[id] = {id, text:t}; 
+        const id = 't_'+Date.now(); state.tiles[id] = {id, text:t}; 
         input.value = ''; localSave(); hydrate(); 
       };
-
-      document.getElementById('addTileBtn').onclick = handleAddTile;
-      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') handleAddTile(); });
+      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') document.getElementById('addTileBtn').click(); });
       shareBtn.onclick = cloudShare;
-
-      document.getElementById('clearBtn').onclick = () => { 
-        if(confirm(`Reset ${currentPlan.replace('_',' ')} locally?`)) { 
-          state = { tiles:{}, placements:{}, stops:{} }; 
-          localSave(); hydrate(); 
-        } 
-      };
-
-      document.getElementById('pdfBtn').onclick = async () => { document.body.classList.add('pdf-exporting'); document.querySelectorAll('.tile-inbox').forEach(t => fitText(t, true)); const canvas = await html2canvas(printArea, { scale: 3 }); const pdf = new jspdf.jsPDF({ orientation: 'l', unit: 'pt', format: 'a4' }); pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 10, 10, 820, 570); pdf.save(`Plan-${currentPlan}.pdf`); document.body.classList.remove('pdf-exporting'); hydrate(); };
-      
-      document.querySelectorAll('.nav-tab').forEach(t => t.onclick = () => { 
-        document.querySelectorAll('.nav-tab').forEach(x => x.classList.remove('active')); 
-        t.classList.add('active'); loadPlan(t.dataset.plan); 
-      });
-      
+      fetchBtn.onclick = cloudFetch;
+      document.getElementById('clearBtn').onclick = () => { if(confirm("Clear local only?")) { state={tiles:{}, placements:{}, stops:{}}; localSave(); hydrate(); } };
+      document.querySelectorAll('.nav-tab').forEach(t => t.onclick = () => { document.querySelectorAll('.nav-tab').forEach(x => x.classList.remove('active')); t.classList.add('active'); loadPlan(t.dataset.plan); });
       loadPlan('AM');
     })();
   </script>
