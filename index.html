@@ -3,12 +3,13 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-  <title>Van Manager - Manual Cloud Sync v7</title>
+  <title>Van Manager - Final Combined</title>
   <style>
     :root{ --line:#6d8fb0; --accent:#2c5282; --danger:#e53e3e; --bg:#ffffff; --success:#2f855a; }
     *{ box-sizing:border-box; }
     body{ 
       margin:0; font-family: Arial, sans-serif; background:#f6f7f9; 
+      /* Allows vertical scrolling while preventing horizontal bounce */
       touch-action: pan-y; 
       overscroll-behavior: none; 
     }
@@ -32,6 +33,7 @@
     .tile, .tile-inbox { 
       background:#fff; border-radius:6px; display:flex; align-items:center; justify-content:center; 
       text-align:center; box-shadow:0 1px 2px rgba(0,0,0,0.12); cursor:grab; 
+      /* Elements themselves prevent default touch to handle drag logic manually */
       touch-action: none; 
       user-select:none; z-index:100;
       word-break: break-word; line-height: 1.05; overflow: hidden;
@@ -84,13 +86,19 @@
           </div>
         </div>
       </div>
+
       <div class="van-section">
         <div class="card-title">Small Van SV</div>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
-          <div class="kennel-grid"><div style="display:grid; grid-template-columns:repeat(3,1fr)"><div class="box" data-box="sv-c1"></div><div class="box" data-box="sv-c2"></div><div class="box" data-box="sv-c3"></div></div></div>
-          <div class="kennel-grid"><div style="display:grid; grid-template-columns:repeat(2,1fr)"><div class="box" data-box="sv-b1"></div><div class="box" data-box="sv-b2"></div></div></div>
+          <div class="kennel-grid">
+            <div style="display:grid; grid-template-columns:repeat(3,1fr)"><div class="box" data-box="sv-c1"></div><div class="box" data-box="sv-c2"></div><div class="box" data-box="sv-c3"></div></div>
+          </div>
+          <div class="kennel-grid">
+            <div style="display:grid; grid-template-columns:repeat(2,1fr)"><div class="box" data-box="sv-b1"></div><div class="box" data-box="sv-b2"></div></div>
+          </div>
         </div>
       </div>
+
       <div class="van-section">
         <div class="card-title">Dispatch Van DV</div>
         <div style="display:grid; grid-template-columns: 1fr 2.2fr 1fr; gap:15px;">
@@ -224,6 +232,7 @@
           const inner = document.createElement('div'); inner.className = 'box-inner'; box.appendChild(inner);
           const ids = state.placements[box.dataset.box] || [];
           inner.classList.toggle('two', ids.length === 2);
+          inner.classList.toggle('one', ids.length === 1);
           ids.forEach(id => { if(state.tiles[id]) { const t = document.createElement('div'); t.className = 'tile-inbox'; t.textContent = state.tiles[id].text; wirePointer(t, id); inner.appendChild(t); fitText(t); } });
         });
         const placed = new Set(); Object.values(state.placements).forEach(a => a.forEach(id => placed.add(id)));
