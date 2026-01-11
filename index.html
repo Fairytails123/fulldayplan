@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-  <title>Van Manager - Enhanced V2</title>
+  <title>Van Manager - Enhanced V3</title>
   <style>
     :root { 
       --line: #6d8fb0; 
@@ -199,6 +199,33 @@
       color: #fff;
     }
     
+    .btn-transmit {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: #fff;
+      border: none;
+      padding: 12px 24px;
+      font-size: 15px;
+    }
+    
+    .btn-transmit:hover:not(:disabled) {
+      background: linear-gradient(135deg, #5a67d8 0%, #6b46c1 100%);
+      box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+    }
+    
+    .btn-transmit.success {
+      background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+    }
+    
+    .btn-transmit.transmitting {
+      background: linear-gradient(135deg, #ed8936 0%, #dd6b20 100%);
+      animation: pulse 1.5s infinite;
+    }
+    
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
+    
     /* Tray Area */
     .tray-area { 
       display: flex; 
@@ -324,6 +351,8 @@
       align-items: center;
       font-size: 16px;
       color: #2d3748;
+      flex-wrap: wrap;
+      gap: 10px;
     }
     
     .dog-count {
@@ -338,6 +367,44 @@
     .dog-count.has-dogs {
       background: #c6f6d5;
       color: var(--success);
+    }
+    
+    /* Departure Time Selector - Only for NEXT_AM */
+    .departure-selector {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      background: #f0fff4;
+      padding: 6px 12px;
+      border-radius: 8px;
+      border: 1px solid #9ae6b4;
+    }
+    
+    .departure-selector label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #276749;
+    }
+    
+    .departure-selector select {
+      padding: 6px 10px;
+      border-radius: 6px;
+      border: 1px solid #68d391;
+      background: #fff;
+      font-size: 13px;
+      font-weight: 600;
+      color: #276749;
+      cursor: pointer;
+    }
+    
+    .departure-selector select:focus {
+      outline: none;
+      border-color: #38a169;
+      box-shadow: 0 0 0 2px rgba(72, 187, 120, 0.3);
+    }
+    
+    body.next-am-mode .departure-selector {
+      display: flex;
     }
     
     /* Grid Layouts */
@@ -526,6 +593,7 @@
       .input-group { min-width: 100%; }
       .btn-group { display: flex; flex-wrap: wrap; gap: 8px; }
       .btn-group button { flex: 1; min-width: calc(50% - 4px); }
+      .card-title { flex-direction: column; align-items: flex-start; }
     }
     
     @media (max-width: 500px) {
@@ -567,6 +635,7 @@
         </div>
         <div class="btn-group">
           <button id="undoBtn" class="btn-undo" title="Undo last action">↩ Undo</button>
+          <button id="transmitBtn" class="btn-transmit" title="Transmit plan to JotForm" style="display:none;">🚀 Transmit Plan</button>
           <button id="shareBtn" class="btn-share">☁️ Share</button>
           <button id="fetchBtn" class="btn-fetch">📥 Fetch</button>
           <button id="pdfBtn" class="btn-pdf">📄 PDF</button>
@@ -591,6 +660,17 @@
       <div class="van-section" data-van="bv">
         <div class="card-title">
           <span>🚐 Big Van (BV)</span>
+          <div class="departure-selector" data-van="bv">
+            <label>Departs:</label>
+            <select id="bv-departure">
+              <option value="07:15 am">07:15 am</option>
+              <option value="07:30 am" selected>07:30 am</option>
+              <option value="08:00 am">08:00 am</option>
+              <option value="08:30 am">08:30 am</option>
+              <option value="09:00 am">09:00 am</option>
+              <option value="09:30 am">09:30 am</option>
+            </select>
+          </div>
           <span id="currentLabel" style="color: var(--accent);">AM Plan</span>
           <span class="dog-count" id="bv-count">0 dogs</span>
         </div>
@@ -632,6 +712,17 @@
       <div class="van-section" data-van="sv">
         <div class="card-title">
           <span>🚗 Small Van (SV)</span>
+          <div class="departure-selector" data-van="sv">
+            <label>Departs:</label>
+            <select id="sv-departure">
+              <option value="07:15 am">07:15 am</option>
+              <option value="07:30 am" selected>07:30 am</option>
+              <option value="08:00 am">08:00 am</option>
+              <option value="08:30 am">08:30 am</option>
+              <option value="09:00 am">09:00 am</option>
+              <option value="09:30 am">09:30 am</option>
+            </select>
+          </div>
           <span class="dog-count" id="sv-count">0 dogs</span>
         </div>
         <div class="two-cols">
@@ -667,6 +758,17 @@
       <div class="van-section" data-van="dv">
         <div class="card-title">
           <span>📦 Dispatch Van (DV)</span>
+          <div class="departure-selector" data-van="dv">
+            <label>Departs:</label>
+            <select id="dv-departure">
+              <option value="07:15 am">07:15 am</option>
+              <option value="07:30 am">07:30 am</option>
+              <option value="08:00 am" selected>08:00 am</option>
+              <option value="08:30 am">08:30 am</option>
+              <option value="09:00 am">09:00 am</option>
+              <option value="09:30 am">09:30 am</option>
+            </select>
+          </div>
           <span class="dog-count" id="dv-count">0 dogs</span>
         </div>
         <div style="display:grid; grid-template-columns: 1fr 2.2fr 1fr; gap:15px;">
@@ -696,9 +798,24 @@
   <script>
     (function(){
       // Configuration
-      const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbziGtajlb_S0Yqe-7WzylGXmx1jejEvkm1o9Zgk_UdSmrVrByIPQoXSIBgzpM_aUvpf/exec';
+      const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbziGtajlb_S0Yqe-7WzylGXmx1jejEvkm9o9Zgk_UdSmrVrByIPQoXSIBgzpM_aUvpf/exec';
       const STORAGE_PREFIX = 'van_v4_';
       const MAX_UNDO_STATES = 20;
+      
+      // n8n Webhook URL - UPDATE THIS WITH YOUR ACTUAL WEBHOOK URL
+      const N8N_WEBHOOK_URL = 'YOUR_N8N_WEBHOOK_URL_HERE';
+      
+      // Valid dog names from JotForm (for validation)
+      const VALID_DOG_NAMES = [
+        "Aldo","Alfie","April","Argo","Arlo","Banjo","Barney Homewood","Barney Leeming","Baron","Bay","Beano","Bella","Belle","Benson","Betsy","Blue","Bluey","Bo","Bonnie Gallagher","Bonnie Lockwood","Bramble","Branko","Bruce","Bruno","Buddy Dann","Buddy Dargan","Buddy Selby","Casper Hamilton","Casper Kukreja","Che","Chester","Chloe","Clifford","Daisy Cremin","Daisy Parsons","Darcy Campbell","Darcy Dunn","Darwin","Delphine","Dexter","Dicee","Diego Gonsavles","Diego Wojcik","Dierdra","Digby","Dolly","Dottie","Dougie","Dudley","Dusty","Echo","Eddie","Effie","Enzo","Fenton","Ferox","Flaco","Fletcher","Florence","Freddie","Fredo","Frida Walsh","George Elliston","George Jackson","George Mohammed","Gina","Goldie","Haggis","Hattie Campbell","Hattie Duncan","Henry","Holly","Hugo","Incy","Ivy","Jack","Jeff","Jessie","Keti","Kip","Koji","Leo","Lily","Lola Bowles","Lola Fenloni","Lola Hall","Luke","Luna Crockford","Luna Grimshaw","Mac","Macy","Maggie","Margo","Marli","Marloe","Marlow","Martha","Max Tigwell","Merlin Crowley","Merlin Mayne","Miles","Miley","Millie Bowles","Millie Carter","Millie Cartwright","Millie Ellis","Milo McVey","Missy Evans","Mocha Gasper","Mocha Kolumbajew","Mochi","Moka","Mollie","Mos Wan","Moss Harris","Naira","Nala Sands","Nala Warnes","Narla Tester","Ned","Nevis","Nina","Obie","Oliver","Otis","Peggy Gibbons","Peggy Lucas","Pepper","Petch","Pippin","Pluto","Poppy Clark","Poppy Lancaster","Poppy Lass","Poppy Pike","Ralph Goddard","Raven","Reggie Daly","Reggie Foreman","Reggie Russel","Rex","Rita","River","Rocco","Roman","Roxy","Ruby Brooker","Ruby Favell","Ruby Jones","Rudy","Ruffles","Rufus","Rupy","Sam","Sebastian","Shadow Podkalicka","Shadow Wightman","Snoopy","Sonny","Sophie","Stanley James","Star","Storm","Tallulah","Tam","Tasha","Ted Lambie","Teddy Brown","Teddy Jamison","Terry","Tilly Mills","Tokyo","Warwick","Winnie Awele","Winnie Evans","Winnie Hall","Winnie Lancaster","Winnie Ryan","Woody Johns","Woody Warren","Zero","Ziggy"
+      ];
+      
+      // Van mapping to JotForm values
+      const VAN_MAP = {
+        'bv': 'Big van - Transit',
+        'sv': 'Small van - Renault',
+        'dv': 'Dispatch van - Citroen'
+      };
       
       // DOM Elements
       const tray = document.getElementById('tray');
@@ -708,17 +825,19 @@
       const pdfBtn = document.getElementById('pdfBtn');
       const clearBtn = document.getElementById('clearBtn');
       const undoBtn = document.getElementById('undoBtn');
+      const transmitBtn = document.getElementById('transmitBtn');
       const syncTimeEl = document.getElementById('syncTime');
       const statusDot = document.getElementById('statusDot');
       const onlineStatus = document.getElementById('onlineStatus');
       
       // State
       let currentPlan = 'AM';
-      let state = { tiles: {}, placements: {}, stops: {} };
+      let state = { tiles: {}, placements: {}, stops: {}, departures: {} };
       let undoStack = [];
       let activeClone = null;
       let dragId = null;
       let startX, startY;
+      let transmitComplete = false; // Track if transmission was successful
 
       // ==================== TOAST NOTIFICATIONS ====================
       function showToast(message, type = 'info') {
@@ -737,6 +856,9 @@
         onlineStatus.textContent = online ? 'Online' : 'Offline';
         shareBtn.disabled = !online;
         fetchBtn.disabled = !online;
+        if (currentPlan === 'NEXT_AM' && !transmitComplete) {
+          transmitBtn.disabled = !online;
+        }
       }
       
       window.addEventListener('online', updateOnlineStatus);
@@ -770,6 +892,152 @@
           localStorage.setItem(STORAGE_PREFIX + currentPlan, JSON.stringify(state));
         } catch (e) {
           showToast('Storage full! Please clear some data.', 'error');
+        }
+      }
+
+      // ==================== TRANSMIT PLAN (NEXT_AM ONLY) ====================
+      function findMatchingDogName(inputName) {
+        // Normalise the input name
+        const normalised = inputName.trim().toLowerCase();
+        
+        // First try exact match (case-insensitive)
+        const exactMatch = VALID_DOG_NAMES.find(name => 
+          name.toLowerCase() === normalised
+        );
+        if (exactMatch) return exactMatch;
+        
+        // Try partial match (input contains valid name or vice versa)
+        const partialMatch = VALID_DOG_NAMES.find(name => {
+          const nameLower = name.toLowerCase();
+          return nameLower.includes(normalised) || normalised.includes(nameLower);
+        });
+        if (partialMatch) return partialMatch;
+        
+        return null; // No match found
+      }
+      
+      function collectTransmitData() {
+        const dogs = [];
+        const departures = {
+          bv: document.getElementById('bv-departure').value,
+          sv: document.getElementById('sv-departure').value,
+          dv: document.getElementById('dv-departure').value
+        };
+        
+        // Iterate through all placements
+        Object.entries(state.placements).forEach(([boxId, tileIds]) => {
+          const stopNumber = state.stops[boxId];
+          
+          // Only process boxes with stop numbers assigned
+          if (!stopNumber || stopNumber.trim() === '') return;
+          
+          // Get van prefix from box ID (e.g., "bv-c1" -> "bv")
+          const vanPrefix = boxId.split('-')[0];
+          const vanName = VAN_MAP[vanPrefix];
+          const departureTime = departures[vanPrefix];
+          
+          // Process each dog in the box
+          tileIds.forEach(tileId => {
+            const tile = state.tiles[tileId];
+            if (!tile) return;
+            
+            const dogName = tile.text;
+            const matchedName = findMatchingDogName(dogName);
+            
+            dogs.push({
+              inputName: dogName,
+              matchedName: matchedName,
+              stopNumber: stopNumber,
+              van: vanName,
+              departureTime: departureTime,
+              isValid: matchedName !== null
+            });
+          });
+        });
+        
+        return dogs;
+      }
+      
+      async function transmitPlan() {
+        if (transmitComplete) {
+          showToast('Plan already transmitted. Clear and redo to transmit again.', 'warning');
+          return;
+        }
+        
+        const dogs = collectTransmitData();
+        
+        if (dogs.length === 0) {
+          showToast('No dogs with stop numbers to transmit!', 'warning');
+          return;
+        }
+        
+        const validDogs = dogs.filter(d => d.isValid);
+        const invalidDogs = dogs.filter(d => !d.isValid);
+        
+        if (validDogs.length === 0) {
+          showToast('No valid dogs found in JotForm list!', 'error');
+          return;
+        }
+        
+        // Confirm before transmitting
+        const confirmMsg = `Transmit ${validDogs.length} dogs to JotForm?` + 
+          (invalidDogs.length > 0 ? `\n\n⚠️ ${invalidDogs.length} dogs will be skipped (not in list):\n${invalidDogs.map(d => d.inputName).join(', ')}` : '');
+        
+        if (!confirm(confirmMsg)) return;
+        
+        // Update button state
+        transmitBtn.disabled = true;
+        transmitBtn.classList.add('transmitting');
+        transmitBtn.textContent = '🔄 Transmitting...';
+        
+        try {
+          // Send to n8n webhook
+          const response = await fetch(N8N_WEBHOOK_URL, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              dogs: validDogs.map(d => ({
+                dogName: d.matchedName,
+                stopNumber: d.stopNumber,
+                van: d.van,
+                departureTime: d.departureTime
+              })),
+              timestamp: new Date().toISOString(),
+              plan: 'NEXT_AM'
+            })
+          });
+          
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+          
+          const result = await response.json();
+          
+          // Mark transmission as complete
+          transmitComplete = true;
+          transmitBtn.classList.remove('transmitting');
+          transmitBtn.classList.add('success');
+          transmitBtn.textContent = `✅ ${validDogs.length} dogs transmitted`;
+          
+          let successMsg = `Successfully transmitted ${validDogs.length} dogs!`;
+          if (invalidDogs.length > 0) {
+            successMsg += ` (${invalidDogs.length} skipped)`;
+          }
+          showToast(successMsg, 'success');
+          
+          // Log skipped dogs
+          if (invalidDogs.length > 0) {
+            console.log('Skipped dogs (not in JotForm list):', invalidDogs.map(d => d.inputName));
+          }
+          
+        } catch (error) {
+          console.error('Transmit error:', error);
+          transmitBtn.disabled = false;
+          transmitBtn.classList.remove('transmitting');
+          transmitBtn.textContent = '🚀 Transmit Plan';
+          showToast('Transmission failed. Please try again.', 'error');
         }
       }
 
@@ -901,11 +1169,49 @@
         currentPlan = p;
         document.getElementById('currentLabel').textContent = p.replace('_', ' ') + ' Plan';
         const raw = localStorage.getItem(STORAGE_PREFIX + p);
-        state = raw ? JSON.parse(raw) : { tiles: {}, placements: {}, stops: {} };
+        state = raw ? JSON.parse(raw) : { tiles: {}, placements: {}, stops: {}, departures: {} };
         undoStack = [JSON.stringify(state)];
         undoBtn.disabled = true;
+        
+        // Toggle NEXT_AM mode
+        const isNextAM = p === 'NEXT_AM';
+        document.body.classList.toggle('next-am-mode', isNextAM);
+        
+        // Show/hide appropriate buttons
+        undoBtn.style.display = isNextAM ? 'none' : '';
+        transmitBtn.style.display = isNextAM ? '' : 'none';
+        
+        // Reset transmit button state when loading NEXT_AM
+        if (isNextAM) {
+          transmitComplete = false;
+          transmitBtn.disabled = false;
+          transmitBtn.classList.remove('success', 'transmitting');
+          transmitBtn.textContent = '🚀 Transmit Plan';
+        }
+        
+        // Load saved departure times if available
+        if (state.departures) {
+          if (state.departures.bv) document.getElementById('bv-departure').value = state.departures.bv;
+          if (state.departures.sv) document.getElementById('sv-departure').value = state.departures.sv;
+          if (state.departures.dv) document.getElementById('dv-departure').value = state.departures.dv;
+        }
+        
         hydrate();
       }
+      
+      // Save departure times when changed
+      document.querySelectorAll('.departure-selector select').forEach(select => {
+        select.addEventListener('change', () => {
+          if (currentPlan === 'NEXT_AM') {
+            state.departures = {
+              bv: document.getElementById('bv-departure').value,
+              sv: document.getElementById('sv-departure').value,
+              dv: document.getElementById('dv-departure').value
+            };
+            localSave();
+          }
+        });
+      });
 
       // ==================== DRAG & DROP ====================
       function wirePointer(el, tid) {
@@ -1164,13 +1470,23 @@
       fetchBtn.onclick = cloudFetch;
       pdfBtn.onclick = exportPDF;
       undoBtn.onclick = undo;
+      transmitBtn.onclick = transmitPlan;
       
       clearBtn.onclick = () => {
         if (confirm("Clear all local data for this plan? This cannot be undone.")) {
-          state = { tiles: {}, placements: {}, stops: {} };
+          state = { tiles: {}, placements: {}, stops: {}, departures: {} };
           undoStack = [JSON.stringify(state)];
           localSave();
           hydrate();
+          
+          // Reset transmit button for NEXT_AM
+          if (currentPlan === 'NEXT_AM') {
+            transmitComplete = false;
+            transmitBtn.disabled = false;
+            transmitBtn.classList.remove('success', 'transmitting');
+            transmitBtn.textContent = '🚀 Transmit Plan';
+          }
+          
           showToast('Local data cleared', 'info');
         }
       };
