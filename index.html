@@ -810,6 +810,71 @@
         "Aldo","Alfie","April","Argo","Arlo","Banjo","Barney Homewood","Barney Leeming","Baron","Bay","Beano","Bella","Belle","Benson","Betsy","Blue","Bluey","Bo","Bonnie Gallagher","Bonnie Lockwood","Bramble","Branko","Bruce","Bruno","Buddy Dann","Buddy Dargan","Buddy Selby","Casper Hamilton","Casper Kukreja","Che","Chester","Chloe","Clifford","Daisy Cremin","Daisy Parsons","Darcy Campbell","Darcy Dunn","Darwin","Delphine","Dexter","Dicee","Diego Gonsavles","Diego Wojcik","Dierdra","Digby","Dolly","Dottie","Dougie","Dudley","Dusty","Echo","Eddie","Effie","Enzo","Fenton","Ferox","Flaco","Fletcher","Florence","Freddie","Fredo","Frida Walsh","George Elliston","George Jackson","George Mohammed","Gina","Goldie","Haggis","Hattie Campbell","Hattie Duncan","Henry","Holly","Hugo","Incy","Ivy","Jack","Jeff","Jessie","Keti","Kip","Koji","Leo","Lily","Lola Bowles","Lola Fenloni","Lola Hall","Luke","Luna Crockford","Luna Grimshaw","Mac","Macy","Maggie","Margo","Marli","Marloe","Marlow","Martha","Max Tigwell","Merlin Crowley","Merlin Mayne","Miles","Miley","Millie Bowles","Millie Carter","Millie Cartwright","Millie Ellis","Milo McVey","Missy Evans","Mocha Gasper","Mocha Kolumbajew","Mochi","Moka","Mollie","Mos Wan","Moss Harris","Naira","Nala Sands","Nala Warnes","Narla Tester","Ned","Nevis","Nina","Obie","Oliver","Otis","Peggy Gibbons","Peggy Lucas","Pepper","Petch","Pippin","Pluto","Poppy Clark","Poppy Lancaster","Poppy Lass","Poppy Pike","Ralph Goddard","Raven","Reggie Daly","Reggie Foreman","Reggie Russel","Rex","Rita","River","Rocco","Roman","Roxy","Ruby Brooker","Ruby Favell","Ruby Jones","Rudy","Ruffles","Rufus","Rupy","Sam","Sebastian","Shadow Podkalicka","Shadow Wightman","Snoopy","Sonny","Sophie","Stanley James","Star","Storm","Tallulah","Tam","Tasha","Ted Lambie","Teddy Brown","Teddy Jamison","Terry","Tilly Mills","Tokyo","Warwick","Winnie Awele","Winnie Evans","Winnie Hall","Winnie Lancaster","Winnie Ryan","Woody Johns","Woody Warren","Zero","Ziggy"
       ];
       
+      // Alias map for common abbreviations (add your shortcuts here)
+      const DOG_ALIASES = {
+        "millie ct": "Millie Cartwright",
+        "millie ca": "Millie Carter",
+        "millie b": "Millie Bowles",
+        "millie e": "Millie Ellis",
+        "buddy d": "Buddy Dann",
+        "buddy da": "Buddy Dargan",
+        "buddy dr": "Buddy Dargan",
+        "buddy s": "Buddy Selby",
+        "teddy b": "Teddy Brown",
+        "teddy j": "Teddy Jamison",
+        "missy e": "Missy Evans",
+        "milo m": "Milo McVey",
+        "luna c": "Luna Crockford",
+        "luna g": "Luna Grimshaw",
+        "poppy c": "Poppy Clark",
+        "poppy l": "Poppy Lancaster",
+        "poppy la": "Poppy Lass",
+        "poppy p": "Poppy Pike",
+        "winnie a": "Winnie Awele",
+        "winnie e": "Winnie Evans",
+        "winnie h": "Winnie Hall",
+        "winnie l": "Winnie Lancaster",
+        "winnie r": "Winnie Ryan",
+        "woody j": "Woody Johns",
+        "woody w": "Woody Warren",
+        "ruby b": "Ruby Brooker",
+        "ruby f": "Ruby Favell",
+        "ruby j": "Ruby Jones",
+        "reggie d": "Reggie Daly",
+        "reggie f": "Reggie Foreman",
+        "reggie r": "Reggie Russel",
+        "lola b": "Lola Bowles",
+        "lola f": "Lola Fenloni",
+        "lola h": "Lola Hall",
+        "george e": "George Elliston",
+        "george j": "George Jackson",
+        "george m": "George Mohammed",
+        "daisy c": "Daisy Cremin",
+        "daisy p": "Daisy Parsons",
+        "darcy c": "Darcy Campbell",
+        "darcy d": "Darcy Dunn",
+        "hattie c": "Hattie Campbell",
+        "hattie d": "Hattie Duncan",
+        "casper h": "Casper Hamilton",
+        "casper k": "Casper Kukreja",
+        "barney h": "Barney Homewood",
+        "barney l": "Barney Leeming",
+        "bonnie g": "Bonnie Gallagher",
+        "bonnie l": "Bonnie Lockwood",
+        "diego g": "Diego Gonsavles",
+        "diego w": "Diego Wojcik",
+        "merlin c": "Merlin Crowley",
+        "merlin m": "Merlin Mayne",
+        "mocha g": "Mocha Gasper",
+        "mocha k": "Mocha Kolumbajew",
+        "nala s": "Nala Sands",
+        "nala w": "Nala Warnes",
+        "peggy g": "Peggy Gibbons",
+        "peggy l": "Peggy Lucas",
+        "shadow p": "Shadow Podkalicka",
+        "shadow w": "Shadow Wightman"
+      };
+      
       // Van mapping to JotForm values
       const VAN_MAP = {
         'bv': 'Big van - Transit',
@@ -899,12 +964,56 @@
       function findMatchingDogName(inputName) {
         // Normalise the input name - lowercase, trim, and collapse multiple spaces
         const normalised = inputName.trim().toLowerCase().replace(/\s+/g, ' ');
+        // Also create a version with no spaces for matching
+        const noSpaces = normalised.replace(/\s/g, '');
         
-        // First try exact match (case-insensitive)
+        // FIRST: Check alias map for common abbreviations
+        if (DOG_ALIASES[normalised]) {
+          return DOG_ALIASES[normalised];
+        }
+        
+        // Also check aliases without spaces
+        const aliasMatch = Object.keys(DOG_ALIASES).find(alias => 
+          alias.replace(/\s/g, '') === noSpaces
+        );
+        if (aliasMatch) return DOG_ALIASES[aliasMatch];
+        
+        // Try exact match (case-insensitive)
         const exactMatch = VALID_DOG_NAMES.find(name => 
           name.toLowerCase().replace(/\s+/g, ' ') === normalised
         );
         if (exactMatch) return exactMatch;
+        
+        // Try matching with spaces removed (e.g., "BuddyS" matches "Buddy Selby")
+        const noSpaceMatch = VALID_DOG_NAMES.find(name => 
+          name.toLowerCase().replace(/\s/g, '') === noSpaces
+        );
+        if (noSpaceMatch) return noSpaceMatch;
+        
+        // Try partial match where input starts the valid name (e.g., "Millie Ct" matches "Millie Cartwright")
+        const startsWithMatch = VALID_DOG_NAMES.find(name => {
+          const nameLower = name.toLowerCase().replace(/\s+/g, ' ');
+          const nameNoSpaces = name.toLowerCase().replace(/\s/g, '');
+          // Check if valid name starts with input (with or without spaces)
+          return nameLower.startsWith(normalised) || nameNoSpaces.startsWith(noSpaces);
+        });
+        if (startsWithMatch) return startsWithMatch;
+        
+        // Try matching first name + start of surname (e.g., "Millie Ct" -> "Millie C" matches "Millie Cartwright")
+        const parts = normalised.split(' ');
+        if (parts.length >= 2) {
+          const firstName = parts[0];
+          const surnameStart = parts.slice(1).join(' ');
+          
+          const partialSurnameMatch = VALID_DOG_NAMES.find(name => {
+            const nameParts = name.toLowerCase().split(' ');
+            if (nameParts.length < 2) return false;
+            const nameFirst = nameParts[0];
+            const nameSurname = nameParts.slice(1).join(' ');
+            return nameFirst === firstName && nameSurname.startsWith(surnameStart);
+          });
+          if (partialSurnameMatch) return partialSurnameMatch;
+        }
         
         // Try partial match (input contains valid name or vice versa)
         const partialMatch = VALID_DOG_NAMES.find(name => {
