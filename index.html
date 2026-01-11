@@ -1088,8 +1088,15 @@
           return;
         }
         
+        // Get departure times
+        const departures = {
+          bv: document.getElementById('bv-departure').value,
+          sv: document.getElementById('sv-departure').value,
+          dv: document.getElementById('dv-departure').value
+        };
+        
         // Confirm before transmitting
-        const confirmMsg = `Transmit ${validDogs.length} dogs to JotForm?` + 
+        const confirmMsg = `Send ${validDogs.length} dogs to Telegram?` + 
           (invalidDogs.length > 0 ? `\n\n⚠️ ${invalidDogs.length} dogs will be skipped (not in list):\n${invalidDogs.map(d => d.inputName).join(', ')}` : '');
         
         if (!confirm(confirmMsg)) return;
@@ -1097,76 +1104,56 @@
         // Update button state
         transmitBtn.disabled = true;
         transmitBtn.classList.add('transmitting');
-        transmitBtn.textContent = '🔄 Transmitting...';
-        
-        // JotForm API configuration
-        const JOTFORM_API_KEY = '955696486658b9891c6c8e28576a3a6e';
-        const JOTFORM_FORM_ID = '242823438330352';
-        const JOTFORM_API_URL = `https://eu-api.jotform.com/form/${JOTFORM_FORM_ID}/submissions?apiKey=${JOTFORM_API_KEY}`;
-        
-        let successCount = 0;
-        let failCount = 0;
-        const results = [];
+        transmitBtn.textContent = '🔄 Sending to Telegram...';
         
         try {
-          // Submit each dog to JotForm
-          for (const dog of validDogs) {
-            try {
-              const formData = new URLSearchParams();
-              formData.append('submission[69]', dog.matchedName);
-              formData.append('submission[125]', 'Doggy school bus');
-              formData.append('submission[126]', dog.van);
-              formData.append('submission[127]', dog.stopNumber);
-              formData.append('submission[130]', dog.departureTime);
-              
-              const response = await fetch(JOTFORM_API_URL, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/x-www-form-urlencoded',
-                },
-                body: formData.toString()
-              });
-              
-              const result = await response.json();
-              
-              if (result.responseCode === 200) {
-                successCount++;
-                results.push({ dog: dog.matchedName, status: 'success' });
-                console.log(`✅ Submitted: ${dog.matchedName}`);
-              } else {
-                failCount++;
-                results.push({ dog: dog.matchedName, status: 'failed', error: result.message });
-                console.error(`❌ Failed: ${dog.matchedName}`, result);
-              }
-            } catch (err) {
-              failCount++;
-              results.push({ dog: dog.matchedName, status: 'failed', error: err.message });
-              console.error(`❌ Error submitting ${dog.matchedName}:`, err);
-            }
+          // Send to Google Apps Script
+          const response = await fetch(SCRIPT_URL, {
+            method: 'POST',
+            body: JSON.stringify({
+              action: 'transmitPlan',
+              dogs: validDogs.map(d => ({
+                dogName: d.matchedName,
+                stopNumber: d.stopNumber,
+                van: d.van,
+                departureTime: d.departureTime
+              })),
+              departures: departures,
+              timestamp: new Date().toISOString()
+            }),
+            redirect: 'follow'
+          });
+          
+          const resultText = await response.text();
+          console.log('Response:', resultText);
+          
+          let result;
+          try {
+            result = JSON.parse(resultText);
+          } catch (e) {
+            // If response is not JSON, treat as success if no error
+            result = { success: true };
+          }
+          
+          if (result.success !== false) {
+            // Mark transmission as complete
+            transmitComplete = true;
+            transmitBtn.classList.remove('transmitting');
+            transmitBtn.classList.add('success');
+            transmitBtn.textContent = `✅ ${validDogs.length} dogs sent to Telegram`;
             
-            // Small delay between submissions to avoid rate limiting
-            await new Promise(resolve => setTimeout(resolve, 200));
-          }
-          
-          // Mark transmission as complete
-          transmitComplete = true;
-          transmitBtn.classList.remove('transmitting');
-          transmitBtn.classList.add('success');
-          transmitBtn.textContent = `✅ ${successCount} dogs transmitted`;
-          
-          let successMsg = `Successfully transmitted ${successCount} dogs!`;
-          if (failCount > 0) {
-            successMsg += ` (${failCount} failed)`;
-          }
-          if (invalidDogs.length > 0) {
-            successMsg += ` (${invalidDogs.length} skipped)`;
-          }
-          showToast(successMsg, successCount > 0 ? 'success' : 'error');
-          
-          // Log results
-          console.log('Transmission results:', results);
-          if (invalidDogs.length > 0) {
-            console.log('Skipped dogs (not in JotForm list):', invalidDogs.map(d => d.inputName));
+            let successMsg = `Sent ${validDogs.length} dogs to Telegram!`;
+            if (invalidDogs.length > 0) {
+              successMsg += ` (${invalidDogs.length} skipped)`;
+            }
+            showToast(successMsg, 'success');
+            
+            // Log skipped dogs
+            if (invalidDogs.length > 0) {
+              console.log('Skipped dogs (not in JotForm list):', invalidDogs.map(d => d.inputName));
+            }
+          } else {
+            throw new Error(result.error || 'Unknown error');
           }
           
         } catch (error) {
@@ -1174,7 +1161,7 @@
           transmitBtn.disabled = false;
           transmitBtn.classList.remove('transmitting');
           transmitBtn.textContent = '🚀 Transmit Plan';
-          showToast(`Transmission failed: ${error.message}`, 'error');
+          showToast(`Failed: ${error.message}`, 'error');
         }
       }
 
