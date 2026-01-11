@@ -1099,44 +1099,72 @@
         transmitBtn.classList.add('transmitting');
         transmitBtn.textContent = '🔄 Transmitting...';
         
+        // JotForm API configuration
+        const JOTFORM_API_KEY = '955696486658b9891c6c8e28576a3a6e';
+        const JOTFORM_FORM_ID = '242823438330352';
+        const JOTFORM_API_URL = `https://eu-api.jotform.com/form/${JOTFORM_FORM_ID}/submissions?apiKey=${JOTFORM_API_KEY}`;
+        
+        let successCount = 0;
+        let failCount = 0;
+        const results = [];
+        
         try {
-          // Send to n8n webhook
-          const response = await fetch(N8N_WEBHOOK_URL, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              dogs: validDogs.map(d => ({
-                dogName: d.matchedName,
-                stopNumber: d.stopNumber,
-                van: d.van,
-                departureTime: d.departureTime
-              })),
-              timestamp: new Date().toISOString(),
-              plan: 'NEXT_AM'
-            })
-          });
-          
-          if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+          // Submit each dog to JotForm
+          for (const dog of validDogs) {
+            try {
+              const formData = new URLSearchParams();
+              formData.append('submission[69]', dog.matchedName);
+              formData.append('submission[125]', 'Doggy school bus');
+              formData.append('submission[126]', dog.van);
+              formData.append('submission[127]', dog.stopNumber);
+              formData.append('submission[130]', dog.departureTime);
+              
+              const response = await fetch(JOTFORM_API_URL, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: formData.toString()
+              });
+              
+              const result = await response.json();
+              
+              if (result.responseCode === 200) {
+                successCount++;
+                results.push({ dog: dog.matchedName, status: 'success' });
+                console.log(`✅ Submitted: ${dog.matchedName}`);
+              } else {
+                failCount++;
+                results.push({ dog: dog.matchedName, status: 'failed', error: result.message });
+                console.error(`❌ Failed: ${dog.matchedName}`, result);
+              }
+            } catch (err) {
+              failCount++;
+              results.push({ dog: dog.matchedName, status: 'failed', error: err.message });
+              console.error(`❌ Error submitting ${dog.matchedName}:`, err);
+            }
+            
+            // Small delay between submissions to avoid rate limiting
+            await new Promise(resolve => setTimeout(resolve, 200));
           }
-          
-          const result = await response.json();
           
           // Mark transmission as complete
           transmitComplete = true;
           transmitBtn.classList.remove('transmitting');
           transmitBtn.classList.add('success');
-          transmitBtn.textContent = `✅ ${validDogs.length} dogs transmitted`;
+          transmitBtn.textContent = `✅ ${successCount} dogs transmitted`;
           
-          let successMsg = `Successfully transmitted ${validDogs.length} dogs!`;
+          let successMsg = `Successfully transmitted ${successCount} dogs!`;
+          if (failCount > 0) {
+            successMsg += ` (${failCount} failed)`;
+          }
           if (invalidDogs.length > 0) {
             successMsg += ` (${invalidDogs.length} skipped)`;
           }
-          showToast(successMsg, 'success');
+          showToast(successMsg, successCount > 0 ? 'success' : 'error');
           
-          // Log skipped dogs
+          // Log results
+          console.log('Transmission results:', results);
           if (invalidDogs.length > 0) {
             console.log('Skipped dogs (not in JotForm list):', invalidDogs.map(d => d.inputName));
           }
@@ -1146,7 +1174,7 @@
           transmitBtn.disabled = false;
           transmitBtn.classList.remove('transmitting');
           transmitBtn.textContent = '🚀 Transmit Plan';
-          showToast('Transmission failed. Please try again.', 'error');
+          showToast(`Transmission failed: ${error.message}`, 'error');
         }
       }
 
