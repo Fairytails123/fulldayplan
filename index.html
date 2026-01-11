@@ -897,18 +897,18 @@
 
       // ==================== TRANSMIT PLAN (NEXT_AM ONLY) ====================
       function findMatchingDogName(inputName) {
-        // Normalise the input name
-        const normalised = inputName.trim().toLowerCase();
+        // Normalise the input name - lowercase, trim, and collapse multiple spaces
+        const normalised = inputName.trim().toLowerCase().replace(/\s+/g, ' ');
         
         // First try exact match (case-insensitive)
         const exactMatch = VALID_DOG_NAMES.find(name => 
-          name.toLowerCase() === normalised
+          name.toLowerCase().replace(/\s+/g, ' ') === normalised
         );
         if (exactMatch) return exactMatch;
         
         // Try partial match (input contains valid name or vice versa)
         const partialMatch = VALID_DOG_NAMES.find(name => {
-          const nameLower = name.toLowerCase();
+          const nameLower = name.toLowerCase().replace(/\s+/g, ' ');
           return nameLower.includes(normalised) || normalised.includes(nameLower);
         });
         if (partialMatch) return partialMatch;
