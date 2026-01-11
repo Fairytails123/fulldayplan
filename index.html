@@ -3,121 +3,689 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-  <title>Van Manager - Final Combined V2 Layout</title>
+  <title>Van Manager - Enhanced V2</title>
   <style>
-    :root{ --line:#6d8fb0; --accent:#2c5282; --danger:#e53e3e; --bg:#ffffff; --success:#2f855a; }
-    *{ box-sizing:border-box; }
-    body{ 
-      margin:0; font-family: Arial, sans-serif; background:#f6f7f9; 
-      /* Allows vertical scrolling on touch screens */
+    :root { 
+      --line: #6d8fb0; 
+      --accent: #2c5282; 
+      --danger: #e53e3e; 
+      --bg: #ffffff; 
+      --success: #2f855a;
+      --warning: #ed8936;
+      --info: #3182ce;
+      --shadow: 0 2px 8px rgba(0,0,0,0.1);
+      --radius: 10px;
+    }
+    
+    * { box-sizing: border-box; }
+    
+    body { 
+      margin: 0; 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; 
+      background: #f6f7f9; 
       touch-action: pan-y; 
-      overscroll-behavior: none; 
+      overscroll-behavior: none;
+      min-height: 100vh;
     }
-    .plan-nav { display:flex; background:#fff; padding:10px 16px 0; border-bottom:2px solid #ddd; gap:5px; }
-    .nav-tab { padding:10px 20px; border:1px solid #ddd; border-bottom:none; border-radius:8px 8px 0 0; cursor:pointer; font-weight:bold; }
-    .nav-tab.active { background:var(--accent); color:#fff; }
     
-    .page{ max-width:1200px; margin: 0 auto; padding: 16px; display:grid; gap:14px; }
-    .topbar{ background:#fff; border-radius:10px; padding:14px; display:grid; gap:10px; }
-    .controls{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+    /* Navigation Tabs */
+    .plan-nav { 
+      display: flex; 
+      background: #fff; 
+      padding: 12px 16px 0; 
+      border-bottom: 2px solid #ddd; 
+      gap: 6px;
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+      box-shadow: var(--shadow);
+    }
     
-    input[type="text"]{ flex:1; padding:10px; border-radius:8px; border:1px solid #ccc; font-size:16px; }
-    button{ padding:10px 15px; border-radius:8px; border:1px solid #ccc; cursor:pointer; font-weight:bold; }
-    .btn-submit { background:var(--danger); color:#fff; border:none; }
-    .btn-pdf { background:var(--success); color:#fff; border:none; }
-    .btn-share { background: #ebf8ff; border: 2px solid #3182ce; color: #2c5282; }
-    .btn-fetch { background: #fffaf0; border: 2px solid #ed8936; color: #7b341e; }
+    .nav-tab { 
+      padding: 12px 24px; 
+      border: 1px solid #ddd; 
+      border-bottom: none; 
+      border-radius: 8px 8px 0 0; 
+      cursor: pointer; 
+      font-weight: 600;
+      background: #f8fafc;
+      transition: all 0.2s ease;
+      font-size: 14px;
+    }
     
-    .tray-area { display:flex; gap:10px; min-height:80px; }
-    .tiles-tray{ flex:1; display:flex; gap:10px; flex-wrap:wrap; padding:10px; border:2px dashed #cbd5e0; border-radius:8px; background:#f8fafc; }
-    #bin { width:80px; display:flex; align-items:center; justify-content:center; background:#fed7d7; border:2px solid #feb2b2; border-radius:8px; color:#c53030; font-size:30px; }
+    .nav-tab:hover:not(.active) { 
+      background: #e2e8f0; 
+    }
     
+    .nav-tab.active { 
+      background: var(--accent); 
+      color: #fff;
+      border-color: var(--accent);
+    }
+    
+    /* Main Layout */
+    .page { 
+      max-width: 1200px; 
+      margin: 0 auto; 
+      padding: 16px; 
+      display: grid; 
+      gap: 16px; 
+    }
+    
+    /* Top Controls */
+    .topbar { 
+      background: #fff; 
+      border-radius: var(--radius); 
+      padding: 16px; 
+      display: grid; 
+      gap: 12px;
+      box-shadow: var(--shadow);
+    }
+    
+    .controls { 
+      display: flex; 
+      gap: 10px; 
+      flex-wrap: wrap; 
+      align-items: center; 
+    }
+    
+    .input-group {
+      display: flex;
+      gap: 8px;
+      flex: 1;
+      min-width: 200px;
+    }
+    
+    input[type="text"] { 
+      flex: 1; 
+      padding: 12px 14px; 
+      border-radius: 8px; 
+      border: 2px solid #e2e8f0; 
+      font-size: 16px;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    
+    input[type="text"]:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(44, 82, 130, 0.15);
+    }
+    
+    /* Buttons */
+    button { 
+      padding: 12px 18px; 
+      border-radius: 8px; 
+      border: 2px solid transparent; 
+      cursor: pointer; 
+      font-weight: 600;
+      font-size: 14px;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+    
+    button:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    
+    button:active:not(:disabled) {
+      transform: translateY(0);
+    }
+    
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    
+    .btn-primary { 
+      background: var(--accent); 
+      color: #fff; 
+    }
+    
+    .btn-primary:hover:not(:disabled) {
+      background: #1e4072;
+    }
+    
+    .btn-danger { 
+      background: #fff5f5; 
+      border-color: var(--danger); 
+      color: var(--danger); 
+    }
+    
+    .btn-danger:hover:not(:disabled) {
+      background: var(--danger);
+      color: #fff;
+    }
+    
+    .btn-pdf { 
+      background: var(--success); 
+      color: #fff; 
+    }
+    
+    .btn-pdf:hover:not(:disabled) {
+      background: #276749;
+    }
+    
+    .btn-share { 
+      background: #ebf8ff; 
+      border-color: var(--info); 
+      color: var(--accent); 
+    }
+    
+    .btn-share:hover:not(:disabled) {
+      background: var(--info);
+      color: #fff;
+    }
+    
+    .btn-fetch { 
+      background: #fffaf0; 
+      border-color: var(--warning); 
+      color: #7b341e; 
+    }
+    
+    .btn-fetch:hover:not(:disabled) {
+      background: var(--warning);
+      color: #fff;
+    }
+    
+    .btn-undo {
+      background: #f7fafc;
+      border-color: #a0aec0;
+      color: #4a5568;
+    }
+    
+    .btn-undo:hover:not(:disabled) {
+      background: #718096;
+      color: #fff;
+    }
+    
+    /* Tray Area */
+    .tray-area { 
+      display: flex; 
+      gap: 12px; 
+      min-height: 90px; 
+    }
+    
+    .tiles-tray { 
+      flex: 1; 
+      display: flex; 
+      gap: 10px; 
+      flex-wrap: wrap; 
+      padding: 12px; 
+      border: 2px dashed #cbd5e0; 
+      border-radius: 8px; 
+      background: #f8fafc;
+      align-content: flex-start;
+      min-height: 80px;
+      transition: all 0.2s;
+    }
+    
+    .tiles-tray.drag-over {
+      border-color: var(--accent);
+      background: #ebf8ff;
+    }
+    
+    .tiles-tray:empty::after {
+      content: "Drag dogs here or add new ones above";
+      color: #a0aec0;
+      font-style: italic;
+      align-self: center;
+      width: 100%;
+      text-align: center;
+    }
+    
+    #bin { 
+      width: 80px; 
+      display: flex; 
+      align-items: center; 
+      justify-content: center; 
+      background: #fed7d7; 
+      border: 2px dashed #fc8181; 
+      border-radius: 8px; 
+      color: #c53030; 
+      font-size: 32px;
+      transition: all 0.2s;
+    }
+    
+    #bin.drag-over {
+      background: #c53030;
+      border-style: solid;
+      transform: scale(1.05);
+    }
+    
+    #bin.drag-over::after {
+      content: "";
+    }
+    
+    /* Tiles */
     .tile, .tile-inbox { 
-      background:#fff; border-radius:6px; display:flex; align-items:center; justify-content:center; 
-      text-align:center; box-shadow:0 1px 2px rgba(0,0,0,0.12); cursor:grab; 
-      /* Prevents touch conflict so drag works only on tiles */
+      background: #fff; 
+      border-radius: 6px; 
+      display: flex; 
+      align-items: center; 
+      justify-content: center; 
+      text-align: center; 
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1); 
+      cursor: grab; 
       touch-action: none; 
-      user-select:none; z-index:100;
-      word-break: break-word; line-height: 1.05; overflow: hidden;
+      user-select: none; 
+      z-index: 100;
+      word-break: break-word; 
+      line-height: 1.1; 
+      overflow: hidden;
+      transition: box-shadow 0.2s, transform 0.2s;
+      font-weight: 500;
     }
-    .tile { min-width:110px; min-height:44px; padding:5px; border:1px solid #ddd; }
-    .tile-inbox { width:100%; border:none !important; box-shadow: none !important; }
     
-    .layout-card{ background:#fff; border-radius:10px; padding:14px; }
-    .van-section { margin-bottom:30px; border-bottom:2px solid #edf2f7; padding-bottom:20px; }
-    .card-title{ font-weight:bold; margin-bottom:12px; display:flex; justify-content:space-between; }
+    .tile:hover, .tile-inbox:hover {
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
     
-    .two-cols{ display:grid; grid-template-columns:1fr 1fr; gap:20px; }
-    .kennel-grid{ border:2px solid var(--line); background:#fff; display:grid; }
-    .box{ border:2px solid var(--line); min-height:85px; position:relative; display:flex; align-items:center; justify-content:center; padding:22px 2px 2px 2px; }
-    .stop-input{ position:absolute; top:4px; left:4px; width:38px; height:20px; border:1px solid #ccc; border-radius:4px; font-size:11px; text-align:center; z-index:5; }
-    .box-inner{ width:100%; height:100%; display:flex; flex-direction:column; gap:6px; pointer-events:auto; justify-content: center; }
-    .is-dragging { position:fixed; z-index:9999 !important; pointer-events:none; opacity:0.8; transform:scale(1.1); box-shadow:0 10px 20px rgba(0,0,0,0.3); }
+    .tile { 
+      min-width: 110px; 
+      min-height: 48px; 
+      padding: 8px 10px; 
+      border: 2px solid #e2e8f0;
+    }
     
-    @media (max-width:800px) { .two-cols { grid-template-columns:1fr; } }
+    .tile-inbox { 
+      width: 100%; 
+      min-height: 32px;
+      padding: 4px 6px;
+      border: 1px solid #e2e8f0;
+      background: linear-gradient(135deg, #fff 0%, #f7fafc 100%);
+    }
+    
+    /* Layout Cards */
+    .layout-card { 
+      background: #fff; 
+      border-radius: var(--radius); 
+      padding: 20px;
+      box-shadow: var(--shadow);
+    }
+    
+    .van-section { 
+      margin-bottom: 28px; 
+      border-bottom: 2px solid #edf2f7; 
+      padding-bottom: 24px; 
+    }
+    
+    .van-section:last-child {
+      margin-bottom: 0;
+      border-bottom: none;
+      padding-bottom: 0;
+    }
+    
+    .card-title { 
+      font-weight: 700; 
+      margin-bottom: 14px; 
+      display: flex; 
+      justify-content: space-between;
+      align-items: center;
+      font-size: 16px;
+      color: #2d3748;
+    }
+    
+    .dog-count {
+      background: #edf2f7;
+      color: #4a5568;
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    
+    .dog-count.has-dogs {
+      background: #c6f6d5;
+      color: var(--success);
+    }
+    
+    /* Grid Layouts */
+    .two-cols { 
+      display: grid; 
+      grid-template-columns: 1fr 1fr; 
+      gap: 20px; 
+    }
+    
+    .kennel-grid { 
+      border: 2px solid var(--line); 
+      background: #fff; 
+      display: grid;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    
+    .box { 
+      border: 2px solid var(--line); 
+      min-height: 90px; 
+      position: relative; 
+      display: flex; 
+      align-items: center; 
+      justify-content: center; 
+      padding: 26px 4px 4px 4px;
+      background: #fff;
+      transition: all 0.2s;
+    }
+    
+    .box.drag-over {
+      background: #ebf8ff;
+      border-color: var(--accent);
+    }
+    
+    .box.full {
+      background: #f0fff4;
+    }
+    
+    .stop-input { 
+      position: absolute; 
+      top: 4px; 
+      left: 4px; 
+      width: 40px; 
+      height: 22px; 
+      border: 1px solid #cbd5e0; 
+      border-radius: 4px; 
+      font-size: 12px; 
+      text-align: center; 
+      z-index: 5;
+      font-weight: 600;
+      transition: border-color 0.2s;
+    }
+    
+    .stop-input:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    
+    .box-inner { 
+      width: 100%; 
+      height: 100%; 
+      display: flex; 
+      flex-direction: column; 
+      gap: 4px; 
+      pointer-events: auto; 
+      justify-content: center;
+    }
+    
+    .box-inner.two {
+      gap: 3px;
+    }
+    
+    .box-inner.two .tile-inbox {
+      min-height: 28px;
+      font-size: 13px;
+    }
+    
+    /* Wheel Arch Styling */
+    .box.has-wheel-arch {
+      padding-bottom: 32px;
+      position: relative;
+    }
+    
+    .wheel-arch {
+      position: absolute;
+      bottom: 4px;
+      width: 50px;
+      height: 24px;
+      background: #fff;
+      border: 2px solid var(--line);
+      border-radius: 50px 50px 0 0;
+      border-bottom: none;
+    }
+    
+    .wheel-arch.left {
+      left: 8px;
+    }
+    
+    .wheel-arch.right {
+      right: 8px;
+    }
+    
+    .wheel-arch.center {
+      left: 50%;
+      transform: translateX(-50%);
+    }
+    
+    /* Dragging State */
+    .is-dragging { 
+      position: fixed; 
+      z-index: 9999 !important; 
+      pointer-events: none; 
+      opacity: 0.9; 
+      transform: scale(1.08) rotate(2deg); 
+      box-shadow: 0 15px 35px rgba(0,0,0,0.25);
+    }
+    
+    /* Toast Notifications */
+    .toast-container {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 10000;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    
+    .toast {
+      padding: 14px 20px;
+      border-radius: 8px;
+      color: #fff;
+      font-weight: 500;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+      animation: slideIn 0.3s ease, fadeOut 0.3s ease 2.7s forwards;
+      max-width: 320px;
+    }
+    
+    .toast-success { background: var(--success); }
+    .toast-error { background: var(--danger); }
+    .toast-info { background: var(--info); }
+    .toast-warning { background: var(--warning); }
+    
+    @keyframes slideIn {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+    
+    @keyframes fadeOut {
+      to { opacity: 0; transform: translateX(50%); }
+    }
+    
+    /* Status Bar */
+    .status-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      color: #718096;
+      padding-top: 8px;
+      border-top: 1px solid #edf2f7;
+      margin-top: 8px;
+    }
+    
+    .status-bar .online-indicator {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--success);
+    }
+    
+    .status-dot.offline {
+      background: var(--danger);
+    }
+    
+    /* Responsive */
+    @media (max-width: 900px) { 
+      .two-cols { grid-template-columns: 1fr; }
+      .controls { flex-direction: column; align-items: stretch; }
+      .input-group { min-width: 100%; }
+      .btn-group { display: flex; flex-wrap: wrap; gap: 8px; }
+      .btn-group button { flex: 1; min-width: calc(50% - 4px); }
+    }
+    
+    @media (max-width: 500px) {
+      .plan-nav { padding: 8px 10px 0; gap: 4px; overflow-x: auto; }
+      .nav-tab { padding: 10px 16px; font-size: 13px; flex-shrink: 0; }
+      .page { padding: 10px; }
+      .topbar, .layout-card { padding: 12px; }
+      .tile { min-width: 90px; min-height: 42px; }
+      .box { min-height: 75px; }
+    }
+    
+    /* Print Styles */
+    @media print {
+      body { background: #fff !important; }
+      .plan-nav, .topbar, .toast-container { display: none !important; }
+      .page { max-width: 100%; padding: 0; }
+      .layout-card { box-shadow: none; padding: 10px; }
+      .van-section { page-break-inside: avoid; }
+      .box { border-width: 1px; }
+      .tile-inbox { border: 1px solid #999 !important; }
+    }
   </style>
 </head>
 <body>
+  <div class="toast-container" id="toastContainer"></div>
+  
   <div class="plan-nav">
-    <div class="nav-tab active" data-plan="AM">AM Plan</div>
-    <div class="nav-tab" data-plan="PM">PM Plan</div>
-    <div class="nav-tab" data-plan="NEXT_AM">Next Day AM</div>
+    <div class="nav-tab active" data-plan="AM">🌅 AM Plan</div>
+    <div class="nav-tab" data-plan="PM">🌆 PM Plan</div>
+    <div class="nav-tab" data-plan="NEXT_AM">📅 Next Day AM</div>
   </div>
+  
   <div class="page">
     <div class="topbar">
       <div class="controls">
-        <input id="tileText" type="text" placeholder="Dog Name..." />
-        <button id="addTileBtn" type="button">Add Dog</button>
-        <button id="shareBtn" class="btn-share">Share Plan</button>
-        <button id="fetchBtn" class="btn-fetch">Fetch Cloud</button>
-        <button id="pdfBtn" class="btn-pdf">PDF Export</button>
-        <button id="clearBtn" class="btn-danger">Clear Local</button>
+        <div class="input-group">
+          <input id="tileText" type="text" placeholder="Enter dog name..." maxlength="50" />
+          <button id="addTileBtn" type="button" class="btn-primary">+ Add Dog</button>
+        </div>
+        <div class="btn-group">
+          <button id="undoBtn" class="btn-undo" title="Undo last action">↩ Undo</button>
+          <button id="shareBtn" class="btn-share">☁️ Share</button>
+          <button id="fetchBtn" class="btn-fetch">📥 Fetch</button>
+          <button id="pdfBtn" class="btn-pdf">📄 PDF</button>
+          <button id="clearBtn" class="btn-danger">🗑 Clear</button>
+        </div>
       </div>
-      <div class="tray-area"><div class="tiles-tray" id="tray"></div><div id="bin">🗑</div></div>
-      <div id="syncTime" style="font-size: 11px; color: #718096; text-align: right;">Cloud Version: Never</div>
+      <div class="tray-area">
+        <div class="tiles-tray" id="tray"></div>
+        <div id="bin">🗑</div>
+      </div>
+      <div class="status-bar">
+        <div class="online-indicator">
+          <span class="status-dot" id="statusDot"></span>
+          <span id="onlineStatus">Online</span>
+        </div>
+        <div id="syncTime">Cloud: Never synced</div>
+      </div>
     </div>
 
     <div class="layout-card" id="printArea">
       
-      <div class="van-section">
-        <div class="card-title"><span>Big Van BV</span><span id="currentLabel">AM Plan</span></div>
+      <div class="van-section" data-van="bv">
+        <div class="card-title">
+          <span>🚐 Big Van (BV)</span>
+          <span id="currentLabel" style="color: var(--accent);">AM Plan</span>
+          <span class="dog-count" id="bv-count">0 dogs</span>
+        </div>
         <div class="two-cols">
           <div class="kennel-grid">
-            <div style="display:grid; grid-template-columns:repeat(3,1fr)"><div class="box" data-box="bv-c1"></div><div class="box" data-box="bv-c2"></div><div class="box" data-box="bv-c3"></div></div>
-            <div style="display:grid; grid-template-columns:repeat(2,1fr)"><div class="box" data-box="bv-c4"></div><div class="box" data-box="bv-c5"></div></div>
-            <div style="display:grid; grid-template-columns:repeat(2,1fr)"><div class="box" data-box="bv-c6"></div><div class="box" data-box="bv-c7"></div></div>
+            <div style="display:grid; grid-template-columns:repeat(3,1fr)">
+              <div class="box" data-box="bv-c1"></div>
+              <div class="box" data-box="bv-c2"></div>
+              <div class="box" data-box="bv-c3"></div>
+            </div>
+            <div style="display:grid; grid-template-columns:repeat(2,1fr)">
+              <div class="box" data-box="bv-c4"></div>
+              <div class="box" data-box="bv-c5"></div>
+            </div>
+            <div style="display:grid; grid-template-columns:repeat(2,1fr)">
+              <div class="box" data-box="bv-c6"></div>
+              <div class="box" data-box="bv-c7"></div>
+            </div>
           </div>
           <div class="kennel-grid">
-            <div style="display:grid; grid-template-columns:repeat(3,1fr)"><div class="box" data-box="bv-b1"></div><div class="box" data-box="bv-b2"></div><div class="box" data-box="bv-b3"></div></div>
-            <div style="display:grid; grid-template-columns:repeat(3,1fr)"><div class="box" data-box="bv-b4"></div><div class="box" data-box="bv-b5"></div><div class="box" data-box="bv-b6"></div></div>
-            <div style="display:grid; grid-template-columns:repeat(2,1fr)"><div class="box" data-box="bv-b7"></div><div class="box" data-box="bv-b8"></div></div>
+            <div style="display:grid; grid-template-columns:repeat(3,1fr)">
+              <div class="box" data-box="bv-b1"></div>
+              <div class="box" data-box="bv-b2"></div>
+              <div class="box" data-box="bv-b3"></div>
+            </div>
+            <div style="display:grid; grid-template-columns:repeat(3,1fr)">
+              <div class="box" data-box="bv-b4"></div>
+              <div class="box" data-box="bv-b5"></div>
+              <div class="box" data-box="bv-b6"></div>
+            </div>
+            <div style="display:grid; grid-template-columns:repeat(2,1fr)">
+              <div class="box" data-box="bv-b7"></div>
+              <div class="box" data-box="bv-b8"></div>
+            </div>
           </div>
         </div>
       </div>
 
-      <div class="van-section">
-        <div class="card-title">Small Van SV</div>
+      <div class="van-section" data-van="sv">
+        <div class="card-title">
+          <span>🚗 Small Van (SV)</span>
+          <span class="dog-count" id="sv-count">0 dogs</span>
+        </div>
         <div class="two-cols">
           <div class="kennel-grid">
-            <div style="display:grid; grid-template-columns:repeat(3,1fr)"><div class="box" data-box="sv-c1"></div><div class="box" data-box="sv-c2"></div><div class="box" data-box="sv-c3"></div></div>
-            <div style="display:grid; grid-template-columns:repeat(2,1fr)"><div class="box" data-box="sv-c4"></div><div class="box" data-box="sv-c5"></div></div>
+            <div style="display:grid; grid-template-columns:repeat(3,1fr)">
+              <div class="box" data-box="sv-c1"></div>
+              <div class="box" data-box="sv-c2"></div>
+              <div class="box" data-box="sv-c3"></div>
+            </div>
+            <div style="display:grid; grid-template-columns:repeat(2,1fr)">
+              <div class="box" data-box="sv-c4"></div>
+              <div class="box" data-box="sv-c5"></div>
+            </div>
           </div>
           <div class="kennel-grid">
-            <div style="display:grid; grid-template-columns:repeat(3,1fr)"><div class="box" data-box="sv-b1"></div><div class="box" data-box="sv-b2"></div><div class="box" data-box="sv-b3"></div></div>
-            <div style="display:grid; grid-template-columns:repeat(2,1fr)"><div class="box" data-box="sv-b4"></div><div class="box" data-box="sv-b5"></div></div>
+            <div style="display:grid; grid-template-columns:repeat(3,1fr)">
+              <div class="box" data-box="sv-b1"></div>
+              <div class="box" data-box="sv-b2"></div>
+              <div class="box" data-box="sv-b3"></div>
+            </div>
+            <div style="display:grid; grid-template-columns:repeat(2,1fr)">
+              <div class="box has-wheel-arch" data-box="sv-b4">
+                <div class="wheel-arch right"></div>
+              </div>
+              <div class="box has-wheel-arch" data-box="sv-b5">
+                <div class="wheel-arch left"></div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
-      <div class="van-section">
-        <div class="card-title">Dispatch Van DV</div>
+      <div class="van-section" data-van="dv">
+        <div class="card-title">
+          <span>📦 Dispatch Van (DV)</span>
+          <span class="dog-count" id="dv-count">0 dogs</span>
+        </div>
         <div style="display:grid; grid-template-columns: 1fr 2.2fr 1fr; gap:15px;">
-          <div class="kennel-grid"><div class="box" data-box="dv-l1"></div><div class="box" data-box="dv-l2"></div></div>
           <div class="kennel-grid">
-            <div style="display:grid; grid-template-columns: repeat(3,1fr)"><div class="box" data-box="dv-m1"></div><div class="box" data-box="dv-m2"></div><div class="box" data-box="dv-m3"></div></div>
+            <div class="box" data-box="dv-l1"></div>
+            <div class="box" data-box="dv-l2"></div>
+          </div>
+          <div class="kennel-grid">
+            <div style="display:grid; grid-template-columns: repeat(3,1fr)">
+              <div class="box" data-box="dv-m1"></div>
+              <div class="box" data-box="dv-m2"></div>
+              <div class="box" data-box="dv-m3"></div>
+            </div>
             <div class="box" data-box="dv-m-xl" style="min-height:120px"></div>
           </div>
-          <div class="kennel-grid"><div class="box" data-box="dv-r1"></div><div class="box" data-box="dv-r2"></div></div>
+          <div class="kennel-grid">
+            <div class="box" data-box="dv-r1"></div>
+            <div class="box" data-box="dv-r2"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -127,23 +695,88 @@
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
   <script>
     (function(){
-      // YOUR CORRECT WEB APP URL
+      // Configuration
       const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbziGtajlb_S0Yqe-7WzylGXmx1jejEvkm1o9Zgk_UdSmrVrByIPQoXSIBgzpM_aUvpf/exec';
-      
-      const tray = document.getElementById('tray'), input = document.getElementById('tileText');
-      const shareBtn = document.getElementById('shareBtn'), fetchBtn = document.getElementById('fetchBtn'), syncTimeEl = document.getElementById('syncTime');
       const STORAGE_PREFIX = 'van_v4_';
+      const MAX_UNDO_STATES = 20;
       
+      // DOM Elements
+      const tray = document.getElementById('tray');
+      const input = document.getElementById('tileText');
+      const shareBtn = document.getElementById('shareBtn');
+      const fetchBtn = document.getElementById('fetchBtn');
+      const pdfBtn = document.getElementById('pdfBtn');
+      const clearBtn = document.getElementById('clearBtn');
+      const undoBtn = document.getElementById('undoBtn');
+      const syncTimeEl = document.getElementById('syncTime');
+      const statusDot = document.getElementById('statusDot');
+      const onlineStatus = document.getElementById('onlineStatus');
+      
+      // State
       let currentPlan = 'AM';
-      let state = { tiles:{}, placements:{}, stops:{} };
+      let state = { tiles: {}, placements: {}, stops: {} };
+      let undoStack = [];
+      let activeClone = null;
+      let dragId = null;
+      let startX, startY;
 
-      function localSave(){ 
-        localStorage.setItem(STORAGE_PREFIX + currentPlan, JSON.stringify(state));
+      // ==================== TOAST NOTIFICATIONS ====================
+      function showToast(message, type = 'info') {
+        const container = document.getElementById('toastContainer');
+        const toast = document.createElement('div');
+        toast.className = `toast toast-${type}`;
+        toast.textContent = message;
+        container.appendChild(toast);
+        setTimeout(() => toast.remove(), 3000);
       }
 
-      // EXPERT FETCH LOGIC
-      async function cloudFetch(){
-        fetchBtn.textContent = "Fetching...";
+      // ==================== ONLINE STATUS ====================
+      function updateOnlineStatus() {
+        const online = navigator.onLine;
+        statusDot.classList.toggle('offline', !online);
+        onlineStatus.textContent = online ? 'Online' : 'Offline';
+        shareBtn.disabled = !online;
+        fetchBtn.disabled = !online;
+      }
+      
+      window.addEventListener('online', updateOnlineStatus);
+      window.addEventListener('offline', updateOnlineStatus);
+      updateOnlineStatus();
+
+      // ==================== UNDO FUNCTIONALITY ====================
+      function saveUndoState() {
+        undoStack.push(JSON.stringify(state));
+        if (undoStack.length > MAX_UNDO_STATES) {
+          undoStack.shift();
+        }
+        undoBtn.disabled = undoStack.length <= 1;
+      }
+
+      function undo() {
+        if (undoStack.length > 1) {
+          undoStack.pop(); // Remove current state
+          const previousState = undoStack[undoStack.length - 1];
+          state = JSON.parse(previousState);
+          localSave();
+          hydrate();
+          showToast('Action undone', 'info');
+        }
+        undoBtn.disabled = undoStack.length <= 1;
+      }
+
+      // ==================== LOCAL STORAGE ====================
+      function localSave() { 
+        try {
+          localStorage.setItem(STORAGE_PREFIX + currentPlan, JSON.stringify(state));
+        } catch (e) {
+          showToast('Storage full! Please clear some data.', 'error');
+        }
+      }
+
+      // ==================== CLOUD OPERATIONS ====================
+      async function cloudFetch() {
+        fetchBtn.disabled = true;
+        fetchBtn.textContent = "📥 Fetching...";
         try {
           const res = await fetch(`${SCRIPT_URL}?planId=${currentPlan}`, {
             method: 'GET',
@@ -155,128 +788,405 @@
           const cloud = await res.json();
 
           if (cloud && cloud.state && cloud.state !== "{}") {
+            saveUndoState();
             state = JSON.parse(cloud.state);
-            syncTimeEl.textContent = `Cloud Version: ${cloud.time}`;
+            syncTimeEl.textContent = `Cloud: ${cloud.time}`;
             localSave();
             hydrate();
-            alert("Fetch Successful!");
+            showToast('Plan fetched from cloud!', 'success');
           } else {
-            alert("No cloud data found for this plan.");
+            showToast('No cloud data found for this plan.', 'warning');
           }
         } catch(e) { 
           console.error("Fetch Error:", e);
-          alert("Fetch failed. Check console."); 
+          showToast('Fetch failed. Check your connection.', 'error');
         } finally {
-          fetchBtn.textContent = "Fetch Cloud";
+          fetchBtn.disabled = false;
+          fetchBtn.textContent = "📥 Fetch";
         }
       }
 
-      // EXPERT SHARE LOGIC
-      async function cloudShare(){
-        shareBtn.textContent = "Sharing...";
+      async function cloudShare() {
+        shareBtn.disabled = true;
+        shareBtn.textContent = "☁️ Sharing...";
         try {
           const res = await fetch(SCRIPT_URL, {
             method: 'POST',
-            body: JSON.stringify({action:'savePlan', state:state, planId:currentPlan}),
+            body: JSON.stringify({ action: 'savePlan', state: state, planId: currentPlan }),
             redirect: 'follow'
           });
           const time = await res.text();
-          syncTimeEl.textContent = `Cloud Version: ${time}`;
-          alert("Plan Shared to Cloud!");
+          syncTimeEl.textContent = `Cloud: ${time}`;
+          showToast('Plan shared to cloud!', 'success');
         } catch(e) { 
-          alert("Share failed. Check permissions."); 
+          console.error("Share Error:", e);
+          showToast('Share failed. Check permissions.', 'error');
         } finally {
-          shareBtn.textContent = "Share Plan";
+          shareBtn.disabled = false;
+          shareBtn.textContent = "☁️ Share";
         }
       }
 
-      function loadPlan(p){
+      // ==================== PDF EXPORT ====================
+      async function exportPDF() {
+        pdfBtn.disabled = true;
+        pdfBtn.textContent = "📄 Creating...";
+        
+        try {
+          const printArea = document.getElementById('printArea');
+          
+          // Temporarily adjust styles for better PDF output
+          const originalBg = document.body.style.background;
+          document.body.style.background = '#fff';
+          
+          const canvas = await html2canvas(printArea, {
+            scale: 2,
+            useCORS: true,
+            logging: false,
+            backgroundColor: '#ffffff'
+          });
+          
+          document.body.style.background = originalBg;
+          
+          const { jsPDF } = window.jspdf;
+          const imgData = canvas.toDataURL('image/png');
+          
+          // Calculate dimensions
+          const imgWidth = 190; // A4 width minus margins
+          const pageHeight = 277; // A4 height minus margins
+          const imgHeight = (canvas.height * imgWidth) / canvas.width;
+          
+          const pdf = new jsPDF('p', 'mm', 'a4');
+          
+          // Add title
+          pdf.setFontSize(16);
+          pdf.setFont('helvetica', 'bold');
+          pdf.text(`Van Plan - ${currentPlan.replace('_', ' ')}`, 10, 15);
+          
+          pdf.setFontSize(10);
+          pdf.setFont('helvetica', 'normal');
+          pdf.text(`Generated: ${new Date().toLocaleString('en-GB')}`, 10, 22);
+          
+          // Add the image
+          let heightLeft = imgHeight;
+          let position = 28;
+          
+          pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
+          heightLeft -= (pageHeight - position);
+          
+          // Handle multi-page if needed
+          while (heightLeft > 0) {
+            position = heightLeft - imgHeight;
+            pdf.addPage();
+            pdf.addImage(imgData, 'PNG', 10, position, imgWidth, imgHeight);
+            heightLeft -= pageHeight;
+          }
+          
+          // Save the PDF
+          const filename = `VanPlan_${currentPlan}_${new Date().toISOString().split('T')[0]}.pdf`;
+          pdf.save(filename);
+          
+          showToast('PDF exported successfully!', 'success');
+        } catch (e) {
+          console.error("PDF Error:", e);
+          showToast('PDF export failed. Try again.', 'error');
+        } finally {
+          pdfBtn.disabled = false;
+          pdfBtn.textContent = "📄 PDF";
+        }
+      }
+
+      // ==================== PLAN MANAGEMENT ====================
+      function loadPlan(p) {
         currentPlan = p;
         document.getElementById('currentLabel').textContent = p.replace('_', ' ') + ' Plan';
         const raw = localStorage.getItem(STORAGE_PREFIX + p);
-        state = raw ? JSON.parse(raw) : {tiles:{}, placements:{}, stops:{}};
+        state = raw ? JSON.parse(raw) : { tiles: {}, placements: {}, stops: {} };
+        undoStack = [JSON.stringify(state)];
+        undoBtn.disabled = true;
         hydrate();
       }
 
-      let activeClone = null, dragId = null, startX, startY;
-
+      // ==================== DRAG & DROP ====================
       function wirePointer(el, tid) {
         el.onpointerdown = (e) => {
-          startX = e.clientX; startY = e.clientY;
+          if (e.button !== 0) return; // Only left click
+          startX = e.clientX;
+          startY = e.clientY;
           dragId = tid;
           el.setPointerCapture(e.pointerId);
 
           el.onpointermove = (m) => {
-            // Distance Check: Fixes touch scrolling
-            if (Math.abs(m.clientX - startX) > 10 || Math.abs(m.clientY - startY) > 10) {
+            const dist = Math.abs(m.clientX - startX) + Math.abs(m.clientY - startY);
+            if (dist > 10) {
               if (!activeClone) {
-                activeClone = el.cloneNode(true); activeClone.classList.add('is-dragging'); document.body.appendChild(activeClone);
-                el.style.opacity = '0';
+                saveUndoState();
+                activeClone = el.cloneNode(true);
+                activeClone.classList.add('is-dragging');
+                activeClone.style.width = el.offsetWidth + 'px';
+                activeClone.style.height = el.offsetHeight + 'px';
+                document.body.appendChild(activeClone);
+                el.style.opacity = '0.3';
+                
+                // Add drag-over listeners
+                document.querySelectorAll('.box').forEach(box => {
+                  box.addEventListener('pointerenter', handleDragEnter);
+                  box.addEventListener('pointerleave', handleDragLeave);
+                });
+                document.getElementById('bin').addEventListener('pointerenter', handleDragEnter);
+                document.getElementById('bin').addEventListener('pointerleave', handleDragLeave);
+                tray.addEventListener('pointerenter', handleDragEnter);
+                tray.addEventListener('pointerleave', handleDragLeave);
               }
-              activeClone.style.left = (m.clientX-50)+'px'; activeClone.style.top = (m.clientY-20)+'px';
+              activeClone.style.left = (m.clientX - 55) + 'px';
+              activeClone.style.top = (m.clientY - 22) + 'px';
             }
           };
 
           el.onpointerup = (u) => {
-            el.releasePointerCapture(u.pointerId); el.onpointermove = null; el.onpointerup = null; el.style.opacity = '1';
+            el.releasePointerCapture(u.pointerId);
+            el.onpointermove = null;
+            el.onpointerup = null;
+            el.style.opacity = '1';
+            
+            // Remove drag-over listeners
+            document.querySelectorAll('.box, #bin, #tray').forEach(elem => {
+              elem.removeEventListener('pointerenter', handleDragEnter);
+              elem.removeEventListener('pointerleave', handleDragLeave);
+              elem.classList.remove('drag-over');
+            });
+            
             if (activeClone) {
               const target = document.elementFromPoint(u.clientX, u.clientY);
-              const box = target?.closest('.box'), bin = target?.closest('#bin');
-              Object.keys(state.placements).forEach(k => state.placements[k] = state.placements[k].filter(id => id !== dragId));
-              if (bin) { delete state.tiles[dragId]; }
-              else if (box) { 
-                if(!state.placements[box.dataset.box]) state.placements[box.dataset.box] = []; 
-                if(state.placements[box.dataset.box].length < 2) state.placements[box.dataset.box].push(dragId); 
+              const box = target?.closest('.box');
+              const bin = target?.closest('#bin');
+              
+              // Remove from all placements first
+              Object.keys(state.placements).forEach(k => {
+                state.placements[k] = state.placements[k].filter(id => id !== dragId);
+              });
+              
+              if (bin) {
+                delete state.tiles[dragId];
+                showToast('Dog removed', 'info');
+              } else if (box) {
+                const boxId = box.dataset.box;
+                if (!state.placements[boxId]) state.placements[boxId] = [];
+                if (state.placements[boxId].length < 2) {
+                  state.placements[boxId].push(dragId);
+                } else {
+                  showToast('Box is full (max 2 dogs)', 'warning');
+                }
               }
-              activeClone.remove(); activeClone = null; localSave(); hydrate();
+              // If dropped on tray or elsewhere, tile stays in tray
+              
+              activeClone.remove();
+              activeClone = null;
+              localSave();
+              hydrate();
             }
           };
         };
-        el.ondblclick = () => { const n = prompt("Edit:", state.tiles[tid].text); if(n) { state.tiles[tid].text = n; localSave(); hydrate(); } };
+        
+        // Double-click to edit
+        el.ondblclick = () => {
+          const currentText = state.tiles[tid].text;
+          const newText = prompt("Edit dog name:", currentText);
+          if (newText && newText.trim() && newText !== currentText) {
+            saveUndoState();
+            state.tiles[tid].text = newText.trim();
+            localSave();
+            hydrate();
+            showToast('Dog renamed', 'info');
+          }
+        };
+      }
+      
+      function handleDragEnter(e) {
+        e.currentTarget.classList.add('drag-over');
+      }
+      
+      function handleDragLeave(e) {
+        e.currentTarget.classList.remove('drag-over');
       }
 
-      function hydrate(){
+      // ==================== UI RENDERING ====================
+      function hydrate() {
         tray.innerHTML = '';
+        
+        const vanCounts = { bv: 0, sv: 0, dv: 0 };
+        
         document.querySelectorAll('.box').forEach(box => {
+          // Check if box should have wheel arch before clearing
+          const hasWheelArch = box.classList.contains('has-wheel-arch');
+          const wheelArchClass = box.dataset.box; // sv-b4 or sv-b5
+          
           box.innerHTML = '';
-          const stop = document.createElement('input'); stop.className = 'stop-input'; 
+          box.classList.remove('full');
+          
+          // Re-add wheel arch if needed
+          if (hasWheelArch) {
+            const arch = document.createElement('div');
+            arch.className = 'wheel-arch ' + (wheelArchClass === 'sv-b4' ? 'right' : 'left');
+            box.appendChild(arch);
+          }
+          
+          // Stop input
+          const stop = document.createElement('input');
+          stop.className = 'stop-input';
+          stop.type = 'text';
+          stop.maxLength = 3;
+          stop.placeholder = '#';
           stop.value = state.stops[box.dataset.box] || '';
-          stop.oninput = () => { state.stops[box.dataset.box] = stop.value; localSave(); };
+          stop.oninput = () => {
+            state.stops[box.dataset.box] = stop.value;
+            localSave();
+          };
           box.appendChild(stop);
-          const inner = document.createElement('div'); inner.className = 'box-inner'; box.appendChild(inner);
+          
+          // Inner container
+          const inner = document.createElement('div');
+          inner.className = 'box-inner';
+          box.appendChild(inner);
+          
+          // Add tiles
           const ids = state.placements[box.dataset.box] || [];
           inner.classList.toggle('two', ids.length === 2);
-          ids.forEach(id => { if(state.tiles[id]) { const t = document.createElement('div'); t.className = 'tile-inbox'; t.textContent = state.tiles[id].text; wirePointer(t, id); inner.appendChild(t); fitText(t); } });
+          
+          if (ids.length > 0) {
+            box.classList.add('full');
+            
+            // Count for van totals
+            const vanPrefix = box.dataset.box.split('-')[0];
+            vanCounts[vanPrefix] += ids.length;
+          }
+          
+          ids.forEach(id => {
+            if (state.tiles[id]) {
+              const t = document.createElement('div');
+              t.className = 'tile-inbox';
+              t.textContent = state.tiles[id].text;
+              wirePointer(t, id);
+              inner.appendChild(t);
+              requestAnimationFrame(() => fitText(t));
+            }
+          });
         });
-        const placed = new Set(); Object.values(state.placements).forEach(a => a.forEach(id => placed.add(id)));
-        Object.keys(state.tiles).forEach(id => { if(!placed.has(id)) { const t = document.createElement('div'); t.className = 'tile'; t.textContent = state.tiles[id].text; wirePointer(t, id); tray.appendChild(t); fitText(t); } });
+        
+        // Update van counts
+        ['bv', 'sv', 'dv'].forEach(van => {
+          const countEl = document.getElementById(`${van}-count`);
+          if (countEl) {
+            const count = vanCounts[van];
+            countEl.textContent = `${count} dog${count !== 1 ? 's' : ''}`;
+            countEl.classList.toggle('has-dogs', count > 0);
+          }
+        });
+        
+        // Add unplaced tiles to tray
+        const placed = new Set();
+        Object.values(state.placements).forEach(a => a.forEach(id => placed.add(id)));
+        
+        Object.keys(state.tiles).forEach(id => {
+          if (!placed.has(id)) {
+            const t = document.createElement('div');
+            t.className = 'tile';
+            t.textContent = state.tiles[id].text;
+            wirePointer(t, id);
+            tray.appendChild(t);
+            requestAnimationFrame(() => fitText(t));
+          }
+        });
       }
 
-      function fitText(node, isExport = false){
-        if(!node.clientWidth) return;
-        let lo = 10, hi = isExport ? 160 : 100, best = 14;
-        while(lo <= hi){
-          let mid = Math.floor((lo+hi)/2); node.style.fontSize = mid+'px';
-          if(node.scrollWidth <= (node.clientWidth-6) && node.scrollHeight <= (node.clientHeight-6)){ best = mid; lo = mid+1; }
-          else hi = mid-1;
+      function fitText(node, isExport = false) {
+        if (!node.clientWidth || !node.clientHeight) return;
+        
+        const maxSize = isExport ? 160 : 100;
+        let lo = 10, hi = maxSize, best = 14;
+        
+        while (lo <= hi) {
+          const mid = Math.floor((lo + hi) / 2);
+          node.style.fontSize = mid + 'px';
+          
+          if (node.scrollWidth <= (node.clientWidth - 6) && node.scrollHeight <= (node.clientHeight - 4)) {
+            best = mid;
+            lo = mid + 1;
+          } else {
+            hi = mid - 1;
+          }
         }
-        node.style.fontSize = best+'px';
+        node.style.fontSize = best + 'px';
       }
 
-      document.getElementById('addTileBtn').onclick = () => { 
-        const t = input.value.trim(); if(!t) return; 
-        const id = 't_'+Date.now(); state.tiles[id] = {id, text:t}; 
-        input.value = ''; localSave(); hydrate(); 
+      // ==================== EVENT LISTENERS ====================
+      document.getElementById('addTileBtn').onclick = () => {
+        const text = input.value.trim();
+        if (!text) {
+          showToast('Please enter a dog name', 'warning');
+          input.focus();
+          return;
+        }
+        
+        saveUndoState();
+        const id = 't_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+        state.tiles[id] = { id, text };
+        input.value = '';
+        localSave();
+        hydrate();
+        showToast(`Added: ${text}`, 'success');
+        input.focus();
       };
-      input.addEventListener('keydown', (e) => { if (e.key === 'Enter') document.getElementById('addTileBtn').click(); });
+      
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          document.getElementById('addTileBtn').click();
+        }
+      });
+      
+      // Escape to cancel drag
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && activeClone) {
+          activeClone.remove();
+          activeClone = null;
+          document.querySelectorAll('[style*="opacity: 0.3"]').forEach(el => {
+            el.style.opacity = '1';
+          });
+          document.querySelectorAll('.drag-over').forEach(el => {
+            el.classList.remove('drag-over');
+          });
+          undoStack.pop(); // Remove the saved undo state
+          undoBtn.disabled = undoStack.length <= 1;
+        }
+      });
       
       shareBtn.onclick = cloudShare;
       fetchBtn.onclick = cloudFetch;
+      pdfBtn.onclick = exportPDF;
+      undoBtn.onclick = undo;
       
-      document.getElementById('clearBtn').onclick = () => { if(confirm("Clear local only?")) { state={tiles:{}, placements:{}, stops:{}}; localSave(); hydrate(); } };
-      document.querySelectorAll('.nav-tab').forEach(t => t.onclick = () => { document.querySelectorAll('.nav-tab').forEach(x => x.classList.remove('active')); t.classList.add('active'); loadPlan(t.dataset.plan); });
+      clearBtn.onclick = () => {
+        if (confirm("Clear all local data for this plan? This cannot be undone.")) {
+          state = { tiles: {}, placements: {}, stops: {} };
+          undoStack = [JSON.stringify(state)];
+          localSave();
+          hydrate();
+          showToast('Local data cleared', 'info');
+        }
+      };
       
+      // Tab navigation
+      document.querySelectorAll('.nav-tab').forEach(tab => {
+        tab.onclick = () => {
+          document.querySelectorAll('.nav-tab').forEach(x => x.classList.remove('active'));
+          tab.classList.add('active');
+          loadPlan(tab.dataset.plan);
+        };
+      });
+      
+      // ==================== INITIALISATION ====================
       loadPlan('AM');
+      
     })();
   </script>
 </body>
