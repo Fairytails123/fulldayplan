@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-  <title>Van Manager - V3</title>
+  <title>Van Manager - V4</title>
   <style>
     :root { 
       --line: #6d8fb0; 
@@ -13,6 +13,7 @@
       --success: #2f855a;
       --warning: #ed8936;
       --info: #3182ce;
+      --secondary: #9f7aea;
       --shadow: 0 2px 8px rgba(0,0,0,0.1);
       --radius: 10px;
     }
@@ -427,24 +428,55 @@
       background: #f0fff4;
     }
     
+    /* Stop Number Inputs */
     .stop-input { 
       position: absolute; 
       top: 4px; 
       left: 4px; 
       width: 40px; 
       height: 22px; 
-      border: 1px solid #cbd5e0; 
+      border: 2px solid #cbd5e0; 
       border-radius: 4px; 
       font-size: 12px; 
       text-align: center; 
       z-index: 5;
       font-weight: 600;
-      transition: border-color 0.2s;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      background: #fff;
     }
     
     .stop-input:focus {
       outline: none;
       border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(44, 82, 130, 0.2);
+    }
+    
+    /* Secondary stop input - top right, purple border */
+    .stop-input-secondary {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      left: auto;
+      width: 40px;
+      height: 22px;
+      border: 2px solid var(--secondary);
+      border-radius: 4px;
+      font-size: 12px;
+      text-align: center;
+      z-index: 5;
+      font-weight: 600;
+      transition: border-color 0.2s, box-shadow 0.2s, opacity 0.2s;
+      background: #faf5ff;
+    }
+    
+    .stop-input-secondary:focus {
+      outline: none;
+      border-color: #805ad5;
+      box-shadow: 0 0 0 2px rgba(159, 122, 234, 0.3);
+    }
+    
+    .stop-input-secondary::placeholder {
+      color: #b794f4;
     }
     
     .box-inner { 
@@ -587,6 +619,7 @@
       .topbar, .layout-card { padding: 12px; }
       .tile { min-width: 90px; min-height: 42px; }
       .box { min-height: 75px; }
+      .stop-input, .stop-input-secondary { width: 36px; height: 20px; font-size: 11px; }
     }
     
     /* Print Styles */
@@ -778,7 +811,7 @@
     (function(){
       // Configuration
       const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxUeIiIJQZZeoo3aXHDdqVZNNqFKLhWhi_WhPVb6GUIvkMlfNxTKsOXyCTGdvAEsMLC/exec';
-      const STORAGE_PREFIX = 'van_v4_';
+      const STORAGE_PREFIX = 'van_v5_';  // Updated version for new data structure
       const MAX_UNDO_STATES = 20;
       
       // Valid dog names from JotForm (for validation)
@@ -786,7 +819,7 @@
         "Aldo","Alfie","April","Argo","Arlo","Banjo","Barney Homewood","Barney Leeming","Baron","Bay","Beano","Bella","Belle","Benson","Betsy","Blue","Bluey","Bo","Bonnie Gallagher","Bonnie Lockwood","Bramble","Branko","Bruce","Bruno","Buddy Dann","Buddy Dargan","Buddy Selby","Casper Hamilton","Casper Kukreja","Che","Chester","Chloe","Clifford","Daisy Cremin","Daisy Parsons","Darcy Campbell","Darcy Dunn","Darwin","Delphine","Dexter","Dicee","Diego Gonsavles","Diego Wojcik","Dierdra","Digby","Dolly","Dottie","Dougie","Dudley","Dusty","Echo","Eddie","Effie","Enzo","Fenton","Ferox","Flaco","Fletcher","Florence","Freddie","Fredo","Frida Walsh","George Elliston","George Jackson","George Mohammed","Gina","Goldie","Haggis","Hattie Campbell","Hattie Duncan","Henry","Holly","Hugo","Incy","Ivy","Jack","Jeff","Jessie","Keti","Kip","Koji","Leo","Lily","Lola Bowles","Lola Fenloni","Lola Hall","Luke","Luna Crockford","Luna Grimshaw","Mac","Macy","Maggie","Margo","Marli","Marloe","Marlow","Martha","Max Tigwell","Merlin Crowley","Merlin Mayne","Miles","Miley","Millie Bowles","Millie Carter","Millie Cartwright","Millie Ellis","Milo McVey","Missy Evans","Mocha Gasper","Mocha Kolumbajew","Mochi","Moka","Mollie","Mos Wan","Moss Harris","Naira","Nala Sands","Nala Warnes","Narla Tester","Ned","Nevis","Nina","Obie","Oliver","Otis","Peggy Gibbons","Peggy Lucas","Pepper","Petch","Pippin","Pluto","Poppy Clark","Poppy Lancaster","Poppy Lass","Poppy Pike","Ralph Goddard","Raven","Reggie Daly","Reggie Foreman","Reggie Russel","Rex","Rita","River","Rocco","Roman","Roxy","Ruby Brooker","Ruby Favell","Ruby Jones","Rudy","Ruffles","Rufus","Rupy","Sam","Sebastian","Shadow Podkalicka","Shadow Wightman","Snoopy","Sonny","Sophie","Stanley James","Star","Storm","Tallulah","Tam","Tasha","Ted Lambie","Teddy Brown","Teddy Jamison","Terry","Tilly Mills","Tokyo","Warwick","Winnie Awele","Winnie Evans","Winnie Hall","Winnie Lancaster","Winnie Ryan","Woody Johns","Woody Warren","Zero","Ziggy"
       ];
       
-      // Alias map for common abbreviations (add your shortcuts here)
+      // Alias map for common abbreviations
       const DOG_ALIASES = {
         "millie ct": "Millie Cartwright",
         "millie ca": "Millie Carter",
@@ -869,14 +902,16 @@
       const statusDot = document.getElementById('statusDot');
       const onlineStatus = document.getElementById('onlineStatus');
       
-      // State
+      // State - Updated structure for dual stop numbers
       let currentPlan = 'PM';
       let state = { tiles: {}, placements: {}, stops: {}, departures: {} };
+      // stops structure: { 'bv-c1': { primary: '5', secondary: '3' }, ... }
+      
       let undoStack = [];
       let activeClone = null;
       let dragId = null;
       let startX, startY;
-      let transmitComplete = false; // Track if transmission was successful
+      let transmitComplete = false;
 
       // ==================== TOAST NOTIFICATIONS ====================
       function showToast(message, type = 'info') {
@@ -904,7 +939,7 @@
       window.addEventListener('offline', updateOnlineStatus);
       updateOnlineStatus();
 
-      // ==================== UNDO FUNCTIONALITY (internal use) ====================
+      // ==================== UNDO FUNCTIONALITY ====================
       function saveUndoState() {
         undoStack.push(JSON.stringify(state));
         if (undoStack.length > MAX_UNDO_STATES) {
@@ -920,47 +955,57 @@
           showToast('Storage full! Please clear some data.', 'error');
         }
       }
+      
+      // Helper to get stop number object (handles migration from old string format)
+      function getStopObj(boxId) {
+        const stop = state.stops[boxId];
+        if (!stop) return { primary: '', secondary: '' };
+        if (typeof stop === 'string') {
+          // Migrate old string format to new object format
+          return { primary: stop, secondary: '' };
+        }
+        return stop;
+      }
+      
+      // Helper to set stop number
+      function setStopValue(boxId, type, value) {
+        if (!state.stops[boxId] || typeof state.stops[boxId] === 'string') {
+          const oldValue = typeof state.stops[boxId] === 'string' ? state.stops[boxId] : '';
+          state.stops[boxId] = { primary: oldValue, secondary: '' };
+        }
+        state.stops[boxId][type] = value;
+        localSave();
+      }
 
       // ==================== TRANSMIT PLAN ====================
       function findMatchingDogName(inputName) {
-        // Normalise the input name - lowercase, trim, and collapse multiple spaces
         const normalised = inputName.trim().toLowerCase().replace(/\s+/g, ' ');
-        // Also create a version with no spaces for matching
         const noSpaces = normalised.replace(/\s/g, '');
         
-        // FIRST: Check alias map for common abbreviations
-        if (DOG_ALIASES[normalised]) {
-          return DOG_ALIASES[normalised];
-        }
+        if (DOG_ALIASES[normalised]) return DOG_ALIASES[normalised];
         
-        // Also check aliases without spaces
         const aliasMatch = Object.keys(DOG_ALIASES).find(alias => 
           alias.replace(/\s/g, '') === noSpaces
         );
         if (aliasMatch) return DOG_ALIASES[aliasMatch];
         
-        // Try exact match (case-insensitive)
         const exactMatch = VALID_DOG_NAMES.find(name => 
           name.toLowerCase().replace(/\s+/g, ' ') === normalised
         );
         if (exactMatch) return exactMatch;
         
-        // Try matching with spaces removed (e.g., "BuddyS" matches "Buddy Selby")
         const noSpaceMatch = VALID_DOG_NAMES.find(name => 
           name.toLowerCase().replace(/\s/g, '') === noSpaces
         );
         if (noSpaceMatch) return noSpaceMatch;
         
-        // Try partial match where input starts the valid name (e.g., "Millie Ct" matches "Millie Cartwright")
         const startsWithMatch = VALID_DOG_NAMES.find(name => {
           const nameLower = name.toLowerCase().replace(/\s+/g, ' ');
           const nameNoSpaces = name.toLowerCase().replace(/\s/g, '');
-          // Check if valid name starts with input (with or without spaces)
           return nameLower.startsWith(normalised) || nameNoSpaces.startsWith(noSpaces);
         });
         if (startsWithMatch) return startsWithMatch;
         
-        // Try matching first name + start of surname (e.g., "Millie Ct" -> "Millie C" matches "Millie Cartwright")
         const parts = normalised.split(' ');
         if (parts.length >= 2) {
           const firstName = parts[0];
@@ -976,14 +1021,13 @@
           if (partialSurnameMatch) return partialSurnameMatch;
         }
         
-        // Try partial match (input contains valid name or vice versa)
         const partialMatch = VALID_DOG_NAMES.find(name => {
           const nameLower = name.toLowerCase().replace(/\s+/g, ' ');
           return nameLower.includes(normalised) || normalised.includes(nameLower);
         });
         if (partialMatch) return partialMatch;
         
-        return null; // No match found
+        return null;
       }
       
       function collectTransmitData() {
@@ -996,23 +1040,35 @@
         
         // Iterate through all placements
         Object.entries(state.placements).forEach(([boxId, tileIds]) => {
-          const stopNumber = state.stops[boxId];
+          const stopObj = getStopObj(boxId);
+          const primaryStop = stopObj.primary;
+          const secondaryStop = stopObj.secondary;
           
-          // Only process boxes with stop numbers assigned
-          if (!stopNumber || stopNumber.trim() === '') return;
+          // Skip if no primary stop number assigned
+          if (!primaryStop || primaryStop.trim() === '') return;
           
-          // Get van prefix from box ID (e.g., "bv-c1" -> "bv")
           const vanPrefix = boxId.split('-')[0];
           const vanName = VAN_MAP[vanPrefix];
           const departureTime = departures[vanPrefix];
           
           // Process each dog in the box
-          tileIds.forEach(tileId => {
+          tileIds.forEach((tileId, index) => {
             const tile = state.tiles[tileId];
             if (!tile) return;
             
             const dogName = tile.text;
             const matchedName = findMatchingDogName(dogName);
+            
+            // Determine stop number:
+            // - First dog (index 0, top) uses primary stop
+            // - Second dog (index 1, bottom) uses secondary if filled, else primary
+            let stopNumber;
+            if (index === 0) {
+              stopNumber = primaryStop;
+            } else {
+              // Second dog: use secondary if filled, otherwise use primary (same house)
+              stopNumber = (secondaryStop && secondaryStop.trim() !== '') ? secondaryStop : primaryStop;
+            }
             
             dogs.push({
               inputName: dogName,
@@ -1049,38 +1105,34 @@
           return;
         }
         
-        // Get departure times
         const departures = {
           bv: document.getElementById('bv-departure').value,
           sv: document.getElementById('sv-departure').value,
           dv: document.getElementById('dv-departure').value
         };
         
-        // Confirm before transmitting
         const planLabel = currentPlan === 'NEXT_AM' ? 'Next Day AM' : 'PM';
         const confirmMsg = `Send ${validDogs.length} dogs (${planLabel}) to queue?` + 
           (invalidDogs.length > 0 ? `\n\n⚠️ ${invalidDogs.length} dogs will be skipped (not in list):\n${invalidDogs.map(d => d.inputName).join(', ')}` : '');
         
         if (!confirm(confirmMsg)) return;
         
-        // Update button state
         transmitBtn.disabled = true;
         transmitBtn.classList.add('transmitting');
         transmitBtn.textContent = '🔄 Transmitting...';
         
         try {
-          // Send to Google Apps Script with planType and status
           const response = await fetch(SCRIPT_URL, {
             method: 'POST',
             body: JSON.stringify({
               action: 'transmitPlan',
-              planType: currentPlan,  // 'PM' or 'NEXT_AM'
+              planType: currentPlan,
               dogs: validDogs.map(d => ({
                 dogName: d.matchedName,
                 stopNumber: d.stopNumber,
                 van: d.van,
                 departureTime: d.departureTime,
-                status: 'pending'  // NEW: status field for n8n queue
+                status: 'pending'
               })),
               departures: departures,
               timestamp: new Date().toISOString()
@@ -1095,12 +1147,10 @@
           try {
             result = JSON.parse(resultText);
           } catch (e) {
-            // If response is not JSON, treat as success if no error
             result = { success: true };
           }
           
           if (result.success !== false) {
-            // Mark transmission as complete
             transmitComplete = true;
             transmitBtn.classList.remove('transmitting');
             transmitBtn.classList.add('success');
@@ -1112,7 +1162,6 @@
             }
             showToast(successMsg, 'success');
             
-            // Log skipped dogs
             if (invalidDogs.length > 0) {
               console.log('Skipped dogs (not in JotForm list):', invalidDogs.map(d => d.inputName));
             }
@@ -1146,6 +1195,8 @@
           if (cloud && cloud.state && cloud.state !== "{}") {
             saveUndoState();
             state = JSON.parse(cloud.state);
+            // Migrate old stops format if needed
+            migrateStopsFormat();
             syncTimeEl.textContent = `Cloud: ${cloud.time}`;
             localSave();
             hydrate();
@@ -1182,6 +1233,17 @@
           shareBtn.textContent = "☁️ Share";
         }
       }
+      
+      // Migrate old string stops to new object format
+      function migrateStopsFormat() {
+        if (state.stops) {
+          Object.keys(state.stops).forEach(boxId => {
+            if (typeof state.stops[boxId] === 'string') {
+              state.stops[boxId] = { primary: state.stops[boxId], secondary: '' };
+            }
+          });
+        }
+      }
 
       // ==================== PLAN MANAGEMENT ====================
       function loadPlan(p) {
@@ -1189,19 +1251,20 @@
         document.getElementById('currentLabel').textContent = p.replace('_', ' ') + ' Plan';
         const raw = localStorage.getItem(STORAGE_PREFIX + p);
         state = raw ? JSON.parse(raw) : { tiles: {}, placements: {}, stops: {}, departures: {} };
+        
+        // Migrate old stops format
+        migrateStopsFormat();
+        
         undoStack = [JSON.stringify(state)];
         
-        // Toggle NEXT_AM mode for departure selectors
         const isNextAM = p === 'NEXT_AM';
         document.body.classList.toggle('next-am-mode', isNextAM);
         
-        // Reset transmit button state when loading any plan
         transmitComplete = false;
         transmitBtn.disabled = false;
         transmitBtn.classList.remove('success', 'transmitting');
         transmitBtn.textContent = '🚀 Transmit Plan';
         
-        // Load saved departure times if available
         if (state.departures) {
           if (state.departures.bv) document.getElementById('bv-departure').value = state.departures.bv;
           if (state.departures.sv) document.getElementById('sv-departure').value = state.departures.sv;
@@ -1211,7 +1274,6 @@
         hydrate();
       }
       
-      // Save departure times when changed
       document.querySelectorAll('.departure-selector select').forEach(select => {
         select.addEventListener('change', () => {
           if (currentPlan === 'NEXT_AM') {
@@ -1228,7 +1290,7 @@
       // ==================== DRAG & DROP ====================
       function wirePointer(el, tid) {
         el.onpointerdown = (e) => {
-          if (e.button !== 0) return; // Only left click
+          if (e.button !== 0) return;
           startX = e.clientX;
           startY = e.clientY;
           dragId = tid;
@@ -1246,7 +1308,6 @@
                 document.body.appendChild(activeClone);
                 el.style.opacity = '0.3';
                 
-                // Add drag-over listeners
                 document.querySelectorAll('.box').forEach(box => {
                   box.addEventListener('pointerenter', handleDragEnter);
                   box.addEventListener('pointerleave', handleDragLeave);
@@ -1267,7 +1328,6 @@
             el.onpointerup = null;
             el.style.opacity = '1';
             
-            // Remove drag-over listeners
             document.querySelectorAll('.box, #bin, #tray').forEach(elem => {
               elem.removeEventListener('pointerenter', handleDragEnter);
               elem.removeEventListener('pointerleave', handleDragLeave);
@@ -1279,7 +1339,6 @@
               const box = target?.closest('.box');
               const bin = target?.closest('#bin');
               
-              // Remove from all placements first
               Object.keys(state.placements).forEach(k => {
                 state.placements[k] = state.placements[k].filter(id => id !== dragId);
               });
@@ -1296,7 +1355,6 @@
                   showToast('Box is full (max 2 dogs)', 'warning');
                 }
               }
-              // If dropped on tray or elsewhere, tile stays in tray
               
               activeClone.remove();
               activeClone = null;
@@ -1306,7 +1364,6 @@
           };
         };
         
-        // Double-click to edit
         el.ondblclick = () => {
           const currentText = state.tiles[tid].text;
           const newText = prompt("Edit dog name:", currentText);
@@ -1335,47 +1392,59 @@
         const vanCounts = { bv: 0, sv: 0, dv: 0 };
         
         document.querySelectorAll('.box').forEach(box => {
-          // Check if box should have wheel arch before clearing
           const hasWheelArch = box.classList.contains('has-wheel-arch');
-          const wheelArchClass = box.dataset.box; // sv-b4 or sv-b5
+          const wheelArchClass = box.dataset.box;
+          const boxId = box.dataset.box;
           
           box.innerHTML = '';
           box.classList.remove('full');
           
-          // Re-add wheel arch if needed
           if (hasWheelArch) {
             const arch = document.createElement('div');
             arch.className = 'wheel-arch ' + (wheelArchClass === 'sv-b4' ? 'right' : 'left');
             box.appendChild(arch);
           }
           
-          // Stop input
-          const stop = document.createElement('input');
-          stop.className = 'stop-input';
-          stop.type = 'text';
-          stop.maxLength = 3;
-          stop.placeholder = '#';
-          stop.value = state.stops[box.dataset.box] || '';
-          stop.oninput = () => {
-            state.stops[box.dataset.box] = stop.value;
-            localSave();
+          const stopObj = getStopObj(boxId);
+          const ids = state.placements[boxId] || [];
+          
+          // Primary stop input (top left) - always visible
+          const stopPrimary = document.createElement('input');
+          stopPrimary.className = 'stop-input';
+          stopPrimary.type = 'text';
+          stopPrimary.maxLength = 3;
+          stopPrimary.placeholder = '#';
+          stopPrimary.value = stopObj.primary || '';
+          stopPrimary.oninput = () => {
+            setStopValue(boxId, 'primary', stopPrimary.value);
           };
-          box.appendChild(stop);
+          box.appendChild(stopPrimary);
+          
+          // Secondary stop input (top right) - only show when 2 dogs in kennel
+          if (ids.length === 2) {
+            const stopSecondary = document.createElement('input');
+            stopSecondary.className = 'stop-input-secondary';
+            stopSecondary.type = 'text';
+            stopSecondary.maxLength = 3;
+            stopSecondary.placeholder = '#2';
+            stopSecondary.value = stopObj.secondary || '';
+            stopSecondary.title = 'Stop number for second dog (leave empty if same as first)';
+            stopSecondary.oninput = () => {
+              setStopValue(boxId, 'secondary', stopSecondary.value);
+            };
+            box.appendChild(stopSecondary);
+          }
           
           // Inner container
           const inner = document.createElement('div');
           inner.className = 'box-inner';
           box.appendChild(inner);
           
-          // Add tiles
-          const ids = state.placements[box.dataset.box] || [];
           inner.classList.toggle('two', ids.length === 2);
           
           if (ids.length > 0) {
             box.classList.add('full');
-            
-            // Count for van totals
-            const vanPrefix = box.dataset.box.split('-')[0];
+            const vanPrefix = boxId.split('-')[0];
             vanCounts[vanPrefix] += ids.length;
           }
           
@@ -1391,7 +1460,6 @@
           });
         });
         
-        // Update van counts
         ['bv', 'sv', 'dv'].forEach(van => {
           const countEl = document.getElementById(`${van}-count`);
           if (countEl) {
@@ -1401,7 +1469,6 @@
           }
         });
         
-        // Add unplaced tiles to tray
         const placed = new Set();
         Object.values(state.placements).forEach(a => a.forEach(id => placed.add(id)));
         
@@ -1462,7 +1529,6 @@
         }
       });
       
-      // Escape to cancel drag
       document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && activeClone) {
           activeClone.remove();
@@ -1473,7 +1539,7 @@
           document.querySelectorAll('.drag-over').forEach(el => {
             el.classList.remove('drag-over');
           });
-          undoStack.pop(); // Remove the saved undo state
+          undoStack.pop();
         }
       });
       
@@ -1488,7 +1554,6 @@
           localSave();
           hydrate();
           
-          // Reset transmit button
           transmitComplete = false;
           transmitBtn.disabled = false;
           transmitBtn.classList.remove('success', 'transmitting');
@@ -1498,7 +1563,6 @@
         }
       };
       
-      // Tab navigation
       document.querySelectorAll('.nav-tab').forEach(tab => {
         tab.onclick = () => {
           document.querySelectorAll('.nav-tab').forEach(x => x.classList.remove('active'));
