@@ -404,19 +404,20 @@
       background: #fff; 
       display: grid;
       border-radius: 6px;
-      overflow: hidden;
+      overflow: visible;
     }
     
     .box { 
       border: 2px solid var(--line); 
-      min-height: 90px; 
+      min-height: 105px; 
       position: relative; 
       display: flex; 
       align-items: center; 
       justify-content: center; 
-      padding: 26px 4px 4px 4px;
+      padding: 40px 4px 4px 4px;
       background: #fff;
       transition: all 0.2s;
+      overflow: visible;
     }
     
     .box.drag-over {
@@ -431,19 +432,30 @@
     /* Stop Number Inputs */
     .stop-input { 
       position: absolute; 
-      top: 4px; 
-      left: 4px; 
-      width: 38px;
-      height: 26px; 
+      top: 3px; 
+      left: 3px; 
+      width: 50px;
+      height: 30px; 
       border: 2px solid #cbd5e0; 
-      border-radius: 4px; 
-      font-size: 15px; 
+      border-radius: 5px; 
+      font-size: 18px; 
       text-align: center; 
       z-index: 5;
       font-weight: 700;
-      transition: border-color 0.2s, box-shadow 0.2s;
       background: #fff;
-      padding: 0;
+      color: #2d3748;
+      /* Complete reset */
+      -webkit-appearance: none;
+      -moz-appearance: none;
+      appearance: none;
+      box-sizing: border-box;
+      padding: 2px 4px;
+      margin: 0;
+      line-height: 1;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+      overflow: visible;
+      text-overflow: clip;
+      white-space: nowrap;
     }
     
     .stop-input:focus {
@@ -455,20 +467,31 @@
     /* Secondary stop input - top right, purple border */
     .stop-input-secondary {
       position: absolute;
-      top: 4px;
-      right: 4px;
+      top: 3px;
+      right: 3px;
       left: auto;
-      width: 38px;
-      height: 26px;
+      width: 50px;
+      height: 30px;
       border: 2px solid var(--secondary);
-      border-radius: 4px;
-      font-size: 15px;
+      border-radius: 5px;
+      font-size: 18px;
       text-align: center;
       z-index: 5;
       font-weight: 700;
-      transition: border-color 0.2s, box-shadow 0.2s;
       background: #faf5ff;
-      padding: 0;
+      color: #553c9a;
+      /* Complete reset */
+      -webkit-appearance: none;
+      -moz-appearance: none;
+      appearance: none;
+      box-sizing: border-box;
+      padding: 2px 4px;
+      margin: 0;
+      line-height: 1;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+      overflow: visible;
+      text-overflow: clip;
+      white-space: nowrap;
     }
     
     .stop-input-secondary:focus {
@@ -604,7 +627,7 @@
       background: var(--danger);
     }
     
-    /* Responsive */
+    /* Responsive - Tablet */
     @media (max-width: 900px) { 
       .two-cols { grid-template-columns: 1fr; }
       .controls { flex-direction: column; align-items: stretch; }
@@ -614,14 +637,207 @@
       .card-title { flex-direction: column; align-items: flex-start; }
     }
     
-    @media (max-width: 500px) {
-      .plan-nav { padding: 8px 10px 0; gap: 4px; overflow-x: auto; }
-      .nav-tab { padding: 10px 16px; font-size: 13px; flex-shrink: 0; }
-      .page { padding: 10px; }
-      .topbar, .layout-card { padding: 12px; }
-      .tile { min-width: 90px; min-height: 42px; }
-      .box { min-height: 75px; }
-      .stop-input, .stop-input-secondary { width: 34px; height: 24px; font-size: 14px; }
+    /* Responsive - Mobile */
+    @media (max-width: 600px) {
+      .plan-nav { 
+        padding: 8px 12px 0; 
+        gap: 6px; 
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+      }
+      
+      .nav-tab { 
+        padding: 14px 20px; 
+        font-size: 15px; 
+        flex-shrink: 0;
+        min-height: 48px;
+      }
+      
+      .page { padding: 12px; gap: 12px; }
+      
+      .topbar, .layout-card { padding: 14px; }
+      
+      /* Larger touch-friendly input */
+      input[type="text"] {
+        padding: 14px 16px;
+        font-size: 18px;
+        min-height: 50px;
+      }
+      
+      /* Larger buttons for touch */
+      button {
+        padding: 14px 20px;
+        font-size: 15px;
+        min-height: 48px;
+      }
+      
+      .btn-group { gap: 10px; }
+      .btn-group button { 
+        min-width: calc(50% - 5px);
+        padding: 12px 16px;
+      }
+      
+      .btn-transmit {
+        width: 100%;
+        padding: 16px 24px;
+        font-size: 17px;
+        min-height: 54px;
+      }
+      
+      /* Larger tray for easier dragging */
+      .tray-area { min-height: 120px; }
+      .tiles-tray { 
+        min-height: 110px; 
+        padding: 14px;
+        gap: 12px;
+      }
+      
+      /* Larger tiles for touch */
+      .tile { 
+        min-width: 100px; 
+        min-height: 54px; 
+        padding: 10px 12px;
+        font-size: 15px;
+      }
+      
+      /* Larger bin for easier drop target */
+      #bin { 
+        width: 90px; 
+        font-size: 36px;
+      }
+      
+      /* Larger kennels on mobile */
+      .box { 
+        min-height: 100px; 
+        padding-top: 42px; 
+      }
+      
+      .tile-inbox {
+        min-height: 38px;
+        padding: 6px 8px;
+        font-size: 14px;
+      }
+      
+      .box-inner.two .tile-inbox {
+        min-height: 32px;
+        font-size: 13px;
+      }
+      
+      /* Larger stop inputs for touch */
+      .stop-input, .stop-input-secondary { 
+        width: 48px; 
+        height: 32px; 
+        font-size: 17px;
+        border-radius: 6px;
+      }
+      
+      /* Van section spacing */
+      .van-section {
+        margin-bottom: 20px;
+        padding-bottom: 20px;
+      }
+      
+      .card-title {
+        font-size: 17px;
+        gap: 12px;
+      }
+      
+      .dog-count {
+        font-size: 13px;
+        padding: 6px 12px;
+      }
+      
+      /* Departure selector */
+      .departure-selector {
+        padding: 8px 14px;
+        width: 100%;
+        justify-content: space-between;
+      }
+      
+      .departure-selector select {
+        padding: 10px 14px;
+        font-size: 15px;
+        min-height: 44px;
+      }
+      
+      /* Dispatch Van - stack columns on mobile */
+      .van-section[data-van="dv"] > div {
+        grid-template-columns: 1fr !important;
+        gap: 12px !important;
+      }
+      
+      .van-section[data-van="dv"] .kennel-grid {
+        width: 100%;
+      }
+      
+      /* Make DV extra large box normal height on mobile */
+      .van-section[data-van="dv"] .box[data-box="dv-m-xl"] {
+        min-height: 100px !important;
+      }
+      
+      /* Status bar */
+      .status-bar {
+        flex-direction: column;
+        gap: 8px;
+        align-items: flex-start;
+        padding-top: 12px;
+        margin-top: 12px;
+      }
+    }
+    
+    /* Responsive - Small phones */
+    @media (max-width: 400px) {
+      .plan-nav { padding: 6px 8px 0; }
+      .nav-tab { padding: 12px 16px; font-size: 14px; }
+      .page { padding: 8px; }
+      .topbar, .layout-card { padding: 10px; }
+      
+      .tile { min-width: 85px; min-height: 48px; }
+      .box { min-height: 90px; }
+      
+      .stop-input, .stop-input-secondary { 
+        width: 44px; 
+        height: 30px; 
+        font-size: 16px;
+      }
+      
+      .btn-group button {
+        min-width: 100%;
+      }
+    }
+    
+    /* Touch device optimisations */
+    @media (pointer: coarse) {
+      /* Larger touch targets */
+      .stop-input, .stop-input-secondary {
+        min-width: 48px;
+        min-height: 32px;
+      }
+      
+      .tile, .tile-inbox {
+        cursor: pointer;
+      }
+      
+      /* Prevent text selection while dragging */
+      .tile, .tile-inbox, .box {
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      
+      /* Visual feedback for touch */
+      .tile:active, .tile-inbox:active {
+        transform: scale(0.98);
+        opacity: 0.9;
+      }
+      
+      button:active {
+        transform: scale(0.98);
+      }
+      
+      /* Larger tap areas */
+      .nav-tab {
+        min-height: 48px;
+      }
     }
     
     /* Print Styles */
@@ -789,10 +1005,12 @@
         </div>
         <div style="display:grid; grid-template-columns: 1fr 2.2fr 1fr; gap:15px;">
           <div class="kennel-grid">
+            <div style="text-align:center; font-size:10px; color:#718096; padding:4px 0; border-bottom:1px solid #e2e8f0;">Passenger</div>
             <div class="box" data-box="dv-l1"></div>
             <div class="box" data-box="dv-l2"></div>
           </div>
           <div class="kennel-grid">
+            <div style="text-align:center; font-size:10px; color:#718096; padding:4px 0; border-bottom:1px solid #e2e8f0;">Rear</div>
             <div style="display:grid; grid-template-columns: repeat(3,1fr)">
               <div class="box" data-box="dv-m1"></div>
               <div class="box" data-box="dv-m2"></div>
@@ -801,6 +1019,7 @@
             <div class="box" data-box="dv-m-xl" style="min-height:120px"></div>
           </div>
           <div class="kennel-grid">
+            <div style="text-align:center; font-size:10px; color:#718096; padding:4px 0; border-bottom:1px solid #e2e8f0;">Driver</div>
             <div class="box" data-box="dv-r1"></div>
             <div class="box" data-box="dv-r2"></div>
           </div>
@@ -1290,6 +1509,8 @@
       });
 
       // ==================== DRAG & DROP ====================
+      let isDragging = false;
+      
       function wirePointer(el, tid) {
         el.onpointerdown = (e) => {
           if (e.button !== 0) return;
@@ -1302,11 +1523,16 @@
             const dist = Math.abs(m.clientX - startX) + Math.abs(m.clientY - startY);
             if (dist > 10) {
               if (!activeClone) {
+                isDragging = true;
+                // Prevent scrolling while dragging on touch devices
+                document.body.style.overflow = 'hidden';
+                document.body.style.touchAction = 'none';
+                
                 saveUndoState();
                 activeClone = el.cloneNode(true);
                 activeClone.classList.add('is-dragging');
-                activeClone.style.width = el.offsetWidth + 'px';
-                activeClone.style.height = el.offsetHeight + 'px';
+                activeClone.style.width = Math.max(el.offsetWidth, 100) + 'px';
+                activeClone.style.height = Math.max(el.offsetHeight, 48) + 'px';
                 document.body.appendChild(activeClone);
                 el.style.opacity = '0.3';
                 
@@ -1319,8 +1545,8 @@
                 tray.addEventListener('pointerenter', handleDragEnter);
                 tray.addEventListener('pointerleave', handleDragLeave);
               }
-              activeClone.style.left = (m.clientX - 55) + 'px';
-              activeClone.style.top = (m.clientY - 22) + 'px';
+              activeClone.style.left = (m.clientX - 50) + 'px';
+              activeClone.style.top = (m.clientY - 24) + 'px';
             }
           };
 
@@ -1329,6 +1555,11 @@
             el.onpointermove = null;
             el.onpointerup = null;
             el.style.opacity = '1';
+            
+            // Re-enable scrolling
+            document.body.style.overflow = '';
+            document.body.style.touchAction = '';
+            isDragging = false;
             
             document.querySelectorAll('.box, #bin, #tray').forEach(elem => {
               elem.removeEventListener('pointerenter', handleDragEnter);
@@ -1363,6 +1594,21 @@
               localSave();
               hydrate();
             }
+          };
+          
+          // Handle pointer cancel (e.g., incoming call on mobile)
+          el.onpointercancel = () => {
+            el.style.opacity = '1';
+            document.body.style.overflow = '';
+            document.body.style.touchAction = '';
+            isDragging = false;
+            if (activeClone) {
+              activeClone.remove();
+              activeClone = null;
+            }
+            document.querySelectorAll('.drag-over').forEach(elem => {
+              elem.classList.remove('drag-over');
+            });
           };
         };
         
