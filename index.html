@@ -639,6 +639,12 @@
     
     /* Responsive - Mobile */
     @media (max-width: 600px) {
+      /* Fix centering - prevent overflow */
+      html, body {
+        overflow-x: hidden;
+        width: 100%;
+      }
+      
       .plan-nav { 
         padding: 8px 12px 0; 
         gap: 6px; 
@@ -647,117 +653,122 @@
       }
       
       .nav-tab { 
-        padding: 14px 20px; 
-        font-size: 15px; 
+        padding: 12px 18px; 
+        font-size: 14px; 
         flex-shrink: 0;
-        min-height: 48px;
       }
       
-      .page { padding: 12px; gap: 12px; }
+      .page { 
+        padding: 10px; 
+        gap: 10px;
+        max-width: 100%;
+        box-sizing: border-box;
+      }
       
-      .topbar, .layout-card { padding: 14px; }
+      .topbar, .layout-card { 
+        padding: 12px;
+        max-width: 100%;
+        box-sizing: border-box;
+      }
       
-      /* Larger touch-friendly input */
+      /* Input stays reasonable */
       input[type="text"] {
-        padding: 14px 16px;
-        font-size: 18px;
-        min-height: 50px;
+        padding: 12px 14px;
+        font-size: 16px;
       }
       
-      /* Larger buttons for touch */
-      button {
-        padding: 14px 20px;
-        font-size: 15px;
-        min-height: 48px;
+      /* Smaller buttons - 2 per row */
+      .btn-group { 
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        width: 100%;
       }
       
-      .btn-group { gap: 10px; }
       .btn-group button { 
-        min-width: calc(50% - 5px);
-        padding: 12px 16px;
+        padding: 10px 12px;
+        font-size: 13px;
+        min-height: 42px;
+        width: 100%;
       }
       
       .btn-transmit {
-        width: 100%;
-        padding: 16px 24px;
-        font-size: 17px;
-        min-height: 54px;
-      }
-      
-      /* Larger tray for easier dragging */
-      .tray-area { min-height: 120px; }
-      .tiles-tray { 
-        min-height: 110px; 
-        padding: 14px;
-        gap: 12px;
-      }
-      
-      /* Larger tiles for touch */
-      .tile { 
-        min-width: 100px; 
-        min-height: 54px; 
-        padding: 10px 12px;
+        grid-column: 1 / -1;
+        padding: 12px 20px;
         font-size: 15px;
+        min-height: 46px;
       }
       
-      /* Larger bin for easier drop target */
-      #bin { 
-        width: 90px; 
-        font-size: 36px;
+      /* Tray */
+      .tray-area { min-height: 100px; }
+      .tiles-tray { 
+        min-height: 90px; 
+        padding: 10px;
+        gap: 10px;
       }
       
-      /* Larger kennels on mobile */
-      .box { 
-        min-height: 100px; 
-        padding-top: 42px; 
-      }
-      
-      .tile-inbox {
-        min-height: 38px;
-        padding: 6px 8px;
+      /* Tiles */
+      .tile { 
+        min-width: 90px; 
+        min-height: 46px; 
+        padding: 8px 10px;
         font-size: 14px;
       }
       
-      .box-inner.two .tile-inbox {
-        min-height: 32px;
+      #bin { 
+        width: 70px; 
+        font-size: 32px;
+      }
+      
+      /* Kennels */
+      .box { 
+        min-height: 95px; 
+        padding-top: 38px; 
+      }
+      
+      .tile-inbox {
+        min-height: 34px;
+        padding: 5px 6px;
         font-size: 13px;
       }
       
-      /* Larger stop inputs for touch */
+      .box-inner.two .tile-inbox {
+        min-height: 28px;
+        font-size: 12px;
+      }
+      
+      /* Stop inputs - KEEP LARGE to prevent clipping */
       .stop-input, .stop-input-secondary { 
-        width: 48px; 
-        height: 32px; 
-        font-size: 17px;
-        border-radius: 6px;
+        width: 50px !important; 
+        height: 30px !important; 
+        font-size: 18px !important;
+        padding: 2px 4px !important;
       }
       
       /* Van section spacing */
       .van-section {
-        margin-bottom: 20px;
-        padding-bottom: 20px;
+        margin-bottom: 16px;
+        padding-bottom: 16px;
       }
       
       .card-title {
-        font-size: 17px;
-        gap: 12px;
+        font-size: 15px;
+        gap: 10px;
       }
       
       .dog-count {
-        font-size: 13px;
-        padding: 6px 12px;
+        font-size: 12px;
+        padding: 4px 10px;
       }
       
       /* Departure selector */
       .departure-selector {
-        padding: 8px 14px;
-        width: 100%;
-        justify-content: space-between;
+        padding: 6px 10px;
       }
       
       .departure-selector select {
-        padding: 10px 14px;
-        font-size: 15px;
-        min-height: 44px;
+        padding: 8px 10px;
+        font-size: 14px;
       }
       
       /* Dispatch Van - stack columns on mobile */
@@ -772,48 +783,49 @@
       
       /* Make DV extra large box normal height on mobile */
       .van-section[data-van="dv"] .box[data-box="dv-m-xl"] {
-        min-height: 100px !important;
+        min-height: 95px !important;
       }
       
       /* Status bar */
       .status-bar {
         flex-direction: column;
-        gap: 8px;
+        gap: 6px;
         align-items: flex-start;
-        padding-top: 12px;
-        margin-top: 12px;
+        padding-top: 10px;
+        margin-top: 10px;
+        font-size: 11px;
+      }
+      
+      /* Kennel grid - prevent overflow */
+      .kennel-grid {
+        max-width: 100%;
+      }
+      
+      .two-cols {
+        gap: 12px;
       }
     }
     
     /* Responsive - Small phones */
     @media (max-width: 400px) {
       .plan-nav { padding: 6px 8px 0; }
-      .nav-tab { padding: 12px 16px; font-size: 14px; }
+      .nav-tab { padding: 10px 14px; font-size: 13px; }
       .page { padding: 8px; }
       .topbar, .layout-card { padding: 10px; }
       
-      .tile { min-width: 85px; min-height: 48px; }
-      .box { min-height: 90px; }
+      .tile { min-width: 80px; min-height: 42px; }
+      .box { min-height: 90px; padding-top: 36px; }
       
+      /* Stop inputs - still keep readable */
       .stop-input, .stop-input-secondary { 
-        width: 44px; 
-        height: 30px; 
-        font-size: 16px;
-      }
-      
-      .btn-group button {
-        min-width: 100%;
+        width: 46px !important; 
+        height: 28px !important; 
+        font-size: 16px !important;
       }
     }
     
     /* Touch device optimisations */
     @media (pointer: coarse) {
-      /* Larger touch targets */
-      .stop-input, .stop-input-secondary {
-        min-width: 48px;
-        min-height: 32px;
-      }
-      
       .tile, .tile-inbox {
         cursor: pointer;
       }
@@ -832,11 +844,6 @@
       
       button:active {
         transform: scale(0.98);
-      }
-      
-      /* Larger tap areas */
-      .nav-tab {
-        min-height: 48px;
       }
     }
     
