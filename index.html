@@ -30,9 +30,10 @@
       -webkit-overflow-scrolling: touch;
     }
     
-    /* Body lock during drag - NO position:fixed (causes visual jump on Android) */
+    /* Body lock during drag - NO position:fixed (causes visual jump) */
     body.is-dragging {
       overflow: hidden !important;
+      touch-action: none !important;
     }
     
     /* Navigation Tabs */
@@ -275,19 +276,16 @@
       content: "";
     }
     
-    /* Tiles */
-    /* ANDROID FIX: touch-action: none is REQUIRED for drag to work on Android */
-    /* Without this, Android Chrome takes over touch handling and blocks drag */
+    /* Tiles - touch-action: auto allows scrolling when touching tile */
     .tile, .tile-inbox { 
       background: #fff; 
       border-radius: 6px; 
       display: flex; 
       align-items: center; 
-      justify-content: center; 
       text-align: center; 
       box-shadow: 0 2px 4px rgba(0,0,0,0.1); 
       cursor: grab; 
-      touch-action: none; /* CRITICAL: must be none for drag, scrolling handled by page */
+      touch-action: auto; /* CRITICAL: allows scroll when touching tile body */
       user-select: none;
       -webkit-user-select: none;
       -webkit-touch-callout: none;
@@ -297,21 +295,53 @@
       overflow: hidden;
       transition: box-shadow 0.15s ease, border-color 0.15s ease;
       font-weight: 500;
+      gap: 4px;
     }
     
-    /* Hover states - ONLY for mouse devices to prevent sticky hover on touch */
+    /* Drag handle - ONLY this gets touch-action: none */
+    .drag-handle {
+      touch-action: none;
+      cursor: grab;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+      color: #a0aec0;
+      font-size: 14px;
+      padding: 2px 4px;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      border-radius: 3px;
+      transition: background-color 0.15s ease, color 0.15s ease;
+    }
+    
+    /* Drag handle hover - mouse only */
+    @media (hover: hover) and (pointer: fine) {
+      .drag-handle:hover {
+        background: #e2e8f0;
+        color: #4a5568;
+      }
+    }
+    
+    /* Long-press active state on handle */
+    .drag-handle.long-press-active {
+      background: var(--accent) !important;
+      color: #fff !important;
+    }
+    
+    /* Tile text container */
+    .tile-text {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    
+    /* Hover states - ONLY for mouse devices */
     @media (hover: hover) and (pointer: fine) {
       .tile:hover, .tile-inbox:hover {
         box-shadow: 0 4px 12px rgba(0,0,0,0.15);
       }
-    }
-    
-    /* Long-press visual feedback for Android */
-    .tile.long-press-active,
-    .tile-inbox.long-press-active {
-      background: #ebf8ff !important;
-      border-color: var(--accent) !important;
-      box-shadow: 0 4px 12px rgba(0, 172, 238, 0.3);
     }
     
     .tile { 
@@ -853,8 +883,8 @@
         cursor: pointer;
       }
       
-      /* Prevent text selection while dragging */
-      .tile, .tile-inbox, .box {
+      /* Prevent text selection */
+      .tile, .tile-inbox, .box, .drag-handle {
         -webkit-user-select: none;
         user-select: none;
       }
@@ -862,6 +892,11 @@
       /* NO transform on touch - causes layout thrash per project docs */
       button:active {
         opacity: 0.8;
+      }
+      
+      /* Scrollable containers - explicit pan directions */
+      .box, .tiles-tray {
+        touch-action: pan-x pan-y;
       }
     }
     
@@ -1138,7 +1173,6 @@
       };
       
       // ==================== PLATFORM DETECTION ====================
-      // Android Chrome needs touch events - pointer events don't work reliably
       const isAndroid = /Android/i.test(navigator.userAgent);
       const LONG_PRESS_DELAY = 300;  // ms before drag starts
       const MOVE_THRESHOLD = 10;     // px movement cancels long-press
@@ -1146,7 +1180,8 @@
       // Touch state for Android long-press pattern
       let longPressTimer = null;
       let touchStartPos = { x: 0, y: 0 };
-      let currentDragElement = null;
+      let currentDragHandle = null;
+      let currentDragTile = null;
       
       // DOM Elements
       const tray = document.getElementById('tray');
@@ -1549,7 +1584,6 @@
       
       // ==================== DOCUMENT-LEVEL TOUCH EVENTS (Android) ====================
       // CRITICAL: Must be at document level with { passive: false } on touchmove
-      // This is the ONLY way to reliably preventDefault on Android Chrome
       
       if (isAndroid) {
         // touchmove - MUST be { passive: false } to allow preventDefault
@@ -1562,7 +1596,7 @@
             activeClone.style.left = (touch.clientX - 50) + 'px';
             activeClone.style.top = (touch.clientY - 24) + 'px';
             
-            // Update drag-over states manually (no pointer events during touch)
+            // Update drag-over states
             document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
             const target = document.elementFromPoint(touch.clientX, touch.clientY);
             if (target) {
@@ -1576,20 +1610,23 @@
           }
         }, { passive: false }); // CRITICAL
         
-        // touchend - finish drag
+        // touchend
         document.addEventListener('touchend', function(e) {
           if (longPressTimer) {
             clearTimeout(longPressTimer);
             longPressTimer = null;
           }
           
-          if (currentDragElement) {
-            currentDragElement.classList.remove('long-press-active');
-            currentDragElement.style.opacity = '1';
+          if (currentDragHandle) {
+            currentDragHandle.classList.remove('long-press-active');
+          }
+          if (currentDragTile) {
+            currentDragTile.style.opacity = '1';
           }
           
           if (!isDragging) {
-            currentDragElement = null;
+            currentDragHandle = null;
+            currentDragTile = null;
             return;
           }
           
@@ -1597,7 +1634,7 @@
           finishDrag(touch ? touch.clientX : 0, touch ? touch.clientY : 0);
         }, { passive: true });
         
-        // touchcancel - cleanup
+        // touchcancel
         document.addEventListener('touchcancel', function() {
           if (longPressTimer) {
             clearTimeout(longPressTimer);
@@ -1609,24 +1646,26 @@
       
       // ==================== HELPER FUNCTIONS ====================
       
-      function createDragClone(el, x, y) {
-        activeClone = el.cloneNode(true);
+      function createDragClone(tile, x, y) {
+        activeClone = tile.cloneNode(true);
         activeClone.classList.add('is-dragging');
-        activeClone.style.width = Math.max(el.offsetWidth, 100) + 'px';
-        activeClone.style.height = Math.max(el.offsetHeight, 48) + 'px';
+        activeClone.style.width = Math.max(tile.offsetWidth, 100) + 'px';
+        activeClone.style.height = Math.max(tile.offsetHeight, 48) + 'px';
         activeClone.style.left = (x - 50) + 'px';
         activeClone.style.top = (y - 24) + 'px';
         document.body.appendChild(activeClone);
-        el.style.opacity = '0.3';
+        tile.style.opacity = '0.3';
       }
       
       function finishDrag(clientX, clientY) {
         document.body.classList.remove('is-dragging');
         isDragging = false;
         
-        if (currentDragElement) {
-          currentDragElement.style.opacity = '1';
-          currentDragElement.classList.remove('long-press-active');
+        if (currentDragHandle) {
+          currentDragHandle.classList.remove('long-press-active');
+        }
+        if (currentDragTile) {
+          currentDragTile.style.opacity = '1';
         }
         
         document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
@@ -1660,7 +1699,8 @@
           hydrate();
         }
         
-        currentDragElement = null;
+        currentDragHandle = null;
+        currentDragTile = null;
         dragId = null;
       }
       
@@ -1668,9 +1708,11 @@
         document.body.classList.remove('is-dragging');
         isDragging = false;
         
-        if (currentDragElement) {
-          currentDragElement.style.opacity = '1';
-          currentDragElement.classList.remove('long-press-active');
+        if (currentDragHandle) {
+          currentDragHandle.classList.remove('long-press-active');
+        }
+        if (currentDragTile) {
+          currentDragTile.style.opacity = '1';
         }
         
         if (activeClone) {
@@ -1679,31 +1721,34 @@
         }
         
         document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
-        currentDragElement = null;
+        currentDragHandle = null;
+        currentDragTile = null;
         dragId = null;
       }
       
-      // ==================== ANDROID TOUCH EVENTS (Long-Press Pattern) ====================
+      // ==================== ANDROID: Wire touch events to DRAG HANDLE ====================
       
-      function wireTouchEvents(el, tid) {
+      function wireTouchEvents(handle, tile, tid) {
         let touchStartX, touchStartY;
         
-        el.addEventListener('touchstart', function(e) {
+        handle.addEventListener('touchstart', function(e) {
           if (e.touches.length !== 1) return;
+          e.stopPropagation(); // Don't bubble to tile
           
           const touch = e.touches[0];
           touchStartX = touch.clientX;
           touchStartY = touch.clientY;
           touchStartPos = { x: touchStartX, y: touchStartY };
-          currentDragElement = el;
+          currentDragHandle = handle;
+          currentDragTile = tile;
           dragId = tid;
           
           // Start long-press timer
           longPressTimer = setTimeout(function() {
-            if (currentDragElement !== el) return;
+            if (currentDragHandle !== handle) return;
             
-            // Visual feedback
-            el.classList.add('long-press-active');
+            // Visual feedback on handle
+            handle.classList.add('long-press-active');
             
             // Haptic feedback
             if (navigator.vibrate) {
@@ -1714,74 +1759,66 @@
             isDragging = true;
             document.body.classList.add('is-dragging');
             saveUndoState();
-            createDragClone(el, touchStartX, touchStartY);
+            createDragClone(tile, touchStartX, touchStartY);
             
           }, LONG_PRESS_DELAY);
         }, { passive: true });
         
-        el.addEventListener('touchmove', function(e) {
+        handle.addEventListener('touchmove', function(e) {
           if (!touchStartX) return;
           
           const touch = e.touches[0];
           const dist = Math.abs(touch.clientX - touchStartX) + Math.abs(touch.clientY - touchStartY);
           
-          // Cancel long-press if moved too much (allows scroll to happen)
+          // Cancel long-press if moved too much (allows scroll)
           if (dist > MOVE_THRESHOLD && !isDragging) {
             if (longPressTimer) {
               clearTimeout(longPressTimer);
               longPressTimer = null;
             }
-            el.classList.remove('long-press-active');
-            currentDragElement = null;
+            handle.classList.remove('long-press-active');
+            currentDragHandle = null;
+            currentDragTile = null;
             touchStartX = null;
             touchStartY = null;
           }
         }, { passive: true });
         
-        el.addEventListener('touchend', function() {
+        handle.addEventListener('touchend', function() {
           if (longPressTimer) {
             clearTimeout(longPressTimer);
             longPressTimer = null;
           }
           if (!isDragging) {
-            el.classList.remove('long-press-active');
+            handle.classList.remove('long-press-active');
             touchStartX = null;
             touchStartY = null;
           }
         }, { passive: true });
-        
-        // Double-tap to edit
-        el.ondblclick = function() {
-          const currentText = state.tiles[tid].text;
-          const newText = prompt("Edit dog name:", currentText);
-          if (newText && newText.trim() && newText !== currentText) {
-            saveUndoState();
-            state.tiles[tid].text = newText.trim();
-            localSave();
-            hydrate();
-            showToast('Dog renamed', 'info');
-          }
-        };
       }
       
-      // ==================== POINTER EVENTS (Windows/iOS/Desktop) ====================
+      // ==================== WINDOWS/DESKTOP: Pointer events on WHOLE TILE ====================
       
-      function wirePointer(el, tid) {
-        el.onpointerdown = function(e) {
+      function wirePointerEvents(tile, tid) {
+        // Set touch-action: none on tile for pointer capture to work
+        tile.style.touchAction = 'none';
+        
+        tile.onpointerdown = function(e) {
           if (e.button !== 0) return;
+          
           startX = e.clientX;
           startY = e.clientY;
           dragId = tid;
-          currentDragElement = el;
-          el.setPointerCapture(e.pointerId);
+          currentDragTile = tile;
+          tile.setPointerCapture(e.pointerId);
 
-          el.onpointermove = function(m) {
+          tile.onpointermove = function(m) {
             const dist = Math.abs(m.clientX - startX) + Math.abs(m.clientY - startY);
             if (dist > MOVE_THRESHOLD) {
               if (!activeClone) {
                 isDragging = true;
                 saveUndoState();
-                createDragClone(el, m.clientX, m.clientY);
+                createDragClone(tile, m.clientX, m.clientY);
               }
               activeClone.style.left = (m.clientX - 50) + 'px';
               activeClone.style.top = (m.clientY - 24) + 'px';
@@ -1800,25 +1837,59 @@
             }
           };
 
-          el.onpointerup = function(u) {
-            el.releasePointerCapture(u.pointerId);
-            el.onpointermove = null;
-            el.onpointerup = null;
+          tile.onpointerup = function(u) {
+            tile.releasePointerCapture(u.pointerId);
+            tile.onpointermove = null;
+            tile.onpointerup = null;
             
             if (isDragging) {
               finishDrag(u.clientX, u.clientY);
             } else {
-              el.style.opacity = '1';
-              currentDragElement = null;
+              tile.style.opacity = '1';
+              currentDragTile = null;
             }
           };
           
-          el.onpointercancel = function() {
+          tile.onpointercancel = function() {
             cancelDrag();
           };
         };
+      }
+      
+      // ==================== CREATE TILE WITH DRAG HANDLE ====================
+      
+      function createTileElement(tid, className) {
+        const tile = document.createElement('div');
+        tile.className = className;
         
-        el.ondblclick = function() {
+        if (isAndroid) {
+          // ANDROID: Create drag handle (⋮⋮ grip icon) - required for scroll to work
+          const handle = document.createElement('span');
+          handle.className = 'drag-handle';
+          handle.innerHTML = '⋮⋮';
+          handle.setAttribute('data-draggable', 'true');
+          
+          // Create text container
+          const textSpan = document.createElement('span');
+          textSpan.className = 'tile-text';
+          textSpan.textContent = state.tiles[tid].text;
+          
+          tile.appendChild(handle);
+          tile.appendChild(textSpan);
+          
+          // Wire touch events to HANDLE only (allows scroll on tile body)
+          wireTouchEvents(handle, tile, tid);
+        } else {
+          // WINDOWS/DESKTOP: No handle needed - whole tile is draggable
+          tile.textContent = state.tiles[tid].text;
+          tile.style.justifyContent = 'center';
+          
+          // Wire pointer events to WHOLE TILE
+          wirePointerEvents(tile, tid);
+        }
+        
+        // Double-click to edit (on whole tile)
+        tile.ondblclick = function() {
           const currentText = state.tiles[tid].text;
           const newText = prompt("Edit dog name:", currentText);
           if (newText && newText.trim() && newText !== currentText) {
@@ -1829,16 +1900,8 @@
             showToast('Dog renamed', 'info');
           }
         };
-      }
-      
-      // ==================== WRAPPER FUNCTION ====================
-      
-      function wireDragEvents(el, tid) {
-        if (isAndroid) {
-          wireTouchEvents(el, tid);
-        } else {
-          wirePointer(el, tid);
-        }
+        
+        return tile;
       }
       
       function handleDragEnter(e) {
@@ -1914,12 +1977,11 @@
           
           ids.forEach(id => {
             if (state.tiles[id]) {
-              const t = document.createElement('div');
-              t.className = 'tile-inbox';
-              t.textContent = state.tiles[id].text;
-              wireDragEvents(t, id);
+              const t = createTileElement(id, 'tile-inbox');
               inner.appendChild(t);
-              requestAnimationFrame(() => fitText(t));
+              // fitText: use text span on Android, whole tile on Windows
+              const textEl = t.querySelector('.tile-text') || t;
+              requestAnimationFrame(() => fitText(textEl));
             }
           });
         });
@@ -1938,12 +2000,11 @@
         
         Object.keys(state.tiles).forEach(id => {
           if (!placed.has(id)) {
-            const t = document.createElement('div');
-            t.className = 'tile';
-            t.textContent = state.tiles[id].text;
-            wireDragEvents(t, id);
+            const t = createTileElement(id, 'tile');
             tray.appendChild(t);
-            requestAnimationFrame(() => fitText(t));
+            // fitText: use text span on Android, whole tile on Windows
+            const textEl = t.querySelector('.tile-text') || t;
+            requestAnimationFrame(() => fitText(textEl));
           }
         });
       }
@@ -2038,12 +2099,15 @@
       // ==================== INITIALISATION ====================
       loadPlan('PM');
       
-      // Debug: Log platform info
-      console.log('=== Van Manager Platform Info ===');
+      // Debug logging
+      console.log('=== Van Manager - Platform-Specific Drag ===');
       console.log('User Agent:', navigator.userAgent);
       console.log('isAndroid:', isAndroid);
-      console.log('Drag mode:', isAndroid ? 'TOUCH EVENTS (long-press ~300ms)' : 'POINTER EVENTS (immediate drag)');
-      console.log('touch-action on tiles: none (for drag to work)');
+      if (isAndroid) {
+        console.log('Mode: ANDROID - Touch handle (⋮⋮) to drag, touch tile body to scroll');
+      } else {
+        console.log('Mode: WINDOWS/DESKTOP - Touch/click anywhere on tile to drag');
+      }
       
     })();
   </script>
