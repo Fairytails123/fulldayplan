@@ -41,12 +41,6 @@
       touch-action: auto;  /* CRITICAL: Must be auto for Android scroll */
     }
     
-    /* ANDROID FIX: No body scroll lock - causes jumps. 
-       Touch-action: none on tiles + preventDefault in touchmove handles it */
-    body.is-dragging {
-      /* Intentionally minimal - no overflow:hidden which causes scroll jump */
-    }
-    
     /* Navigation Tabs */
     .plan-nav { 
       display: flex; 
@@ -588,16 +582,15 @@
       transform: translateX(-50%);
     }
     
-    /* Dragging State */
+    /* Dragging State - NO transform scale/rotate (causes visual jump) */
     .is-dragging { 
       position: fixed; 
       z-index: 9999 !important; 
       pointer-events: none; 
-      opacity: 0.9; 
-      transform: scale(1.08) rotate(2deg); 
-      box-shadow: 0 15px 35px rgba(0,0,0,0.25);
-      /* ADDED: Ensure dragging clone doesn't interfere with touch */
+      opacity: 0.85; 
+      box-shadow: 0 12px 28px rgba(0,0,0,0.3);
       touch-action: none;
+      /* No transform - it causes visual position shift */
     }
     
     /* Toast Notifications */
@@ -1614,7 +1607,12 @@
         pendingDragInfo = {
           tile: tile,
           tid: tid,
-          coords: { x: touch.clientX, y: touch.clientY }
+          coords: { x: touch.clientX, y: touch.clientY },
+          // CRITICAL: Store scroll position NOW before any changes
+          scrollX: window.scrollX,
+          scrollY: window.scrollY,
+          // Store tile's viewport position for accurate clone placement
+          tileRect: tileRect
         };
         
         // Immediate visual feedback
@@ -1675,13 +1673,16 @@
         document.removeEventListener('touchend', cancelTouchDrag);
         document.removeEventListener('touchcancel', cancelTouchDrag);
         
+        // Get stored scroll position from touchstart
+        const savedScrollX = dragInfo.scrollX;
+        const savedScrollY = dragInfo.scrollY;
+        
         // Now we're dragging
         isDragging = true;
         dragId = dragInfo.tid;
         currentDragTile = dragInfo.tile;
         
-        // Lock body scroll
-        document.body.classList.add('is-dragging');
+        // NO body class change - even empty class can trigger reflow
         
         // Haptic feedback
         if (navigator.vibrate) {
@@ -1694,9 +1695,18 @@
           dragSourceElement.classList.add('long-press-active');
         }
         
-        // Save undo state and create ghost
+        // Save undo state
         saveUndoState();
-        createDragClone(dragInfo.tile, dragInfo.coords.x, dragInfo.coords.y);
+        
+        // Create clone - position at tile's current visual position
+        // Use stored tileRect for consistent positioning
+        createDragClone(dragInfo.tile, dragInfo.tileRect.left, dragInfo.tileRect.top);
+        
+        // CRITICAL: Restore scroll position immediately and after render
+        window.scrollTo(savedScrollX, savedScrollY);
+        requestAnimationFrame(() => {
+          window.scrollTo(savedScrollX, savedScrollY);
+        });
         
         // CRITICAL: Add NON-PASSIVE touchmove listener to block scrolling
         boundTouchMove = handleDragTouchMove;
@@ -1757,21 +1767,20 @@
       
       // ==================== HELPER FUNCTIONS ====================
       
-      function createDragClone(tile, x, y) {
+      function createDragClone(tile, tileLeft, tileTop) {
         activeClone = tile.cloneNode(true);
         activeClone.classList.add('is-dragging');
         activeClone.classList.remove('touch-active', 'long-press-active');
         activeClone.style.width = Math.max(tile.offsetWidth, 100) + 'px';
         activeClone.style.height = Math.max(tile.offsetHeight, 48) + 'px';
-        // Position using saved offset so clone appears exactly where finger is
-        activeClone.style.left = (x - touchOffsetX) + 'px';
-        activeClone.style.top = (y - touchOffsetY) + 'px';
+        // Position clone exactly where tile is (using stored tileRect position)
+        activeClone.style.left = tileLeft + 'px';
+        activeClone.style.top = tileTop + 'px';
         document.body.appendChild(activeClone);
         tile.style.opacity = '0.3';
       }
       
       function finishDrag(clientX, clientY) {
-        document.body.classList.remove('is-dragging');
         isDragging = false;
         
         // Clean up visual feedback
@@ -1823,7 +1832,6 @@
       }
       
       function cancelDrag() {
-        document.body.classList.remove('is-dragging');
         isDragging = false;
         
         // Clean up visual feedback
@@ -1877,9 +1885,11 @@
               if (!activeClone) {
                 isDragging = true;
                 saveUndoState();
-                createDragClone(tile, m.clientX, m.clientY);
+                // Pass tile's position for initial clone placement
+                const currentRect = tile.getBoundingClientRect();
+                createDragClone(tile, currentRect.left, currentRect.top);
               }
-              // Use offset for smooth positioning
+              // Move clone with finger using offset
               activeClone.style.left = (m.clientX - touchOffsetX) + 'px';
               activeClone.style.top = (m.clientY - touchOffsetY) + 'px';
               
@@ -2144,15 +2154,15 @@
       loadPlan('PM');
       
       // Debug logging
-      console.log('=== Van Manager - Full Tile Drag ===');
+      console.log('=== Van Manager - No Jump Fix ===');
       console.log('User Agent:', navigator.userAgent);
       console.log('isAndroid:', isAndroid);
       if (isAndroid) {
         console.log('Mode: ANDROID - Full tile long-press drag');
         console.log('- Long-press tile for 180ms to start drag');
-        console.log('- Tile has touch-action: none (no scroll on tile)');
-        console.log('- Scroll by touching areas outside tiles');
-        console.log('- Clone positioned relative to finger touch point');
+        console.log('- No body class changes (prevents reflow)');
+        console.log('- Scroll position stored at touchstart, restored after clone');
+        console.log('- Clone positioned at tile location (no transform)');
       } else {
         console.log('Mode: WINDOWS/DESKTOP');
         console.log('- Drag: Touch/click anywhere on tile');
