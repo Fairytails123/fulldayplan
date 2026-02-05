@@ -24,16 +24,11 @@
       margin: 0; 
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; 
       background: #f6f7f9; 
-      touch-action: pan-x pan-y;
+      touch-action: pan-y; 
       overscroll-behavior: none;
       min-height: 100vh;
+      /* ADDED: Improve momentum scrolling on mobile WebKit/Android */
       -webkit-overflow-scrolling: touch;
-    }
-    
-    /* Body lock during drag - NO position:fixed (causes visual jump) */
-    body.is-dragging {
-      overflow: hidden !important;
-      touch-action: none !important;
     }
     
     /* Navigation Tabs */
@@ -57,15 +52,12 @@
       cursor: pointer; 
       font-weight: 600;
       background: #f8fafc;
-      transition: background-color 0.2s ease, border-color 0.2s ease;
+      transition: all 0.2s ease;
       font-size: 14px;
     }
     
-    /* Hover states - only for mouse devices */
-    @media (hover: hover) and (pointer: fine) {
-      .nav-tab:hover:not(.active) { 
-        background: #e2e8f0; 
-      }
+    .nav-tab:hover:not(.active) { 
+      background: #e2e8f0; 
     }
     
     .nav-tab.active { 
@@ -130,15 +122,13 @@
       cursor: pointer; 
       font-weight: 600;
       font-size: 14px;
-      transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+      transition: all 0.2s ease;
       white-space: nowrap;
     }
     
-    @media (hover: hover) and (pointer: fine) {
-      button:hover:not(:disabled) {
-        transform: translateY(-1px);
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-      }
+    button:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
     }
     
     button:active:not(:disabled) {
@@ -155,10 +145,8 @@
       color: #fff; 
     }
     
-    @media (hover: hover) and (pointer: fine) {
-      .btn-primary:hover:not(:disabled) {
-        background: #1e4072;
-      }
+    .btn-primary:hover:not(:disabled) {
+      background: #1e4072;
     }
     
     .btn-danger { 
@@ -167,11 +155,9 @@
       color: var(--danger); 
     }
     
-    @media (hover: hover) and (pointer: fine) {
-      .btn-danger:hover:not(:disabled) {
-        background: var(--danger);
-        color: #fff;
-      }
+    .btn-danger:hover:not(:disabled) {
+      background: var(--danger);
+      color: #fff;
     }
     
     .btn-share { 
@@ -180,11 +166,9 @@
       color: var(--accent); 
     }
     
-    @media (hover: hover) and (pointer: fine) {
-      .btn-share:hover:not(:disabled) {
-        background: var(--info);
-        color: #fff;
-      }
+    .btn-share:hover:not(:disabled) {
+      background: var(--info);
+      color: #fff;
     }
     
     .btn-fetch { 
@@ -193,11 +177,9 @@
       color: #7b341e; 
     }
     
-    @media (hover: hover) and (pointer: fine) {
-      .btn-fetch:hover:not(:disabled) {
-        background: var(--warning);
-        color: #fff;
-      }
+    .btn-fetch:hover:not(:disabled) {
+      background: var(--warning);
+      color: #fff;
     }
     
     .btn-transmit {
@@ -208,11 +190,9 @@
       font-size: 15px;
     }
     
-    @media (hover: hover) and (pointer: fine) {
-      .btn-transmit:hover:not(:disabled) {
-        background: linear-gradient(135deg, #5a67d8 0%, #6b46c1 100%);
-        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
-      }
+    .btn-transmit:hover:not(:disabled) {
+      background: linear-gradient(135deg, #5a67d8 0%, #6b46c1 100%);
+      box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
     }
     
     .btn-transmit.success {
@@ -247,7 +227,7 @@
       background: #f8fafc;
       align-content: flex-start;
       min-height: 80px;
-      transition: border-color 0.2s, background-color 0.2s;
+      transition: all 0.2s;
     }
     
     .tiles-tray.drag-over {
@@ -274,7 +254,7 @@
       border-radius: 8px; 
       color: #c53030; 
       font-size: 32px;
-      transition: background-color 0.2s, border-color 0.2s;
+      transition: all 0.2s;
     }
     
     #bin::after {
@@ -284,6 +264,7 @@
     #bin.drag-over {
       background: #c53030;
       border-style: solid;
+      transform: scale(1.05);
     }
     
     #bin.drag-over::after {
@@ -291,6 +272,8 @@
     }
     
     /* Tiles */
+    /* MODIFIED: Changed touch-action from 'none' to 'pan-y' to allow vertical scrolling on Android */
+    /* Drag detection still works via pointer capture and the 10px threshold in JavaScript */
     .tile, .tile-inbox { 
       background: #fff; 
       border-radius: 6px; 
@@ -300,24 +283,14 @@
       text-align: center; 
       box-shadow: 0 2px 4px rgba(0,0,0,0.1); 
       cursor: grab; 
-      touch-action: none; /* Needed for pointer capture to work */
-      user-select: none;
-      -webkit-user-select: none;
-      -webkit-touch-callout: none;
+      touch-action: pan-y;
+      user-select: none; 
       z-index: 100;
       word-break: break-word; 
       line-height: 1.1; 
       overflow: hidden;
-      transition: box-shadow 0.2s, border-color 0.2s;
+      transition: box-shadow 0.2s, transform 0.2s;
       font-weight: 500;
-      position: relative;
-    }
-    
-    /* Long-press visual feedback (Android only) */
-    .tile.long-press-active,
-    .tile-inbox.long-press-active {
-      background: #ebf8ff;
-      border-color: var(--accent) !important;
     }
     
     /* Hover states - only for mouse devices */
@@ -325,6 +298,14 @@
       .tile:hover, .tile-inbox:hover {
         box-shadow: 0 4px 12px rgba(0,0,0,0.15);
       }
+    }
+    
+    /* Long-press visual feedback (Android) */
+    .tile.long-press-active,
+    .tile-inbox.long-press-active {
+      background: #ebf8ff;
+      border-color: var(--accent) !important;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
     }
     
     .tile { 
@@ -450,7 +431,7 @@
       justify-content: center; 
       padding: 40px 4px 4px 4px;
       background: #fff;
-      transition: background-color 0.2s, border-color 0.2s;
+      transition: all 0.2s;
       overflow: visible;
     }
     
@@ -478,6 +459,7 @@
       font-weight: 700;
       background: #fff;
       color: #2d3748;
+      /* Complete reset */
       -webkit-appearance: none;
       -moz-appearance: none;
       appearance: none;
@@ -513,6 +495,7 @@
       font-weight: 700;
       background: #faf5ff;
       color: #553c9a;
+      /* Complete reset */
       -webkit-appearance: none;
       -moz-appearance: none;
       appearance: none;
@@ -585,14 +568,15 @@
       transform: translateX(-50%);
     }
     
-    /* Dragging State - NO rotate (causes "twisted" appearance) */
+    /* Dragging State */
     .is-dragging { 
       position: fixed; 
       z-index: 9999 !important; 
       pointer-events: none; 
       opacity: 0.9; 
-      transform: scale(1.05); /* Subtle scale only, NO rotate */
+      transform: scale(1.08) rotate(2deg); 
       box-shadow: 0 15px 35px rgba(0,0,0,0.25);
+      /* ADDED: Ensure dragging clone doesn't interfere with touch */
       touch-action: none;
     }
     
@@ -672,6 +656,7 @@
     
     /* Responsive - Mobile */
     @media (max-width: 600px) {
+      /* Fix centering - prevent overflow */
       html, body {
         overflow-x: hidden;
         width: 100%;
@@ -703,11 +688,13 @@
         box-sizing: border-box;
       }
       
+      /* Input stays reasonable */
       input[type="text"] {
         padding: 12px 14px;
         font-size: 16px;
       }
       
+      /* Smaller buttons - 2 per row */
       .btn-group { 
         display: grid;
         grid-template-columns: 1fr 1fr;
@@ -729,6 +716,7 @@
         min-height: 46px;
       }
       
+      /* Tray */
       .tray-area { min-height: 100px; }
       .tiles-tray { 
         min-height: 90px; 
@@ -736,6 +724,7 @@
         gap: 10px;
       }
       
+      /* Tiles */
       .tile { 
         min-width: 90px; 
         min-height: 46px; 
@@ -748,6 +737,7 @@
         font-size: 32px;
       }
       
+      /* Kennels */
       .box { 
         min-height: 95px; 
         padding-top: 38px; 
@@ -764,6 +754,7 @@
         font-size: 12px;
       }
       
+      /* Stop inputs - KEEP LARGE to prevent clipping */
       .stop-input, .stop-input-secondary { 
         width: 50px !important; 
         height: 30px !important; 
@@ -771,6 +762,7 @@
         padding: 2px 4px !important;
       }
       
+      /* Van section spacing */
       .van-section {
         margin-bottom: 16px;
         padding-bottom: 16px;
@@ -786,6 +778,7 @@
         padding: 4px 10px;
       }
       
+      /* Departure selector */
       .departure-selector {
         padding: 6px 10px;
       }
@@ -795,6 +788,7 @@
         font-size: 14px;
       }
       
+      /* Dispatch Van - stack columns on mobile */
       .van-section[data-van="dv"] > div {
         grid-template-columns: 1fr !important;
         gap: 12px !important;
@@ -804,10 +798,12 @@
         width: 100%;
       }
       
+      /* Make DV extra large box normal height on mobile */
       .van-section[data-van="dv"] .box[data-box="dv-m-xl"] {
         min-height: 95px !important;
       }
       
+      /* Status bar */
       .status-bar {
         flex-direction: column;
         gap: 6px;
@@ -817,6 +813,7 @@
         font-size: 11px;
       }
       
+      /* Kennel grid - prevent overflow */
       .kennel-grid {
         max-width: 100%;
       }
@@ -836,6 +833,7 @@
       .tile { min-width: 80px; min-height: 42px; }
       .box { min-height: 90px; padding-top: 36px; }
       
+      /* Stop inputs - still keep readable */
       .stop-input, .stop-input-secondary { 
         width: 46px !important; 
         height: 28px !important; 
@@ -849,13 +847,30 @@
         cursor: pointer;
       }
       
+      /* Prevent text selection while dragging */
       .tile, .tile-inbox, .box {
         -webkit-user-select: none;
         user-select: none;
       }
       
+      /* Visual feedback for touch */
+      .tile:active, .tile-inbox:active {
+        transform: scale(0.98);
+        opacity: 0.9;
+      }
+      
       button:active {
         transform: scale(0.98);
+      }
+      
+      /* ADDED: Ensure boxes allow scroll pass-through on touch devices */
+      .box {
+        touch-action: pan-y;
+      }
+      
+      /* ADDED: Tray should also allow vertical scrolling */
+      .tiles-tray {
+        touch-action: pan-y;
       }
     }
     
@@ -947,18 +962,19 @@
               <div class="box" data-box="bv-b2"></div>
               <div class="box" data-box="bv-b3"></div>
             </div>
-            <div style="display:grid; grid-template-columns:repeat(2,1fr)">
-              <div class="box has-wheel-arch" data-box="bv-b4"></div>
+            <div style="display:grid; grid-template-columns:repeat(3,1fr)">
+              <div class="box" data-box="bv-b4"></div>
               <div class="box" data-box="bv-b5"></div>
+              <div class="box" data-box="bv-b6"></div>
             </div>
             <div style="display:grid; grid-template-columns:repeat(2,1fr)">
-              <div class="box" data-box="bv-b6"></div>
               <div class="box" data-box="bv-b7"></div>
+              <div class="box" data-box="bv-b8"></div>
             </div>
           </div>
         </div>
       </div>
-      
+
       <div class="van-section" data-van="sv">
         <div class="card-title">
           <span>🚗 Small Van (SV)</span>
@@ -977,37 +993,43 @@
         </div>
         <div class="two-cols">
           <div class="kennel-grid">
-            <div style="display:grid; grid-template-columns:repeat(2,1fr)">
+            <div style="display:grid; grid-template-columns:repeat(3,1fr)">
               <div class="box" data-box="sv-c1"></div>
               <div class="box" data-box="sv-c2"></div>
+              <div class="box" data-box="sv-c3"></div>
             </div>
             <div style="display:grid; grid-template-columns:repeat(2,1fr)">
-              <div class="box" data-box="sv-c3"></div>
               <div class="box" data-box="sv-c4"></div>
+              <div class="box" data-box="sv-c5"></div>
             </div>
           </div>
           <div class="kennel-grid">
-            <div style="display:grid; grid-template-columns:repeat(2,1fr)">
+            <div style="display:grid; grid-template-columns:repeat(3,1fr)">
               <div class="box" data-box="sv-b1"></div>
               <div class="box" data-box="sv-b2"></div>
+              <div class="box" data-box="sv-b3"></div>
             </div>
             <div style="display:grid; grid-template-columns:repeat(2,1fr)">
-              <div class="box" data-box="sv-b3"></div>
-              <div class="box has-wheel-arch" data-box="sv-b4"></div>
+              <div class="box has-wheel-arch" data-box="sv-b4">
+                <div class="wheel-arch right"></div>
+              </div>
+              <div class="box has-wheel-arch" data-box="sv-b5">
+                <div class="wheel-arch left"></div>
+              </div>
             </div>
           </div>
         </div>
       </div>
-      
+
       <div class="van-section" data-van="dv">
         <div class="card-title">
-          <span>🚙 Dispatch Van (DV)</span>
+          <span>📦 Dispatch Van (DV)</span>
           <div class="departure-selector" data-van="dv">
             <label>Departs:</label>
             <select id="dv-departure">
               <option value="07:15 am">07:15 am</option>
-              <option value="07:30 am" selected>07:30 am</option>
-              <option value="08:00 am">08:00 am</option>
+              <option value="07:30 am">07:30 am</option>
+              <option value="08:00 am" selected>08:00 am</option>
               <option value="08:30 am">08:30 am</option>
               <option value="09:00 am">09:00 am</option>
               <option value="09:30 am">09:30 am</option>
@@ -1015,23 +1037,28 @@
           </div>
           <span class="dog-count" id="dv-count">0 dogs</span>
         </div>
-        <div style="display:grid; grid-template-columns: 1fr auto; gap:20px; align-items:start;">
+        <div style="display:grid; grid-template-columns: 1fr 2.2fr 1fr; gap:15px;">
           <div class="kennel-grid">
-            <div style="display:grid; grid-template-columns:repeat(2,1fr)">
-              <div class="box" data-box="dv-c1"></div>
-              <div class="box" data-box="dv-c2"></div>
-            </div>
-            <div style="display:grid; grid-template-columns:repeat(2,1fr)">
-              <div class="box" data-box="dv-b1"></div>
-              <div class="box" data-box="dv-b2"></div>
-            </div>
+            <div style="text-align:center; font-size:10px; color:#718096; padding:4px 0; border-bottom:1px solid #e2e8f0;">Passenger</div>
+            <div class="box" data-box="dv-l1"></div>
+            <div class="box" data-box="dv-l2"></div>
           </div>
-          <div class="kennel-grid" style="width:150px;">
-            <div class="box" data-box="dv-m-xl" style="min-height:200px;"></div>
+          <div class="kennel-grid">
+            <div style="text-align:center; font-size:10px; color:#718096; padding:4px 0; border-bottom:1px solid #e2e8f0;">Rear</div>
+            <div style="display:grid; grid-template-columns: repeat(3,1fr)">
+              <div class="box" data-box="dv-m1"></div>
+              <div class="box" data-box="dv-m2"></div>
+              <div class="box" data-box="dv-m3"></div>
+            </div>
+            <div class="box" data-box="dv-m-xl" style="min-height:120px"></div>
+          </div>
+          <div class="kennel-grid">
+            <div style="text-align:center; font-size:10px; color:#718096; padding:4px 0; border-bottom:1px solid #e2e8f0;">Driver</div>
+            <div class="box" data-box="dv-r1"></div>
+            <div class="box" data-box="dv-r2"></div>
           </div>
         </div>
       </div>
-      
     </div>
   </div>
 
@@ -1039,20 +1066,15 @@
     (function(){
       // Configuration
       const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxUeIiIJQZZeoo3aXHDdqVZNNqFKLhWhi_WhPVb6GUIvkMlfNxTKsOXyCTGdvAEsMLC/exec';
-      const STORAGE_PREFIX = 'van_v5_';
+      const STORAGE_PREFIX = 'van_v5_';  // Updated version for new data structure
       const MAX_UNDO_STATES = 20;
       
-      // Detect Android Chrome (needs special touch handling)
-      const isAndroid = /Android/i.test(navigator.userAgent);
-      const LONG_PRESS_DELAY = 300;  // ms
-      const MOVE_THRESHOLD = 10;     // px
-      
-      // Valid dog names from JotForm
+      // Valid dog names from JotForm (for validation)
       const VALID_DOG_NAMES = [
         "Aldo","Alfie","April","Argo","Arlo","Banjo","Barney Homewood","Barney Leeming","Baron","Bay","Beano","Bella","Belle","Benson","Betsy","Blue","Bluey","Bo","Bonnie Gallagher","Bonnie Lockwood","Bramble","Branko","Bruce","Bruno","Buddy Dann","Buddy Dargan","Buddy Selby","Casper Hamilton","Casper Kukreja","Che","Chester","Chloe","Clifford","Daisy Cremin","Daisy Parsons","Darcy Campbell","Darcy Dunn","Darwin","Delphine","Dexter","Dicee","Diego Gonsavles","Diego Wojcik","Dierdra","Digby","Dolly","Dottie","Dougie","Dudley","Dusty","Echo","Eddie","Effie","Enzo","Fenton","Ferox","Flaco","Fletcher","Florence","Freddie","Fredo","Frida Walsh","George Elliston","George Jackson","George Mohammed","Gina","Goldie","Haggis","Hattie Campbell","Hattie Duncan","Henry","Holly","Hugo","Incy","Ivy","Jack","Jeff","Jessie","Keti","Kip","Koji","Leo","Lily","Lola Bowles","Lola Fenloni","Lola Hall","Luke","Luna Crockford","Luna Grimshaw","Mac","Macy","Maggie","Margo","Marli","Marloe","Marlow","Martha","Max Tigwell","Merlin Crowley","Merlin Mayne","Miles","Miley","Millie Bowles","Millie Carter","Millie Cartwright","Millie Ellis","Milo McVey","Missy Evans","Mocha Gasper","Mocha Kolumbajew","Mochi","Moka","Mollie","Mos Wan","Moss Harris","Naira","Nala Sands","Nala Warnes","Narla Tester","Ned","Nevis","Nina","Obie","Oliver","Otis","Peggy Gibbons","Peggy Lucas","Pepper","Petch","Pippin","Pluto","Poppy Clark","Poppy Lancaster","Poppy Lass","Poppy Pike","Ralph Goddard","Raven","Reggie Daly","Reggie Foreman","Reggie Russel","Rex","Rita","River","Rocco","Roman","Roxy","Ruby Brooker","Ruby Favell","Ruby Jones","Rudy","Ruffles","Rufus","Rupy","Sam","Sebastian","Shadow Podkalicka","Shadow Wightman","Snoopy","Sonny","Sophie","Stanley James","Star","Storm","Tallulah","Tam","Tasha","Ted Lambie","Teddy Brown","Teddy Jamison","Terry","Tilly Mills","Tokyo","Warwick","Winnie Awele","Winnie Evans","Winnie Hall","Winnie Lancaster","Winnie Ryan","Woody Johns","Woody Warren","Zero","Ziggy"
       ];
       
-      // Alias map
+      // Alias map for common abbreviations
       const DOG_ALIASES = {
         "millie ct": "Millie Cartwright",
         "millie ca": "Millie Carter",
@@ -1117,6 +1139,23 @@
         "shadow w": "Shadow Wightman"
       };
       
+      // Van mapping to JotForm values
+      const VAN_MAP = {
+        'bv': 'Big van - Transit',
+        'sv': 'Small van - Renault',
+        'dv': 'Dispatch van - Citroen'
+      };
+      
+      // Platform detection - Android needs special touch handling
+      const isAndroid = /Android/i.test(navigator.userAgent);
+      const LONG_PRESS_DELAY = 300;  // ms for long-press to start drag
+      const MOVE_THRESHOLD = 10;     // px movement to cancel long-press
+      
+      // Touch state for Android
+      let longPressTimer = null;
+      let touchStartPos = null;
+      let currentDragElement = null;
+      
       // DOM Elements
       const tray = document.getElementById('tray');
       const input = document.getElementById('tileText');
@@ -1128,21 +1167,16 @@
       const statusDot = document.getElementById('statusDot');
       const onlineStatus = document.getElementById('onlineStatus');
       
-      // State
+      // State - Updated structure for dual stop numbers
       let currentPlan = 'PM';
       let state = { tiles: {}, placements: {}, stops: {}, departures: {} };
+      // stops structure: { 'bv-c1': { primary: '5', secondary: '3' }, ... }
       
       let undoStack = [];
       let activeClone = null;
       let dragId = null;
       let startX, startY;
       let transmitComplete = false;
-      let isDragging = false;
-      
-      // Android-specific touch state
-      let longPressTimer = null;
-      let touchStartPos = null;
-      let currentDragElement = null;
 
       // ==================== TOAST NOTIFICATIONS ====================
       function showToast(message, type = 'info') {
@@ -1187,224 +1221,303 @@
         }
       }
       
-      function localLoad() {
-        try {
-          const data = localStorage.getItem(STORAGE_PREFIX + currentPlan);
-          if (data) {
-            const parsed = JSON.parse(data);
-            state.tiles = parsed.tiles || {};
-            state.placements = parsed.placements || {};
-            state.stops = parsed.stops || {};
-            state.departures = parsed.departures || {};
-          }
-        } catch (e) {
-          showToast('Error loading saved data', 'error');
-        }
-      }
-
-      // ==================== STOP NUMBER HELPERS ====================
+      // Helper to get stop number object (handles migration from old string format)
       function getStopObj(boxId) {
-        if (!state.stops) state.stops = {};
-        if (!state.stops[boxId]) state.stops[boxId] = { primary: '', secondary: '' };
-        
-        if (typeof state.stops[boxId] === 'string') {
-          state.stops[boxId] = { primary: state.stops[boxId], secondary: '' };
+        const stop = state.stops[boxId];
+        if (!stop) return { primary: '', secondary: '' };
+        if (typeof stop === 'string') {
+          // Migrate old string format to new object format
+          return { primary: stop, secondary: '' };
         }
-        return state.stops[boxId];
+        return stop;
       }
       
-      function setStopValue(boxId, which, value) {
-        if (!state.stops) state.stops = {};
+      // Helper to set stop number
+      function setStopValue(boxId, type, value) {
         if (!state.stops[boxId] || typeof state.stops[boxId] === 'string') {
-          state.stops[boxId] = { primary: '', secondary: '' };
+          const oldValue = typeof state.stops[boxId] === 'string' ? state.stops[boxId] : '';
+          state.stops[boxId] = { primary: oldValue, secondary: '' };
         }
-        state.stops[boxId][which] = value;
+        state.stops[boxId][type] = value;
         localSave();
-      }
-      
-      function migrateStopsFormat() {
-        if (!state.stops) return;
-        Object.keys(state.stops).forEach(boxId => {
-          if (typeof state.stops[boxId] === 'string') {
-            state.stops[boxId] = { primary: state.stops[boxId], secondary: '' };
-          }
-        });
-      }
-
-      // ==================== CLOUD SYNC ====================
-      // Updated to match Google Apps Script API format
-      
-      async function cloudShare() {
-        shareBtn.disabled = true;
-        shareBtn.textContent = '⏳ Saving...';
-        
-        try {
-          // Google Apps Script expects: { action: 'savePlan', planId, state }
-          const payload = {
-            action: 'savePlan',
-            planId: currentPlan,
-            state: state  // The full state object
-          };
-          
-          const res = await fetch(SCRIPT_URL, {
-            method: 'POST',
-            mode: 'cors',
-            headers: { 'Content-Type': 'text/plain' },
-            body: JSON.stringify(payload)
-          });
-          
-          // Google Apps Script returns plain text timestamp on success
-          const responseText = await res.text();
-          
-          if (responseText && !responseText.includes('Error')) {
-            syncTimeEl.textContent = 'Cloud: ' + responseText;
-            showToast('Saved to cloud!', 'success');
-          } else {
-            throw new Error(responseText || 'Save failed');
-          }
-        } catch (err) {
-          showToast('Save failed: ' + err.message, 'error');
-        } finally {
-          shareBtn.disabled = !navigator.onLine;
-          shareBtn.textContent = '☁️ Share';
-        }
-      }
-      
-      async function cloudFetch() {
-        fetchBtn.disabled = true;
-        fetchBtn.textContent = '⏳ Loading...';
-        
-        try {
-          // Google Apps Script expects: ?planId=PM (not ?action=load&plan=PM)
-          const res = await fetch(`${SCRIPT_URL}?planId=${currentPlan}`, {
-            method: 'GET',
-            mode: 'cors'
-          });
-          
-          const result = await res.json();
-          
-          // Google Apps Script returns: { state: "{...json...}", time: "timestamp" }
-          if (result.state && result.state !== '{}') {
-            saveUndoState();
-            
-            // Parse the state JSON string
-            const loadedState = typeof result.state === 'string' 
-              ? JSON.parse(result.state) 
-              : result.state;
-            
-            state.tiles = loadedState.tiles || {};
-            state.placements = loadedState.placements || {};
-            state.stops = loadedState.stops || {};
-            state.departures = loadedState.departures || {};
-            migrateStopsFormat();
-            localSave();
-            hydrate();
-            
-            syncTimeEl.textContent = 'Cloud: ' + (result.time || 'Unknown');
-            showToast('Loaded from cloud!', 'success');
-          } else if (result.error) {
-            throw new Error(result.error);
-          } else {
-            showToast('No cloud data found', 'info');
-          }
-        } catch (err) {
-          showToast('Load failed: ' + err.message, 'error');
-        } finally {
-          fetchBtn.disabled = !navigator.onLine;
-          fetchBtn.textContent = '📥 Fetch';
-        }
       }
 
       // ==================== TRANSMIT PLAN ====================
-      // Updated to match Google Apps Script transmitPlan format
+      function findMatchingDogName(inputName) {
+        const normalised = inputName.trim().toLowerCase().replace(/\s+/g, ' ');
+        const noSpaces = normalised.replace(/\s/g, '');
+        
+        if (DOG_ALIASES[normalised]) return DOG_ALIASES[normalised];
+        
+        const aliasMatch = Object.keys(DOG_ALIASES).find(alias => 
+          alias.replace(/\s/g, '') === noSpaces
+        );
+        if (aliasMatch) return DOG_ALIASES[aliasMatch];
+        
+        const exactMatch = VALID_DOG_NAMES.find(name => 
+          name.toLowerCase().replace(/\s+/g, ' ') === normalised
+        );
+        if (exactMatch) return exactMatch;
+        
+        const noSpaceMatch = VALID_DOG_NAMES.find(name => 
+          name.toLowerCase().replace(/\s/g, '') === noSpaces
+        );
+        if (noSpaceMatch) return noSpaceMatch;
+        
+        const startsWithMatch = VALID_DOG_NAMES.find(name => {
+          const nameLower = name.toLowerCase().replace(/\s+/g, ' ');
+          const nameNoSpaces = name.toLowerCase().replace(/\s/g, '');
+          return nameLower.startsWith(normalised) || nameNoSpaces.startsWith(noSpaces);
+        });
+        if (startsWithMatch) return startsWithMatch;
+        
+        const parts = normalised.split(' ');
+        if (parts.length >= 2) {
+          const firstName = parts[0];
+          const surnameStart = parts.slice(1).join(' ');
+          
+          const partialSurnameMatch = VALID_DOG_NAMES.find(name => {
+            const nameParts = name.toLowerCase().split(' ');
+            if (nameParts.length < 2) return false;
+            const nameFirst = nameParts[0];
+            const nameSurname = nameParts.slice(1).join(' ');
+            return nameFirst === firstName && nameSurname.startsWith(surnameStart);
+          });
+          if (partialSurnameMatch) return partialSurnameMatch;
+        }
+        
+        const partialMatch = VALID_DOG_NAMES.find(name => {
+          const nameLower = name.toLowerCase().replace(/\s+/g, ' ');
+          return nameLower.includes(normalised) || normalised.includes(nameLower);
+        });
+        if (partialMatch) return partialMatch;
+        
+        return null;
+      }
       
-      // Van name mapping - Google Apps Script expects full names
-      const VAN_NAMES = {
-        'bv': 'Big van - Transit',
-        'sv': 'Small van - Renault',
-        'dv': 'Dispatch van - Citroen'
-      };
+      function collectTransmitData() {
+        const dogs = [];
+        const departures = {
+          bv: document.getElementById('bv-departure').value,
+          sv: document.getElementById('sv-departure').value,
+          dv: document.getElementById('dv-departure').value
+        };
+        
+        // Iterate through all placements
+        Object.entries(state.placements).forEach(([boxId, tileIds]) => {
+          const stopObj = getStopObj(boxId);
+          const primaryStop = stopObj.primary;
+          const secondaryStop = stopObj.secondary;
+          
+          // Skip if no primary stop number assigned
+          if (!primaryStop || primaryStop.trim() === '') return;
+          
+          const vanPrefix = boxId.split('-')[0];
+          const vanName = VAN_MAP[vanPrefix];
+          const departureTime = departures[vanPrefix];
+          
+          // Process each dog in the box
+          tileIds.forEach((tileId, index) => {
+            const tile = state.tiles[tileId];
+            if (!tile) return;
+            
+            const dogName = tile.text;
+            const matchedName = findMatchingDogName(dogName);
+            
+            // Determine stop number:
+            // - First dog (index 0, top) uses primary stop
+            // - Second dog (index 1, bottom) uses secondary if filled, else primary
+            let stopNumber;
+            if (index === 0) {
+              stopNumber = primaryStop;
+            } else {
+              // Second dog: use secondary if filled, otherwise use primary (same house)
+              stopNumber = (secondaryStop && secondaryStop.trim() !== '') ? secondaryStop : primaryStop;
+            }
+            
+            dogs.push({
+              inputName: dogName,
+              matchedName: matchedName,
+              stopNumber: stopNumber,
+              van: vanName,
+              departureTime: departureTime,
+              isValid: matchedName !== null
+            });
+          });
+        });
+        
+        return dogs;
+      }
       
       async function transmitPlan() {
         if (transmitComplete) {
-          showToast('Plan already transmitted. Clear to start fresh.', 'info');
+          showToast('Plan already transmitted. Clear and redo to transmit again.', 'warning');
           return;
         }
         
+        const dogs = collectTransmitData();
+        
+        if (dogs.length === 0) {
+          showToast('No dogs with stop numbers to transmit!', 'warning');
+          return;
+        }
+        
+        const validDogs = dogs.filter(d => d.isValid);
+        const invalidDogs = dogs.filter(d => !d.isValid);
+        
+        if (validDogs.length === 0) {
+          showToast('No valid dogs found in JotForm list!', 'error');
+          return;
+        }
+        
+        const departures = {
+          bv: document.getElementById('bv-departure').value,
+          sv: document.getElementById('sv-departure').value,
+          dv: document.getElementById('dv-departure').value
+        };
+        
+        const planLabel = currentPlan === 'NEXT_AM' ? 'Next Day AM' : 'PM';
+        const confirmMsg = `Send ${validDogs.length} dogs (${planLabel}) to queue?` + 
+          (invalidDogs.length > 0 ? `\n\n⚠️ ${invalidDogs.length} dogs will be skipped (not in list):\n${invalidDogs.map(d => d.inputName).join(', ')}` : '');
+        
+        if (!confirm(confirmMsg)) return;
+        
         transmitBtn.disabled = true;
         transmitBtn.classList.add('transmitting');
-        transmitBtn.textContent = '📡 Transmitting...';
+        transmitBtn.textContent = '🔄 Transmitting...';
         
         try {
-          // Google Apps Script expects: { action: 'transmitPlan', dogs: [...], departures, planType }
-          const dogs = [];
-          const departures = state.departures || {};
-          
-          Object.entries(state.placements).forEach(([boxId, dogIds]) => {
-            const vanPrefix = boxId.split('-')[0]; // 'bv', 'sv', or 'dv'
-            const stopObj = getStopObj(boxId);
-            const departureTime = departures[vanPrefix] || '07:30 am';
-            
-            dogIds.forEach((id, index) => {
-              if (state.tiles[id]) {
-                const dogName = state.tiles[id].text;
-                const stopNum = index === 0 ? stopObj.primary : (stopObj.secondary || stopObj.primary);
-                
-                // Format expected by Google Apps Script
-                dogs.push({
-                  dogName: dogName,
-                  van: VAN_NAMES[vanPrefix],
-                  stopNumber: stopNum || '',
-                  departureTime: departureTime
-                });
-              }
-            });
+          const response = await fetch(SCRIPT_URL, {
+            method: 'POST',
+            body: JSON.stringify({
+              action: 'transmitPlan',
+              planType: currentPlan,
+              dogs: validDogs.map(d => ({
+                dogName: d.matchedName,
+                stopNumber: d.stopNumber,
+                van: d.van,
+                departureTime: d.departureTime,
+                status: 'pending'
+              })),
+              departures: departures,
+              timestamp: new Date().toISOString()
+            }),
+            redirect: 'follow'
           });
           
-          if (dogs.length === 0) {
-            throw new Error('No dogs to transmit');
+          const resultText = await response.text();
+          console.log('Response:', resultText);
+          
+          let result;
+          try {
+            result = JSON.parse(resultText);
+          } catch (e) {
+            result = { success: true };
           }
           
-          const payload = {
-            action: 'transmitPlan',
-            dogs: dogs,
-            departures: departures,
-            planType: currentPlan
-          };
-          
-          const res = await fetch(SCRIPT_URL, {
-            method: 'POST',
-            mode: 'cors',
-            headers: { 'Content-Type': 'text/plain' },
-            body: JSON.stringify(payload)
-          });
-          
-          const result = await res.json();
-          
-          if (result.success) {
+          if (result.success !== false) {
             transmitComplete = true;
             transmitBtn.classList.remove('transmitting');
             transmitBtn.classList.add('success');
-            transmitBtn.textContent = '✅ Transmitted!';
-            showToast(`Plan transmitted! ${result.count || dogs.length} dogs sent.`, 'success');
+            transmitBtn.textContent = `✅ ${validDogs.length} dogs queued`;
+            
+            let successMsg = `${planLabel}: ${validDogs.length} dogs added to queue!`;
+            if (invalidDogs.length > 0) {
+              successMsg += ` (${invalidDogs.length} skipped)`;
+            }
+            showToast(successMsg, 'success');
+            
+            if (invalidDogs.length > 0) {
+              console.log('Skipped dogs (not in JotForm list):', invalidDogs.map(d => d.inputName));
+            }
           } else {
-            throw new Error(result.error || 'Transmit failed');
+            throw new Error(result.error || 'Unknown error');
           }
-        } catch (err) {
+          
+        } catch (error) {
+          console.error('Transmit error:', error);
+          transmitBtn.disabled = false;
           transmitBtn.classList.remove('transmitting');
-          transmitBtn.disabled = !navigator.onLine;
           transmitBtn.textContent = '🚀 Transmit Plan';
-          showToast('Transmit failed: ' + err.message, 'error');
+          showToast(`Failed: ${error.message}`, 'error');
         }
       }
 
-      // ==================== PLAN SWITCHING ====================
+      // ==================== CLOUD OPERATIONS ====================
+      async function cloudFetch() {
+        fetchBtn.disabled = true;
+        fetchBtn.textContent = "📥 Fetching...";
+        try {
+          const res = await fetch(`${SCRIPT_URL}?planId=${currentPlan}`, {
+            method: 'GET',
+            cache: 'no-cache',
+            redirect: 'follow' 
+          });
+
+          if (!res.ok) throw new Error("Network response was not ok");
+          const cloud = await res.json();
+
+          if (cloud && cloud.state && cloud.state !== "{}") {
+            saveUndoState();
+            state = JSON.parse(cloud.state);
+            // Migrate old stops format if needed
+            migrateStopsFormat();
+            syncTimeEl.textContent = `Cloud: ${cloud.time}`;
+            localSave();
+            hydrate();
+            showToast('Plan fetched from cloud!', 'success');
+          } else {
+            showToast('No cloud data found for this plan.', 'warning');
+          }
+        } catch(e) { 
+          console.error("Fetch Error:", e);
+          showToast('Fetch failed. Check your connection.', 'error');
+        } finally {
+          fetchBtn.disabled = false;
+          fetchBtn.textContent = "📥 Fetch";
+        }
+      }
+
+      async function cloudShare() {
+        shareBtn.disabled = true;
+        shareBtn.textContent = "☁️ Sharing...";
+        try {
+          const res = await fetch(SCRIPT_URL, {
+            method: 'POST',
+            body: JSON.stringify({ action: 'savePlan', state: state, planId: currentPlan }),
+            redirect: 'follow'
+          });
+          const time = await res.text();
+          syncTimeEl.textContent = `Cloud: ${time}`;
+          showToast('Plan shared to cloud!', 'success');
+        } catch(e) { 
+          console.error("Share Error:", e);
+          showToast('Share failed. Check permissions.', 'error');
+        } finally {
+          shareBtn.disabled = false;
+          shareBtn.textContent = "☁️ Share";
+        }
+      }
+      
+      // Migrate old string stops to new object format
+      function migrateStopsFormat() {
+        if (state.stops) {
+          Object.keys(state.stops).forEach(boxId => {
+            if (typeof state.stops[boxId] === 'string') {
+              state.stops[boxId] = { primary: state.stops[boxId], secondary: '' };
+            }
+          });
+        }
+      }
+
+      // ==================== PLAN MANAGEMENT ====================
       function loadPlan(p) {
         currentPlan = p;
-        document.getElementById('currentLabel').textContent = p === 'NEXT_AM' ? 'Next AM Plan' : 'PM Plan';
+        document.getElementById('currentLabel').textContent = p.replace('_', ' ') + ' Plan';
+        const raw = localStorage.getItem(STORAGE_PREFIX + p);
+        state = raw ? JSON.parse(raw) : { tiles: {}, placements: {}, stops: {}, departures: {} };
         
-        state = { tiles: {}, placements: {}, stops: {}, departures: {} };
-        localLoad();
+        // Migrate old stops format
         migrateStopsFormat();
         
         undoStack = [JSON.stringify(state)];
@@ -1440,112 +1553,41 @@
       });
 
       // ==================== DRAG & DROP ====================
-      // Helper functions shared by both approaches
+      let isDragging = false;
       
-      function handleDragEnter(e) {
-        e.currentTarget.classList.add('drag-over');
-      }
-      
-      function handleDragLeave(e) {
-        e.currentTarget.classList.remove('drag-over');
-      }
-      
-      function cleanupDrag() {
-        document.body.classList.remove('is-dragging');
-        isDragging = false;
-        
-        document.querySelectorAll('.box, #bin, #tray').forEach(elem => {
-          elem.removeEventListener('pointerenter', handleDragEnter);
-          elem.removeEventListener('pointerleave', handleDragLeave);
-          elem.classList.remove('drag-over');
-        });
-        
-        if (currentDragElement) {
-          currentDragElement.style.opacity = '1';
-          currentDragElement.classList.remove('long-press-active');
-        }
-      }
-      
-      function finishDrag(clientX, clientY) {
-        cleanupDrag();
-        
-        if (activeClone && dragId) {
-          const target = document.elementFromPoint(clientX, clientY);
-          const box = target?.closest('.box');
-          const bin = target?.closest('#bin');
-          
-          // Remove from all placements
-          Object.keys(state.placements).forEach(k => {
-            state.placements[k] = state.placements[k].filter(id => id !== dragId);
-          });
-          
-          if (bin) {
-            delete state.tiles[dragId];
-            showToast('Dog removed', 'info');
-          } else if (box) {
-            const boxId = box.dataset.box;
-            if (!state.placements[boxId]) state.placements[boxId] = [];
-            if (state.placements[boxId].length < 2) {
-              state.placements[boxId].push(dragId);
-            } else {
-              showToast('Box is full (max 2 dogs)', 'warning');
-            }
-          }
-          
-          activeClone.remove();
-          activeClone = null;
-          localSave();
-          hydrate();
-        }
-        
-        currentDragElement = null;
-        dragId = null;
-      }
-      
-      function createDragClone(el, x, y) {
-        activeClone = el.cloneNode(true);
-        activeClone.classList.add('is-dragging');
-        activeClone.style.width = Math.max(el.offsetWidth, 100) + 'px';
-        activeClone.style.height = Math.max(el.offsetHeight, 48) + 'px';
-        activeClone.style.left = (x - 50) + 'px';
-        activeClone.style.top = (y - 24) + 'px';
-        document.body.appendChild(activeClone);
-        el.style.opacity = '0.3';
-      }
-      
-      function setupDragTargets() {
-        document.querySelectorAll('.box').forEach(box => {
-          box.addEventListener('pointerenter', handleDragEnter);
-          box.addEventListener('pointerleave', handleDragLeave);
-        });
-        document.getElementById('bin').addEventListener('pointerenter', handleDragEnter);
-        document.getElementById('bin').addEventListener('pointerleave', handleDragLeave);
-        tray.addEventListener('pointerenter', handleDragEnter);
-        tray.addEventListener('pointerleave', handleDragLeave);
-      }
-
-      // ==================== POINTER EVENTS (Windows/iOS/Desktop) ====================
-      function wirePointerEvents(el, tid) {
+      function wirePointer(el, tid) {
         el.onpointerdown = (e) => {
           if (e.button !== 0) return;
-          
           startX = e.clientX;
           startY = e.clientY;
           dragId = tid;
-          currentDragElement = el;
           el.setPointerCapture(e.pointerId);
 
           el.onpointermove = (m) => {
             const dist = Math.abs(m.clientX - startX) + Math.abs(m.clientY - startY);
-            if (dist > MOVE_THRESHOLD) {
+            if (dist > 10) {
               if (!activeClone) {
                 isDragging = true;
-                // NOTE: Do NOT add body.is-dragging for pointer events
-                // Pointer capture prevents scrolling; body lock causes viewport shrink on Windows
+                // Prevent scrolling while dragging on touch devices
+                document.body.style.overflow = 'hidden';
+                document.body.style.touchAction = 'none';
                 
                 saveUndoState();
-                createDragClone(el, m.clientX, m.clientY);
-                setupDragTargets();
+                activeClone = el.cloneNode(true);
+                activeClone.classList.add('is-dragging');
+                activeClone.style.width = Math.max(el.offsetWidth, 100) + 'px';
+                activeClone.style.height = Math.max(el.offsetHeight, 48) + 'px';
+                document.body.appendChild(activeClone);
+                el.style.opacity = '0.3';
+                
+                document.querySelectorAll('.box').forEach(box => {
+                  box.addEventListener('pointerenter', handleDragEnter);
+                  box.addEventListener('pointerleave', handleDragLeave);
+                });
+                document.getElementById('bin').addEventListener('pointerenter', handleDragEnter);
+                document.getElementById('bin').addEventListener('pointerleave', handleDragLeave);
+                tray.addEventListener('pointerenter', handleDragEnter);
+                tray.addEventListener('pointerleave', handleDragLeave);
               }
               activeClone.style.left = (m.clientX - 50) + 'px';
               activeClone.style.top = (m.clientY - 24) + 'px';
@@ -1556,32 +1598,86 @@
             el.releasePointerCapture(u.pointerId);
             el.onpointermove = null;
             el.onpointerup = null;
+            el.style.opacity = '1';
             
-            if (isDragging) {
-              finishDrag(u.clientX, u.clientY);
-            } else {
-              cleanupDrag();
+            // Re-enable scrolling
+            document.body.style.overflow = '';
+            document.body.style.touchAction = '';
+            isDragging = false;
+            
+            document.querySelectorAll('.box, #bin, #tray').forEach(elem => {
+              elem.removeEventListener('pointerenter', handleDragEnter);
+              elem.removeEventListener('pointerleave', handleDragLeave);
+              elem.classList.remove('drag-over');
+            });
+            
+            if (activeClone) {
+              const target = document.elementFromPoint(u.clientX, u.clientY);
+              const box = target?.closest('.box');
+              const bin = target?.closest('#bin');
+              
+              Object.keys(state.placements).forEach(k => {
+                state.placements[k] = state.placements[k].filter(id => id !== dragId);
+              });
+              
+              if (bin) {
+                delete state.tiles[dragId];
+                showToast('Dog removed', 'info');
+              } else if (box) {
+                const boxId = box.dataset.box;
+                if (!state.placements[boxId]) state.placements[boxId] = [];
+                if (state.placements[boxId].length < 2) {
+                  state.placements[boxId].push(dragId);
+                } else {
+                  showToast('Box is full (max 2 dogs)', 'warning');
+                }
+              }
+              
+              activeClone.remove();
+              activeClone = null;
+              localSave();
+              hydrate();
             }
           };
           
+          // Handle pointer cancel (e.g., incoming call on mobile)
           el.onpointercancel = () => {
-            cleanupDrag();
+            el.style.opacity = '1';
+            document.body.style.overflow = '';
+            document.body.style.touchAction = '';
+            isDragging = false;
             if (activeClone) {
               activeClone.remove();
               activeClone = null;
             }
+            document.querySelectorAll('.drag-over').forEach(elem => {
+              elem.classList.remove('drag-over');
+            });
           };
         };
+        
+        el.ondblclick = () => {
+          const currentText = state.tiles[tid].text;
+          const newText = prompt("Edit dog name:", currentText);
+          if (newText && newText.trim() && newText !== currentText) {
+            saveUndoState();
+            state.tiles[tid].text = newText.trim();
+            localSave();
+            hydrate();
+            showToast('Dog renamed', 'info');
+          }
+        };
       }
-
-      // ==================== TOUCH EVENTS (Android only) ====================
-      // Android Chrome needs special handling with long-press
       
-      // Global touch move handler for Android
+      // ==================== ANDROID TOUCH EVENTS ====================
+      // Android Chrome needs touch events with long-press pattern
+      // Pointer events don't work reliably with touch-action: pan-y
+      
+      // Global touch move handler (only active on Android)
       if (isAndroid) {
         document.addEventListener('touchmove', (e) => {
           if (!isDragging) return;
-          e.preventDefault();
+          e.preventDefault(); // Block scroll during drag
           
           const touch = e.touches[0];
           if (activeClone) {
@@ -1608,6 +1704,7 @@
           
           if (currentDragElement) {
             currentDragElement.classList.remove('long-press-active');
+            currentDragElement.style.opacity = '1';
           }
           
           if (!isDragging) {
@@ -1615,8 +1712,48 @@
             return;
           }
           
+          // Finish the drag
           const touch = e.changedTouches ? e.changedTouches[0] : null;
-          finishDrag(touch ? touch.clientX : 0, touch ? touch.clientY : 0);
+          const clientX = touch ? touch.clientX : 0;
+          const clientY = touch ? touch.clientY : 0;
+          
+          document.body.style.overflow = '';
+          isDragging = false;
+          
+          document.querySelectorAll('.box, #bin, #tray').forEach(elem => {
+            elem.classList.remove('drag-over');
+          });
+          
+          if (activeClone && dragId) {
+            const target = document.elementFromPoint(clientX, clientY);
+            const box = target?.closest('.box');
+            const bin = target?.closest('#bin');
+            
+            Object.keys(state.placements).forEach(k => {
+              state.placements[k] = state.placements[k].filter(id => id !== dragId);
+            });
+            
+            if (bin) {
+              delete state.tiles[dragId];
+              showToast('Dog removed', 'info');
+            } else if (box) {
+              const boxId = box.dataset.box;
+              if (!state.placements[boxId]) state.placements[boxId] = [];
+              if (state.placements[boxId].length < 2) {
+                state.placements[boxId].push(dragId);
+              } else {
+                showToast('Box is full (max 2 dogs)', 'warning');
+              }
+            }
+            
+            activeClone.remove();
+            activeClone = null;
+            localSave();
+            hydrate();
+          }
+          
+          currentDragElement = null;
+          dragId = null;
         }, { passive: true });
         
         document.addEventListener('touchcancel', () => {
@@ -1624,11 +1761,18 @@
             clearTimeout(longPressTimer);
             longPressTimer = null;
           }
-          cleanupDrag();
+          if (currentDragElement) {
+            currentDragElement.classList.remove('long-press-active');
+            currentDragElement.style.opacity = '1';
+          }
+          document.body.style.overflow = '';
+          isDragging = false;
           if (activeClone) {
             activeClone.remove();
             activeClone = null;
           }
+          document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+          currentDragElement = null;
         }, { passive: true });
       }
       
@@ -1656,9 +1800,17 @@
               
               // Start drag
               isDragging = true;
-              document.body.classList.add('is-dragging');
+              document.body.style.overflow = 'hidden';
               saveUndoState();
-              createDragClone(el, touchStartX, touchStartY);
+              
+              activeClone = el.cloneNode(true);
+              activeClone.classList.add('is-dragging');
+              activeClone.style.width = Math.max(el.offsetWidth, 100) + 'px';
+              activeClone.style.height = Math.max(el.offsetHeight, 48) + 'px';
+              activeClone.style.left = (touchStartX - 50) + 'px';
+              activeClone.style.top = (touchStartY - 24) + 'px';
+              document.body.appendChild(activeClone);
+              el.style.opacity = '0.3';
             }
           }, LONG_PRESS_DELAY);
         }, { passive: true });
@@ -1669,7 +1821,7 @@
           const touch = e.touches[0];
           const dist = Math.abs(touch.clientX - touchStartX) + Math.abs(touch.clientY - touchStartY);
           
-          // Cancel long-press if moved too much
+          // Cancel long-press if moved too much (allows scrolling)
           if (dist > MOVE_THRESHOLD && !isDragging) {
             if (longPressTimer) {
               clearTimeout(longPressTimer);
@@ -1693,19 +1845,8 @@
             touchStartY = null;
           }
         }, { passive: true });
-      }
-
-      // ==================== WIRE DRAG EVENTS ====================
-      function wireDragEvents(el, tid) {
-        if (isAndroid) {
-          // Android: Use touch events with long-press
-          wireTouchEvents(el, tid);
-        } else {
-          // Windows/iOS/Desktop: Use pointer events
-          wirePointerEvents(el, tid);
-        }
         
-        // Double-click to edit (works on both)
+        // Double-tap to edit (for Android)
         el.ondblclick = () => {
           const currentText = state.tiles[tid].text;
           const newText = prompt("Edit dog name:", currentText);
@@ -1717,6 +1858,25 @@
             showToast('Dog renamed', 'info');
           }
         };
+      }
+      
+      // Wrapper function - uses correct method based on platform
+      function wireDragEvents(el, tid) {
+        if (isAndroid) {
+          wireTouchEvents(el, tid);
+        } else {
+          // For Windows/iOS/Desktop - set touch-action via JS
+          el.style.touchAction = 'none';
+          wirePointer(el, tid);
+        }
+      }
+      
+      function handleDragEnter(e) {
+        e.currentTarget.classList.add('drag-over');
+      }
+      
+      function handleDragLeave(e) {
+        e.currentTarget.classList.remove('drag-over');
       }
 
       // ==================== UI RENDERING ====================
@@ -1742,7 +1902,7 @@
           const stopObj = getStopObj(boxId);
           const ids = state.placements[boxId] || [];
           
-          // Primary stop input
+          // Primary stop input (top left) - always visible
           const stopPrimary = document.createElement('input');
           stopPrimary.className = 'stop-input';
           stopPrimary.type = 'text';
@@ -1754,7 +1914,7 @@
           };
           box.appendChild(stopPrimary);
           
-          // Secondary stop input (only when 2 dogs)
+          // Secondary stop input (top right) - only show when 2 dogs in kennel
           if (ids.length === 2) {
             const stopSecondary = document.createElement('input');
             stopSecondary.className = 'stop-input-secondary';
@@ -1867,7 +2027,12 @@
         if (e.key === 'Escape' && activeClone) {
           activeClone.remove();
           activeClone = null;
-          cleanupDrag();
+          document.querySelectorAll('[style*="opacity: 0.3"]').forEach(el => {
+            el.style.opacity = '1';
+          });
+          document.querySelectorAll('.drag-over').forEach(el => {
+            el.classList.remove('drag-over');
+          });
           undoStack.pop();
         }
       });
@@ -1903,8 +2068,11 @@
       // ==================== INITIALISATION ====================
       loadPlan('PM');
       
-      // Debug: Log which mode is active
-      console.log('Drag mode:', isAndroid ? 'Android (touch + long-press)' : 'Pointer events');
+      // Debug: Log platform info
+      console.log('=== Van Manager Platform Info ===');
+      console.log('User Agent:', navigator.userAgent);
+      console.log('isAndroid:', isAndroid);
+      console.log('Drag mode:', isAndroid ? 'TOUCH EVENTS (long-press ~300ms to drag)' : 'POINTER EVENTS (immediate drag)');
       
     })();
   </script>
