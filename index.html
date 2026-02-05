@@ -24,11 +24,15 @@
       margin: 0; 
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; 
       background: #f6f7f9; 
-      touch-action: pan-y; 
+      touch-action: pan-x pan-y;
       overscroll-behavior: none;
       min-height: 100vh;
-      /* ADDED: Improve momentum scrolling on mobile WebKit/Android */
       -webkit-overflow-scrolling: touch;
+    }
+    
+    /* Body lock during drag - NO position:fixed (causes visual jump on Android) */
+    body.is-dragging {
+      overflow: hidden !important;
     }
     
     /* Navigation Tabs */
@@ -272,8 +276,8 @@
     }
     
     /* Tiles */
-    /* MODIFIED: Changed touch-action from 'none' to 'pan-y' to allow vertical scrolling on Android */
-    /* Drag detection still works via pointer capture and the 10px threshold in JavaScript */
+    /* ANDROID FIX: touch-action: none is REQUIRED for drag to work on Android */
+    /* Without this, Android Chrome takes over touch handling and blocks drag */
     .tile, .tile-inbox { 
       background: #fff; 
       border-radius: 6px; 
@@ -283,29 +287,31 @@
       text-align: center; 
       box-shadow: 0 2px 4px rgba(0,0,0,0.1); 
       cursor: grab; 
-      touch-action: pan-y;
-      user-select: none; 
+      touch-action: none; /* CRITICAL: must be none for drag, scrolling handled by page */
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
       z-index: 100;
       word-break: break-word; 
       line-height: 1.1; 
       overflow: hidden;
-      transition: box-shadow 0.2s, transform 0.2s;
+      transition: box-shadow 0.15s ease, border-color 0.15s ease;
       font-weight: 500;
     }
     
-    /* Hover states - only for mouse devices */
+    /* Hover states - ONLY for mouse devices to prevent sticky hover on touch */
     @media (hover: hover) and (pointer: fine) {
       .tile:hover, .tile-inbox:hover {
         box-shadow: 0 4px 12px rgba(0,0,0,0.15);
       }
     }
     
-    /* Long-press visual feedback (Android) */
+    /* Long-press visual feedback for Android */
     .tile.long-press-active,
     .tile-inbox.long-press-active {
-      background: #ebf8ff;
+      background: #ebf8ff !important;
       border-color: var(--accent) !important;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+      box-shadow: 0 4px 12px rgba(0, 172, 238, 0.3);
     }
     
     .tile { 
@@ -853,24 +859,9 @@
         user-select: none;
       }
       
-      /* Visual feedback for touch */
-      .tile:active, .tile-inbox:active {
-        transform: scale(0.98);
-        opacity: 0.9;
-      }
-      
+      /* NO transform on touch - causes layout thrash per project docs */
       button:active {
-        transform: scale(0.98);
-      }
-      
-      /* ADDED: Ensure boxes allow scroll pass-through on touch devices */
-      .box {
-        touch-action: pan-y;
-      }
-      
-      /* ADDED: Tray should also allow vertical scrolling */
-      .tiles-tray {
-        touch-action: pan-y;
+        opacity: 0.8;
       }
     }
     
@@ -1146,14 +1137,15 @@
         'dv': 'Dispatch van - Citroen'
       };
       
-      // Platform detection - Android needs special touch handling
+      // ==================== PLATFORM DETECTION ====================
+      // Android Chrome needs touch events - pointer events don't work reliably
       const isAndroid = /Android/i.test(navigator.userAgent);
-      const LONG_PRESS_DELAY = 300;  // ms for long-press to start drag
-      const MOVE_THRESHOLD = 10;     // px movement to cancel long-press
+      const LONG_PRESS_DELAY = 300;  // ms before drag starts
+      const MOVE_THRESHOLD = 10;     // px movement cancels long-press
       
-      // Touch state for Android
+      // Touch state for Android long-press pattern
       let longPressTimer = null;
-      let touchStartPos = null;
+      let touchStartPos = { x: 0, y: 0 };
       let currentDragElement = null;
       
       // DOM Elements
@@ -1555,148 +1547,37 @@
       // ==================== DRAG & DROP ====================
       let isDragging = false;
       
-      function wirePointer(el, tid) {
-        el.onpointerdown = (e) => {
-          if (e.button !== 0) return;
-          startX = e.clientX;
-          startY = e.clientY;
-          dragId = tid;
-          el.setPointerCapture(e.pointerId);
-
-          el.onpointermove = (m) => {
-            const dist = Math.abs(m.clientX - startX) + Math.abs(m.clientY - startY);
-            if (dist > 10) {
-              if (!activeClone) {
-                isDragging = true;
-                // Prevent scrolling while dragging on touch devices
-                document.body.style.overflow = 'hidden';
-                document.body.style.touchAction = 'none';
-                
-                saveUndoState();
-                activeClone = el.cloneNode(true);
-                activeClone.classList.add('is-dragging');
-                activeClone.style.width = Math.max(el.offsetWidth, 100) + 'px';
-                activeClone.style.height = Math.max(el.offsetHeight, 48) + 'px';
-                document.body.appendChild(activeClone);
-                el.style.opacity = '0.3';
-                
-                document.querySelectorAll('.box').forEach(box => {
-                  box.addEventListener('pointerenter', handleDragEnter);
-                  box.addEventListener('pointerleave', handleDragLeave);
-                });
-                document.getElementById('bin').addEventListener('pointerenter', handleDragEnter);
-                document.getElementById('bin').addEventListener('pointerleave', handleDragLeave);
-                tray.addEventListener('pointerenter', handleDragEnter);
-                tray.addEventListener('pointerleave', handleDragLeave);
-              }
-              activeClone.style.left = (m.clientX - 50) + 'px';
-              activeClone.style.top = (m.clientY - 24) + 'px';
-            }
-          };
-
-          el.onpointerup = (u) => {
-            el.releasePointerCapture(u.pointerId);
-            el.onpointermove = null;
-            el.onpointerup = null;
-            el.style.opacity = '1';
-            
-            // Re-enable scrolling
-            document.body.style.overflow = '';
-            document.body.style.touchAction = '';
-            isDragging = false;
-            
-            document.querySelectorAll('.box, #bin, #tray').forEach(elem => {
-              elem.removeEventListener('pointerenter', handleDragEnter);
-              elem.removeEventListener('pointerleave', handleDragLeave);
-              elem.classList.remove('drag-over');
-            });
-            
-            if (activeClone) {
-              const target = document.elementFromPoint(u.clientX, u.clientY);
-              const box = target?.closest('.box');
-              const bin = target?.closest('#bin');
-              
-              Object.keys(state.placements).forEach(k => {
-                state.placements[k] = state.placements[k].filter(id => id !== dragId);
-              });
-              
-              if (bin) {
-                delete state.tiles[dragId];
-                showToast('Dog removed', 'info');
-              } else if (box) {
-                const boxId = box.dataset.box;
-                if (!state.placements[boxId]) state.placements[boxId] = [];
-                if (state.placements[boxId].length < 2) {
-                  state.placements[boxId].push(dragId);
-                } else {
-                  showToast('Box is full (max 2 dogs)', 'warning');
-                }
-              }
-              
-              activeClone.remove();
-              activeClone = null;
-              localSave();
-              hydrate();
-            }
-          };
-          
-          // Handle pointer cancel (e.g., incoming call on mobile)
-          el.onpointercancel = () => {
-            el.style.opacity = '1';
-            document.body.style.overflow = '';
-            document.body.style.touchAction = '';
-            isDragging = false;
-            if (activeClone) {
-              activeClone.remove();
-              activeClone = null;
-            }
-            document.querySelectorAll('.drag-over').forEach(elem => {
-              elem.classList.remove('drag-over');
-            });
-          };
-        };
-        
-        el.ondblclick = () => {
-          const currentText = state.tiles[tid].text;
-          const newText = prompt("Edit dog name:", currentText);
-          if (newText && newText.trim() && newText !== currentText) {
-            saveUndoState();
-            state.tiles[tid].text = newText.trim();
-            localSave();
-            hydrate();
-            showToast('Dog renamed', 'info');
-          }
-        };
-      }
+      // ==================== DOCUMENT-LEVEL TOUCH EVENTS (Android) ====================
+      // CRITICAL: Must be at document level with { passive: false } on touchmove
+      // This is the ONLY way to reliably preventDefault on Android Chrome
       
-      // ==================== ANDROID TOUCH EVENTS ====================
-      // Android Chrome needs touch events with long-press pattern
-      // Pointer events don't work reliably with touch-action: pan-y
-      
-      // Global touch move handler (only active on Android)
       if (isAndroid) {
-        document.addEventListener('touchmove', (e) => {
+        // touchmove - MUST be { passive: false } to allow preventDefault
+        document.addEventListener('touchmove', function(e) {
           if (!isDragging) return;
-          e.preventDefault(); // Block scroll during drag
+          e.preventDefault(); // Block scroll ONLY when dragging
           
           const touch = e.touches[0];
           if (activeClone) {
             activeClone.style.left = (touch.clientX - 50) + 'px';
             activeClone.style.top = (touch.clientY - 24) + 'px';
             
-            // Update drag-over states
+            // Update drag-over states manually (no pointer events during touch)
             document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
             const target = document.elementFromPoint(touch.clientX, touch.clientY);
-            const box = target?.closest('.box');
-            const bin = target?.closest('#bin');
-            const trayEl = target?.closest('#tray');
-            if (box) box.classList.add('drag-over');
-            if (bin) bin.classList.add('drag-over');
-            if (trayEl) trayEl.classList.add('drag-over');
+            if (target) {
+              const box = target.closest('.box');
+              const bin = target.closest('#bin');
+              const trayEl = target.closest('#tray');
+              if (box) box.classList.add('drag-over');
+              if (bin) bin.classList.add('drag-over');
+              if (trayEl) trayEl.classList.add('drag-over');
+            }
           }
-        }, { passive: false });
+        }, { passive: false }); // CRITICAL
         
-        document.addEventListener('touchend', (e) => {
+        // touchend - finish drag
+        document.addEventListener('touchend', function(e) {
           if (longPressTimer) {
             clearTimeout(longPressTimer);
             longPressTimer = null;
@@ -1712,116 +1593,139 @@
             return;
           }
           
-          // Finish the drag
           const touch = e.changedTouches ? e.changedTouches[0] : null;
-          const clientX = touch ? touch.clientX : 0;
-          const clientY = touch ? touch.clientY : 0;
-          
-          document.body.style.overflow = '';
-          isDragging = false;
-          
-          document.querySelectorAll('.box, #bin, #tray').forEach(elem => {
-            elem.classList.remove('drag-over');
-          });
-          
-          if (activeClone && dragId) {
-            const target = document.elementFromPoint(clientX, clientY);
-            const box = target?.closest('.box');
-            const bin = target?.closest('#bin');
-            
-            Object.keys(state.placements).forEach(k => {
-              state.placements[k] = state.placements[k].filter(id => id !== dragId);
-            });
-            
-            if (bin) {
-              delete state.tiles[dragId];
-              showToast('Dog removed', 'info');
-            } else if (box) {
-              const boxId = box.dataset.box;
-              if (!state.placements[boxId]) state.placements[boxId] = [];
-              if (state.placements[boxId].length < 2) {
-                state.placements[boxId].push(dragId);
-              } else {
-                showToast('Box is full (max 2 dogs)', 'warning');
-              }
-            }
-            
-            activeClone.remove();
-            activeClone = null;
-            localSave();
-            hydrate();
-          }
-          
-          currentDragElement = null;
-          dragId = null;
+          finishDrag(touch ? touch.clientX : 0, touch ? touch.clientY : 0);
         }, { passive: true });
         
-        document.addEventListener('touchcancel', () => {
+        // touchcancel - cleanup
+        document.addEventListener('touchcancel', function() {
           if (longPressTimer) {
             clearTimeout(longPressTimer);
             longPressTimer = null;
           }
-          if (currentDragElement) {
-            currentDragElement.classList.remove('long-press-active');
-            currentDragElement.style.opacity = '1';
-          }
-          document.body.style.overflow = '';
-          isDragging = false;
-          if (activeClone) {
-            activeClone.remove();
-            activeClone = null;
-          }
-          document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
-          currentDragElement = null;
+          cancelDrag();
         }, { passive: true });
       }
+      
+      // ==================== HELPER FUNCTIONS ====================
+      
+      function createDragClone(el, x, y) {
+        activeClone = el.cloneNode(true);
+        activeClone.classList.add('is-dragging');
+        activeClone.style.width = Math.max(el.offsetWidth, 100) + 'px';
+        activeClone.style.height = Math.max(el.offsetHeight, 48) + 'px';
+        activeClone.style.left = (x - 50) + 'px';
+        activeClone.style.top = (y - 24) + 'px';
+        document.body.appendChild(activeClone);
+        el.style.opacity = '0.3';
+      }
+      
+      function finishDrag(clientX, clientY) {
+        document.body.classList.remove('is-dragging');
+        isDragging = false;
+        
+        if (currentDragElement) {
+          currentDragElement.style.opacity = '1';
+          currentDragElement.classList.remove('long-press-active');
+        }
+        
+        document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+        
+        if (activeClone && dragId) {
+          const target = document.elementFromPoint(clientX, clientY);
+          const box = target?.closest('.box');
+          const bin = target?.closest('#bin');
+          
+          // Remove from all placements
+          Object.keys(state.placements).forEach(k => {
+            state.placements[k] = state.placements[k].filter(id => id !== dragId);
+          });
+          
+          if (bin) {
+            delete state.tiles[dragId];
+            showToast('Dog removed', 'info');
+          } else if (box) {
+            const boxId = box.dataset.box;
+            if (!state.placements[boxId]) state.placements[boxId] = [];
+            if (state.placements[boxId].length < 2) {
+              state.placements[boxId].push(dragId);
+            } else {
+              showToast('Box is full (max 2 dogs)', 'warning');
+            }
+          }
+          
+          activeClone.remove();
+          activeClone = null;
+          localSave();
+          hydrate();
+        }
+        
+        currentDragElement = null;
+        dragId = null;
+      }
+      
+      function cancelDrag() {
+        document.body.classList.remove('is-dragging');
+        isDragging = false;
+        
+        if (currentDragElement) {
+          currentDragElement.style.opacity = '1';
+          currentDragElement.classList.remove('long-press-active');
+        }
+        
+        if (activeClone) {
+          activeClone.remove();
+          activeClone = null;
+        }
+        
+        document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+        currentDragElement = null;
+        dragId = null;
+      }
+      
+      // ==================== ANDROID TOUCH EVENTS (Long-Press Pattern) ====================
       
       function wireTouchEvents(el, tid) {
         let touchStartX, touchStartY;
         
-        el.addEventListener('touchstart', (e) => {
+        el.addEventListener('touchstart', function(e) {
           if (e.touches.length !== 1) return;
           
           const touch = e.touches[0];
           touchStartX = touch.clientX;
           touchStartY = touch.clientY;
+          touchStartPos = { x: touchStartX, y: touchStartY };
           currentDragElement = el;
           dragId = tid;
           
           // Start long-press timer
-          longPressTimer = setTimeout(() => {
-            if (currentDragElement === el) {
-              el.classList.add('long-press-active');
-              
-              // Haptic feedback
-              if (navigator.vibrate) {
-                navigator.vibrate(50);
-              }
-              
-              // Start drag
-              isDragging = true;
-              document.body.style.overflow = 'hidden';
-              saveUndoState();
-              
-              activeClone = el.cloneNode(true);
-              activeClone.classList.add('is-dragging');
-              activeClone.style.width = Math.max(el.offsetWidth, 100) + 'px';
-              activeClone.style.height = Math.max(el.offsetHeight, 48) + 'px';
-              activeClone.style.left = (touchStartX - 50) + 'px';
-              activeClone.style.top = (touchStartY - 24) + 'px';
-              document.body.appendChild(activeClone);
-              el.style.opacity = '0.3';
+          longPressTimer = setTimeout(function() {
+            if (currentDragElement !== el) return;
+            
+            // Visual feedback
+            el.classList.add('long-press-active');
+            
+            // Haptic feedback
+            if (navigator.vibrate) {
+              navigator.vibrate(50);
             }
+            
+            // Start drag
+            isDragging = true;
+            document.body.classList.add('is-dragging');
+            saveUndoState();
+            createDragClone(el, touchStartX, touchStartY);
+            
           }, LONG_PRESS_DELAY);
         }, { passive: true });
         
-        el.addEventListener('touchmove', (e) => {
+        el.addEventListener('touchmove', function(e) {
           if (!touchStartX) return;
           
           const touch = e.touches[0];
           const dist = Math.abs(touch.clientX - touchStartX) + Math.abs(touch.clientY - touchStartY);
           
-          // Cancel long-press if moved too much (allows scrolling)
+          // Cancel long-press if moved too much (allows scroll to happen)
           if (dist > MOVE_THRESHOLD && !isDragging) {
             if (longPressTimer) {
               clearTimeout(longPressTimer);
@@ -1834,7 +1738,7 @@
           }
         }, { passive: true });
         
-        el.addEventListener('touchend', () => {
+        el.addEventListener('touchend', function() {
           if (longPressTimer) {
             clearTimeout(longPressTimer);
             longPressTimer = null;
@@ -1846,8 +1750,8 @@
           }
         }, { passive: true });
         
-        // Double-tap to edit (for Android)
-        el.ondblclick = () => {
+        // Double-tap to edit
+        el.ondblclick = function() {
           const currentText = state.tiles[tid].text;
           const newText = prompt("Edit dog name:", currentText);
           if (newText && newText.trim() && newText !== currentText) {
@@ -1860,13 +1764,79 @@
         };
       }
       
-      // Wrapper function - uses correct method based on platform
+      // ==================== POINTER EVENTS (Windows/iOS/Desktop) ====================
+      
+      function wirePointer(el, tid) {
+        el.onpointerdown = function(e) {
+          if (e.button !== 0) return;
+          startX = e.clientX;
+          startY = e.clientY;
+          dragId = tid;
+          currentDragElement = el;
+          el.setPointerCapture(e.pointerId);
+
+          el.onpointermove = function(m) {
+            const dist = Math.abs(m.clientX - startX) + Math.abs(m.clientY - startY);
+            if (dist > MOVE_THRESHOLD) {
+              if (!activeClone) {
+                isDragging = true;
+                saveUndoState();
+                createDragClone(el, m.clientX, m.clientY);
+              }
+              activeClone.style.left = (m.clientX - 50) + 'px';
+              activeClone.style.top = (m.clientY - 24) + 'px';
+              
+              // Update drag-over states
+              document.querySelectorAll('.drag-over').forEach(elem => elem.classList.remove('drag-over'));
+              const target = document.elementFromPoint(m.clientX, m.clientY);
+              if (target) {
+                const box = target.closest('.box');
+                const bin = target.closest('#bin');
+                const trayEl = target.closest('#tray');
+                if (box) box.classList.add('drag-over');
+                if (bin) bin.classList.add('drag-over');
+                if (trayEl) trayEl.classList.add('drag-over');
+              }
+            }
+          };
+
+          el.onpointerup = function(u) {
+            el.releasePointerCapture(u.pointerId);
+            el.onpointermove = null;
+            el.onpointerup = null;
+            
+            if (isDragging) {
+              finishDrag(u.clientX, u.clientY);
+            } else {
+              el.style.opacity = '1';
+              currentDragElement = null;
+            }
+          };
+          
+          el.onpointercancel = function() {
+            cancelDrag();
+          };
+        };
+        
+        el.ondblclick = function() {
+          const currentText = state.tiles[tid].text;
+          const newText = prompt("Edit dog name:", currentText);
+          if (newText && newText.trim() && newText !== currentText) {
+            saveUndoState();
+            state.tiles[tid].text = newText.trim();
+            localSave();
+            hydrate();
+            showToast('Dog renamed', 'info');
+          }
+        };
+      }
+      
+      // ==================== WRAPPER FUNCTION ====================
+      
       function wireDragEvents(el, tid) {
         if (isAndroid) {
           wireTouchEvents(el, tid);
         } else {
-          // For Windows/iOS/Desktop - set touch-action via JS
-          el.style.touchAction = 'none';
           wirePointer(el, tid);
         }
       }
@@ -2072,7 +2042,8 @@
       console.log('=== Van Manager Platform Info ===');
       console.log('User Agent:', navigator.userAgent);
       console.log('isAndroid:', isAndroid);
-      console.log('Drag mode:', isAndroid ? 'TOUCH EVENTS (long-press ~300ms to drag)' : 'POINTER EVENTS (immediate drag)');
+      console.log('Drag mode:', isAndroid ? 'TOUCH EVENTS (long-press ~300ms)' : 'POINTER EVENTS (immediate drag)');
+      console.log('touch-action on tiles: none (for drag to work)');
       
     })();
   </script>
