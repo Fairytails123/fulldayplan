@@ -334,7 +334,13 @@
       }
     }
     
-    /* Long-press active state on handle */
+    /* Touch-active state - immediate feedback when touching handle */
+    .drag-handle.touch-active {
+      background: #e2e8f0;
+      color: #4a5568;
+    }
+    
+    /* Long-press active state on handle - drag is starting */
     .drag-handle.long-press-active {
       background: var(--accent) !important;
       color: #fff !important;
@@ -1602,9 +1608,9 @@
       let boundTouchMove = null;
       let boundTouchEnd = null;
       
-      // Settings - proven values from working template
-      const LONG_PRESS_DURATION = 300;
-      const SCROLL_THRESHOLD = 8;
+      // Settings - TUNED for responsiveness
+      const LONG_PRESS_DURATION = 180;  // Reduced from 300ms for faster response
+      const SCROLL_THRESHOLD = 10;      // Slightly higher to reduce accidental cancels
       
       // Handle touch start - DOCUMENT LEVEL
       function handleTouchStart(e) {
@@ -1622,6 +1628,15 @@
         const tid = draggable.getAttribute('data-tile-id');
         if (!tid || !state.tiles[tid]) return;
         
+        // Clean up any existing listeners first (prevents stacking)
+        document.removeEventListener('touchmove', checkTouchScroll);
+        document.removeEventListener('touchend', cancelTouchDrag);
+        document.removeEventListener('touchcancel', cancelTouchDrag);
+        if (longPressTimer) {
+          clearTimeout(longPressTimer);
+          longPressTimer = null;
+        }
+        
         touchStartPos = { x: touch.clientX, y: touch.clientY };
         dragSourceElement = draggable;
         pendingDragInfo = {
@@ -1630,7 +1645,8 @@
           coords: { x: touch.clientX, y: touch.clientY }
         };
         
-        if (longPressTimer) clearTimeout(longPressTimer);
+        // Immediate visual feedback - show user we've registered the touch
+        draggable.classList.add('touch-active');
         
         // Start long-press timer
         longPressTimer = setTimeout(() => {
@@ -1665,6 +1681,12 @@
           clearTimeout(longPressTimer);
           longPressTimer = null;
         }
+        
+        // Remove visual feedback
+        if (dragSourceElement) {
+          dragSourceElement.classList.remove('touch-active');
+        }
+        
         touchStartPos = null;
         pendingDragInfo = null;
         dragSourceElement = null;
@@ -1694,8 +1716,9 @@
           navigator.vibrate(50);
         }
         
-        // Visual feedback
+        // Visual feedback - transition from touch-active to long-press-active
         if (dragSourceElement) {
+          dragSourceElement.classList.remove('touch-active');
           dragSourceElement.classList.add('long-press-active');
         }
         
@@ -1778,10 +1801,10 @@
         
         // Clean up visual feedback
         if (dragSourceElement) {
-          dragSourceElement.classList.remove('long-press-active');
+          dragSourceElement.classList.remove('touch-active', 'long-press-active');
         }
         if (currentDragHandle) {
-          currentDragHandle.classList.remove('long-press-active');
+          currentDragHandle.classList.remove('touch-active', 'long-press-active');
         }
         if (currentDragTile) {
           currentDragTile.style.opacity = '1';
@@ -1833,10 +1856,10 @@
         
         // Clean up visual feedback
         if (dragSourceElement) {
-          dragSourceElement.classList.remove('long-press-active');
+          dragSourceElement.classList.remove('touch-active', 'long-press-active');
         }
         if (currentDragHandle) {
-          currentDragHandle.classList.remove('long-press-active');
+          currentDragHandle.classList.remove('touch-active', 'long-press-active');
         }
         if (currentDragTile) {
           currentDragTile.style.opacity = '1';
@@ -2170,14 +2193,14 @@
       loadPlan('PM');
       
       // Debug logging
-      console.log('=== Van Manager - Android Scroll Fix (Document Delegation) ===');
+      console.log('=== Van Manager - Responsive Drag Fix ===');
       console.log('User Agent:', navigator.userAgent);
       console.log('isAndroid:', isAndroid);
       if (isAndroid) {
         console.log('Mode: ANDROID - Document-level event delegation');
-        console.log('- Scroll: Touch anywhere on page (touch-action: auto on body)');
-        console.log('- Drag: Long-press drag handle (⋮⋮) for 300ms');
-        console.log('- Pattern: Single document touchstart listener');
+        console.log('- Scroll: Touch anywhere (touch-action: auto on body)');
+        console.log('- Drag: Long-press handle (⋮⋮) for 180ms');
+        console.log('- Visual feedback: Immediate on touch, changes at drag start');
         console.log('- Non-passive touchmove added ONLY during active drag');
       } else {
         console.log('Mode: WINDOWS/DESKTOP');
