@@ -18,25 +18,30 @@
       --radius: 10px;
     }
     
-    * { box-sizing: border-box; }
+    * { 
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box; 
+      -webkit-tap-highlight-color: transparent;
+    }
     
+    html {
+      overflow-x: hidden;
+    }
+    
+    /* ANDROID FIX: Allow default touch actions on body - MUST be auto */
     body { 
-      margin: 0; 
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; 
       background: #f6f7f9; 
-      touch-action: manipulation;  /* Better than pan-x pan-y - allows scroll + pinch zoom */
-      overscroll-behavior: none;
       min-height: 100vh;
+      width: 100%;
+      overflow-y: auto;
+      overflow-x: hidden;
       -webkit-overflow-scrolling: touch;
+      touch-action: auto;  /* CRITICAL: Must be auto for Android scroll */
     }
     
-    /* Ensure html/body allow scrolling */
-    html {
-      overflow-y: scroll;  /* CRITICAL for Android - explicit scroll enablement */
-      -webkit-overflow-scrolling: touch;
-    }
-    
-    /* Body lock during drag - NO position:fixed (causes visual jump) */
+    /* ANDROID FIX: Prevent scroll during drag - NO position fixed (causes jump) */
     body.is-dragging {
       overflow: hidden !important;
       touch-action: none !important;
@@ -900,11 +905,6 @@
       button:active {
         opacity: 0.8;
       }
-      
-      /* Scrollable containers - explicit pan directions */
-      .box, .tiles-tray {
-        touch-action: pan-x pan-y;
-      }
     }
     
     /* Print Styles */
@@ -1181,12 +1181,12 @@
       
       // ==================== PLATFORM DETECTION ====================
       const isAndroid = /Android/i.test(navigator.userAgent);
-      const LONG_PRESS_DELAY = 300;  // ms before drag starts
-      const MOVE_THRESHOLD = 10;     // px movement cancels long-press
       
-      // Touch state for Android long-press pattern
+      // Shared constants
+      const MOVE_THRESHOLD = 10;  // px movement before drag starts (used by Windows pointer events)
+      
+      // Touch state for drag (used by both platforms)
       let longPressTimer = null;
-      let touchStartPos = { x: 0, y: 0 };
       let currentDragHandle = null;
       let currentDragTile = null;
       
@@ -1590,18 +1590,140 @@
       let isDragging = false;
       
       // ==================== ANDROID TOUCH HANDLING ====================
-      // KEY INSIGHT: Don't add non-passive touchmove listener at page load!
-      // Chrome Android blocks scroll if it sees { passive: false } on document.
-      // Instead, we add it dynamically ONLY during active drag.
+      // PATTERN FROM WORKING TEMPLATE: Document-level event delegation
+      // 1. Single touchstart listener on document
+      // 2. Passive touchmove to detect scrolling
+      // 3. Non-passive touchmove ONLY during active drag
       
-      // Drag movement handler - added/removed dynamically
-      function handleDragTouchMove(e) {
-        if (!isDragging || !activeClone) return;
-        e.preventDefault(); // Block scroll during drag
+      // State for touch drag
+      let touchStartPos = null;
+      let dragSourceElement = null;
+      let pendingDragInfo = null;
+      let boundTouchMove = null;
+      let boundTouchEnd = null;
+      
+      // Settings - proven values from working template
+      const LONG_PRESS_DURATION = 300;
+      const SCROLL_THRESHOLD = 8;
+      
+      // Handle touch start - DOCUMENT LEVEL
+      function handleTouchStart(e) {
+        if (e.touches.length !== 1) return; // Single touch only
         
         const touch = e.touches[0];
-        activeClone.style.left = (touch.clientX - 50) + 'px';
-        activeClone.style.top = (touch.clientY - 24) + 'px';
+        const draggable = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('[data-draggable="true"]');
+        if (!draggable) return;
+        
+        // Find the tile and its ID
+        const tile = draggable.closest('.tile, .tile-inbox');
+        if (!tile) return;
+        
+        // Get tile ID from data attribute (set in wireTouchEvents)
+        const tid = draggable.getAttribute('data-tile-id');
+        if (!tid || !state.tiles[tid]) return;
+        
+        touchStartPos = { x: touch.clientX, y: touch.clientY };
+        dragSourceElement = draggable;
+        pendingDragInfo = {
+          tile: tile,
+          tid: tid,
+          coords: { x: touch.clientX, y: touch.clientY }
+        };
+        
+        if (longPressTimer) clearTimeout(longPressTimer);
+        
+        // Start long-press timer
+        longPressTimer = setTimeout(() => {
+          if (pendingDragInfo && touchStartPos) {
+            startDragTouch(pendingDragInfo);
+          }
+        }, LONG_PRESS_DURATION);
+        
+        // Listen for movement/cancel (passive to allow scroll initially)
+        document.addEventListener('touchmove', checkTouchScroll, { passive: true });
+        document.addEventListener('touchend', cancelTouchDrag);
+        document.addEventListener('touchcancel', cancelTouchDrag);
+      }
+      
+      // Check if user is scrolling (passive - doesn't block scroll)
+      function checkTouchScroll(e) {
+        if (!touchStartPos || isDragging) return;
+        
+        const touch = e.touches[0];
+        const dx = Math.abs(touch.clientX - touchStartPos.x);
+        const dy = Math.abs(touch.clientY - touchStartPos.y);
+        
+        // If moved too much before timer, it's a scroll - cancel drag
+        if (dx > SCROLL_THRESHOLD || dy > SCROLL_THRESHOLD) {
+          cancelTouchDrag();
+        }
+      }
+      
+      // Cancel drag attempt (user scrolled or lifted finger)
+      function cancelTouchDrag() {
+        if (longPressTimer) {
+          clearTimeout(longPressTimer);
+          longPressTimer = null;
+        }
+        touchStartPos = null;
+        pendingDragInfo = null;
+        dragSourceElement = null;
+        
+        document.removeEventListener('touchmove', checkTouchScroll);
+        document.removeEventListener('touchend', cancelTouchDrag);
+        document.removeEventListener('touchcancel', cancelTouchDrag);
+      }
+      
+      // Start actual drag (long-press completed)
+      function startDragTouch(dragInfo) {
+        // Remove the scroll-checking listeners
+        document.removeEventListener('touchmove', checkTouchScroll);
+        document.removeEventListener('touchend', cancelTouchDrag);
+        document.removeEventListener('touchcancel', cancelTouchDrag);
+        
+        // Now we're dragging
+        isDragging = true;
+        dragId = dragInfo.tid;
+        currentDragTile = dragInfo.tile;
+        
+        // Lock body scroll
+        document.body.classList.add('is-dragging');
+        
+        // Haptic feedback
+        if (navigator.vibrate) {
+          navigator.vibrate(50);
+        }
+        
+        // Visual feedback
+        if (dragSourceElement) {
+          dragSourceElement.classList.add('long-press-active');
+        }
+        
+        // Save undo state and create ghost
+        saveUndoState();
+        createDragClone(dragInfo.tile, dragInfo.coords.x, dragInfo.coords.y);
+        
+        // CRITICAL: Add NON-PASSIVE touchmove listener to block scrolling
+        boundTouchMove = handleDragTouchMove;
+        boundTouchEnd = handleDragTouchEnd;
+        document.addEventListener('touchmove', boundTouchMove, { passive: false });
+        document.addEventListener('touchend', boundTouchEnd);
+        document.addEventListener('touchcancel', boundTouchEnd);
+      }
+      
+      // Handle touch move DURING DRAG (non-passive)
+      function handleDragTouchMove(e) {
+        if (!isDragging) return;
+        
+        // CRITICAL: Prevent default to STOP scrolling
+        e.preventDefault();
+        
+        const touch = e.touches[0];
+        
+        if (activeClone) {
+          activeClone.style.left = (touch.clientX - 50) + 'px';
+          activeClone.style.top = (touch.clientY - 24) + 'px';
+        }
         
         // Update drag-over states
         document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
@@ -1616,50 +1738,25 @@
         }
       }
       
-      // Start listening for drag movement - called when drag begins
-      function startDragListeners() {
-        // Add non-passive listener ONLY during drag
-        document.addEventListener('touchmove', handleDragTouchMove, { passive: false });
-      }
-      
-      // Stop listening for drag movement - called when drag ends
-      function stopDragListeners() {
-        document.removeEventListener('touchmove', handleDragTouchMove);
-      }
-      
-      if (isAndroid) {
-        // touchend - PASSIVE, always present (doesn't block scroll)
-        document.addEventListener('touchend', function(e) {
-          if (longPressTimer) {
-            clearTimeout(longPressTimer);
-            longPressTimer = null;
-          }
-          
-          if (currentDragHandle) {
-            currentDragHandle.classList.remove('long-press-active');
-          }
-          if (currentDragTile) {
-            currentDragTile.style.opacity = '1';
-          }
-          
-          if (!isDragging) {
-            currentDragHandle = null;
-            currentDragTile = null;
-            return;
-          }
-          
-          const touch = e.changedTouches ? e.changedTouches[0] : null;
-          finishDrag(touch ? touch.clientX : 0, touch ? touch.clientY : 0);
-        }, { passive: true });
+      // Handle touch end DURING DRAG
+      function handleDragTouchEnd(e) {
+        // Remove listeners
+        document.removeEventListener('touchmove', boundTouchMove);
+        document.removeEventListener('touchend', boundTouchEnd);
+        document.removeEventListener('touchcancel', boundTouchEnd);
         
-        // touchcancel - PASSIVE, always present
-        document.addEventListener('touchcancel', function() {
-          if (longPressTimer) {
-            clearTimeout(longPressTimer);
-            longPressTimer = null;
-          }
-          cancelDrag();
-        }, { passive: true });
+        // Get final position
+        const touch = e.changedTouches[0];
+        const finalX = touch.clientX;
+        const finalY = touch.clientY;
+        
+        // Clean up and process drop
+        finishDrag(finalX, finalY);
+      }
+      
+      // Setup Android touch events - DOCUMENT LEVEL
+      if (isAndroid) {
+        document.addEventListener('touchstart', handleTouchStart, { passive: true });
       }
       
       // ==================== HELPER FUNCTIONS ====================
@@ -1678,8 +1775,11 @@
       function finishDrag(clientX, clientY) {
         document.body.classList.remove('is-dragging');
         isDragging = false;
-        stopDragListeners(); // Remove non-passive listener when drag ends
         
+        // Clean up visual feedback
+        if (dragSourceElement) {
+          dragSourceElement.classList.remove('long-press-active');
+        }
         if (currentDragHandle) {
           currentDragHandle.classList.remove('long-press-active');
         }
@@ -1718,16 +1818,23 @@
           hydrate();
         }
         
+        // Reset all drag state
         currentDragHandle = null;
         currentDragTile = null;
+        dragSourceElement = null;
+        pendingDragInfo = null;
+        touchStartPos = null;
         dragId = null;
       }
       
       function cancelDrag() {
         document.body.classList.remove('is-dragging');
         isDragging = false;
-        stopDragListeners(); // Remove non-passive listener when drag cancelled
         
+        // Clean up visual feedback
+        if (dragSourceElement) {
+          dragSourceElement.classList.remove('long-press-active');
+        }
         if (currentDragHandle) {
           currentDragHandle.classList.remove('long-press-active');
         }
@@ -1741,81 +1848,23 @@
         }
         
         document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+        
+        // Reset all drag state
         currentDragHandle = null;
         currentDragTile = null;
+        dragSourceElement = null;
+        pendingDragInfo = null;
+        touchStartPos = null;
         dragId = null;
       }
       
-      // ==================== ANDROID: Wire touch events to DRAG HANDLE ====================
+      // ==================== ANDROID: Mark handle as draggable ====================
+      // No individual listeners needed - using document-level event delegation
       
       function wireTouchEvents(handle, tile, tid) {
-        let touchStartX, touchStartY;
-        
-        handle.addEventListener('touchstart', function(e) {
-          if (e.touches.length !== 1) return;
-          e.stopPropagation(); // Don't bubble to tile
-          
-          const touch = e.touches[0];
-          touchStartX = touch.clientX;
-          touchStartY = touch.clientY;
-          touchStartPos = { x: touchStartX, y: touchStartY };
-          currentDragHandle = handle;
-          currentDragTile = tile;
-          dragId = tid;
-          
-          // Start long-press timer
-          longPressTimer = setTimeout(function() {
-            if (currentDragHandle !== handle) return;
-            
-            // Visual feedback on handle
-            handle.classList.add('long-press-active');
-            
-            // Haptic feedback
-            if (navigator.vibrate) {
-              navigator.vibrate(50);
-            }
-            
-            // Start drag
-            isDragging = true;
-            document.body.classList.add('is-dragging');
-            startDragListeners(); // CRITICAL: Add non-passive listener NOW (during drag only)
-            saveUndoState();
-            createDragClone(tile, touchStartX, touchStartY);
-            
-          }, LONG_PRESS_DELAY);
-        }, { passive: true });
-        
-        handle.addEventListener('touchmove', function(e) {
-          if (!touchStartX) return;
-          
-          const touch = e.touches[0];
-          const dist = Math.abs(touch.clientX - touchStartX) + Math.abs(touch.clientY - touchStartY);
-          
-          // Cancel long-press if moved too much (allows scroll)
-          if (dist > MOVE_THRESHOLD && !isDragging) {
-            if (longPressTimer) {
-              clearTimeout(longPressTimer);
-              longPressTimer = null;
-            }
-            handle.classList.remove('long-press-active');
-            currentDragHandle = null;
-            currentDragTile = null;
-            touchStartX = null;
-            touchStartY = null;
-          }
-        }, { passive: true });
-        
-        handle.addEventListener('touchend', function() {
-          if (longPressTimer) {
-            clearTimeout(longPressTimer);
-            longPressTimer = null;
-          }
-          if (!isDragging) {
-            handle.classList.remove('long-press-active');
-            touchStartX = null;
-            touchStartY = null;
-          }
-        }, { passive: true });
+        // Just mark the handle - document-level handler does the rest
+        handle.setAttribute('data-draggable', 'true');
+        handle.setAttribute('data-tile-id', tid);
       }
       
       // ==================== WINDOWS/DESKTOP: Pointer events on WHOLE TILE ====================
@@ -2121,14 +2170,15 @@
       loadPlan('PM');
       
       // Debug logging
-      console.log('=== Van Manager - Android Scroll Fix ===');
+      console.log('=== Van Manager - Android Scroll Fix (Document Delegation) ===');
       console.log('User Agent:', navigator.userAgent);
       console.log('isAndroid:', isAndroid);
       if (isAndroid) {
-        console.log('Mode: ANDROID');
-        console.log('- Scroll: Touch anywhere on page');
+        console.log('Mode: ANDROID - Document-level event delegation');
+        console.log('- Scroll: Touch anywhere on page (touch-action: auto on body)');
         console.log('- Drag: Long-press drag handle (⋮⋮) for 300ms');
-        console.log('- Fix: Non-passive touchmove listener added ONLY during drag');
+        console.log('- Pattern: Single document touchstart listener');
+        console.log('- Non-passive touchmove added ONLY during active drag');
       } else {
         console.log('Mode: WINDOWS/DESKTOP');
         console.log('- Drag: Touch/click anywhere on tile');
