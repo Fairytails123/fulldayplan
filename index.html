@@ -24,9 +24,15 @@
       margin: 0; 
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; 
       background: #f6f7f9; 
-      touch-action: pan-x pan-y;
+      touch-action: manipulation;  /* Better than pan-x pan-y - allows scroll + pinch zoom */
       overscroll-behavior: none;
       min-height: 100vh;
+      -webkit-overflow-scrolling: touch;
+    }
+    
+    /* Ensure html/body allow scrolling */
+    html {
+      overflow-y: scroll;  /* CRITICAL for Android - explicit scroll enablement */
       -webkit-overflow-scrolling: touch;
     }
     
@@ -692,10 +698,11 @@
     
     /* Responsive - Mobile */
     @media (max-width: 600px) {
-      /* Fix centering - prevent overflow */
-      html, body {
+      /* Fix horizontal overflow - ONLY on body, let html scroll vertically */
+      body {
         overflow-x: hidden;
         width: 100%;
+        max-width: 100vw;
       }
       
       .plan-nav { 
@@ -1582,35 +1589,46 @@
       // ==================== DRAG & DROP ====================
       let isDragging = false;
       
-      // ==================== DOCUMENT-LEVEL TOUCH EVENTS (Android) ====================
-      // CRITICAL: Must be at document level with { passive: false } on touchmove
+      // ==================== ANDROID TOUCH HANDLING ====================
+      // KEY INSIGHT: Don't add non-passive touchmove listener at page load!
+      // Chrome Android blocks scroll if it sees { passive: false } on document.
+      // Instead, we add it dynamically ONLY during active drag.
+      
+      // Drag movement handler - added/removed dynamically
+      function handleDragTouchMove(e) {
+        if (!isDragging || !activeClone) return;
+        e.preventDefault(); // Block scroll during drag
+        
+        const touch = e.touches[0];
+        activeClone.style.left = (touch.clientX - 50) + 'px';
+        activeClone.style.top = (touch.clientY - 24) + 'px';
+        
+        // Update drag-over states
+        document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+        const target = document.elementFromPoint(touch.clientX, touch.clientY);
+        if (target) {
+          const box = target.closest('.box');
+          const bin = target.closest('#bin');
+          const trayEl = target.closest('#tray');
+          if (box) box.classList.add('drag-over');
+          if (bin) bin.classList.add('drag-over');
+          if (trayEl) trayEl.classList.add('drag-over');
+        }
+      }
+      
+      // Start listening for drag movement - called when drag begins
+      function startDragListeners() {
+        // Add non-passive listener ONLY during drag
+        document.addEventListener('touchmove', handleDragTouchMove, { passive: false });
+      }
+      
+      // Stop listening for drag movement - called when drag ends
+      function stopDragListeners() {
+        document.removeEventListener('touchmove', handleDragTouchMove);
+      }
       
       if (isAndroid) {
-        // touchmove - MUST be { passive: false } to allow preventDefault
-        document.addEventListener('touchmove', function(e) {
-          if (!isDragging) return;
-          e.preventDefault(); // Block scroll ONLY when dragging
-          
-          const touch = e.touches[0];
-          if (activeClone) {
-            activeClone.style.left = (touch.clientX - 50) + 'px';
-            activeClone.style.top = (touch.clientY - 24) + 'px';
-            
-            // Update drag-over states
-            document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
-            const target = document.elementFromPoint(touch.clientX, touch.clientY);
-            if (target) {
-              const box = target.closest('.box');
-              const bin = target.closest('#bin');
-              const trayEl = target.closest('#tray');
-              if (box) box.classList.add('drag-over');
-              if (bin) bin.classList.add('drag-over');
-              if (trayEl) trayEl.classList.add('drag-over');
-            }
-          }
-        }, { passive: false }); // CRITICAL
-        
-        // touchend
+        // touchend - PASSIVE, always present (doesn't block scroll)
         document.addEventListener('touchend', function(e) {
           if (longPressTimer) {
             clearTimeout(longPressTimer);
@@ -1634,7 +1652,7 @@
           finishDrag(touch ? touch.clientX : 0, touch ? touch.clientY : 0);
         }, { passive: true });
         
-        // touchcancel
+        // touchcancel - PASSIVE, always present
         document.addEventListener('touchcancel', function() {
           if (longPressTimer) {
             clearTimeout(longPressTimer);
@@ -1660,6 +1678,7 @@
       function finishDrag(clientX, clientY) {
         document.body.classList.remove('is-dragging');
         isDragging = false;
+        stopDragListeners(); // Remove non-passive listener when drag ends
         
         if (currentDragHandle) {
           currentDragHandle.classList.remove('long-press-active');
@@ -1707,6 +1726,7 @@
       function cancelDrag() {
         document.body.classList.remove('is-dragging');
         isDragging = false;
+        stopDragListeners(); // Remove non-passive listener when drag cancelled
         
         if (currentDragHandle) {
           currentDragHandle.classList.remove('long-press-active');
@@ -1758,6 +1778,7 @@
             // Start drag
             isDragging = true;
             document.body.classList.add('is-dragging');
+            startDragListeners(); // CRITICAL: Add non-passive listener NOW (during drag only)
             saveUndoState();
             createDragClone(tile, touchStartX, touchStartY);
             
@@ -2100,13 +2121,17 @@
       loadPlan('PM');
       
       // Debug logging
-      console.log('=== Van Manager - Platform-Specific Drag ===');
+      console.log('=== Van Manager - Android Scroll Fix ===');
       console.log('User Agent:', navigator.userAgent);
       console.log('isAndroid:', isAndroid);
       if (isAndroid) {
-        console.log('Mode: ANDROID - Touch handle (⋮⋮) to drag, touch tile body to scroll');
+        console.log('Mode: ANDROID');
+        console.log('- Scroll: Touch anywhere on page');
+        console.log('- Drag: Long-press drag handle (⋮⋮) for 300ms');
+        console.log('- Fix: Non-passive touchmove listener added ONLY during drag');
       } else {
-        console.log('Mode: WINDOWS/DESKTOP - Touch/click anywhere on tile to drag');
+        console.log('Mode: WINDOWS/DESKTOP');
+        console.log('- Drag: Touch/click anywhere on tile');
       }
       
     })();
