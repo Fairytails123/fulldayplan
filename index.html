@@ -41,10 +41,10 @@
       touch-action: auto;  /* CRITICAL: Must be auto for Android scroll */
     }
     
-    /* ANDROID FIX: Prevent scroll during drag - NO position fixed (causes jump) */
+    /* ANDROID FIX: No body scroll lock - causes jumps. 
+       Touch-action: none on tiles + preventDefault in touchmove handles it */
     body.is-dragging {
-      overflow: hidden !important;
-      touch-action: none !important;
+      /* Intentionally minimal - no overflow:hidden which causes scroll jump */
     }
     
     /* Navigation Tabs */
@@ -287,16 +287,17 @@
       content: "";
     }
     
-    /* Tiles - touch-action: auto allows scrolling when touching tile */
+    /* Tiles - for Android: touch-action none to enable long-press drag */
     .tile, .tile-inbox { 
       background: #fff; 
       border-radius: 6px; 
       display: flex; 
-      align-items: center; 
+      align-items: center;
+      justify-content: center;
       text-align: center; 
       box-shadow: 0 2px 4px rgba(0,0,0,0.1); 
       cursor: grab; 
-      touch-action: auto; /* CRITICAL: allows scroll when touching tile body */
+      touch-action: none; /* Enables long-press drag on Android */
       user-select: none;
       -webkit-user-select: none;
       -webkit-touch-callout: none;
@@ -304,54 +305,20 @@
       word-break: break-word; 
       line-height: 1.1; 
       overflow: hidden;
-      transition: box-shadow 0.15s ease, border-color 0.15s ease;
+      transition: box-shadow 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
       font-weight: 500;
-      gap: 4px;
     }
     
-    /* Drag handle - ONLY this gets touch-action: none */
-    .drag-handle {
-      touch-action: none;
-      cursor: grab;
-      user-select: none;
-      -webkit-user-select: none;
-      -webkit-touch-callout: none;
-      color: #a0aec0;
-      font-size: 14px;
-      padding: 2px 4px;
-      flex-shrink: 0;
-      display: flex;
-      align-items: center;
-      border-radius: 3px;
-      transition: background-color 0.15s ease, color 0.15s ease;
+    /* Touch-active state - immediate feedback when touching tile */
+    .tile.touch-active, .tile-inbox.touch-active {
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+      opacity: 0.9;
     }
     
-    /* Drag handle hover - mouse only */
-    @media (hover: hover) and (pointer: fine) {
-      .drag-handle:hover {
-        background: #e2e8f0;
-        color: #4a5568;
-      }
-    }
-    
-    /* Touch-active state - immediate feedback when touching handle */
-    .drag-handle.touch-active {
-      background: #e2e8f0;
-      color: #4a5568;
-    }
-    
-    /* Long-press active state on handle - drag is starting */
-    .drag-handle.long-press-active {
-      background: var(--accent) !important;
-      color: #fff !important;
-    }
-    
-    /* Tile text container */
-    .tile-text {
-      flex: 1;
-      min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
+    /* Long-press active state - drag is starting */
+    .tile.long-press-active, .tile-inbox.long-press-active {
+      box-shadow: 0 6px 16px rgba(0,0,0,0.25);
+      opacity: 0.5;
     }
     
     /* Hover states - ONLY for mouse devices */
@@ -902,7 +869,7 @@
       }
       
       /* Prevent text selection */
-      .tile, .tile-inbox, .box, .drag-handle {
+      .tile, .tile-inbox, .box {
         -webkit-user-select: none;
         user-select: none;
       }
@@ -1193,7 +1160,6 @@
       
       // Touch state for drag (used by both platforms)
       let longPressTimer = null;
-      let currentDragHandle = null;
       let currentDragTile = null;
       
       // DOM Elements
@@ -1612,20 +1578,21 @@
       const LONG_PRESS_DURATION = 180;  // Reduced from 300ms for faster response
       const SCROLL_THRESHOLD = 10;      // Slightly higher to reduce accidental cancels
       
+      // Store touch offset for smooth drag positioning
+      let touchOffsetX = 0;
+      let touchOffsetY = 0;
+      
       // Handle touch start - DOCUMENT LEVEL
       function handleTouchStart(e) {
         if (e.touches.length !== 1) return; // Single touch only
         
         const touch = e.touches[0];
-        const draggable = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('[data-draggable="true"]');
-        if (!draggable) return;
-        
-        // Find the tile and its ID
-        const tile = draggable.closest('.tile, .tile-inbox');
+        // Find tile directly (entire tile is now draggable)
+        const tile = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('.tile, .tile-inbox');
         if (!tile) return;
         
-        // Get tile ID from data attribute (set in wireTouchEvents)
-        const tid = draggable.getAttribute('data-tile-id');
+        // Get tile ID from data attribute
+        const tid = tile.getAttribute('data-tile-id');
         if (!tid || !state.tiles[tid]) return;
         
         // Clean up any existing listeners first (prevents stacking)
@@ -1637,16 +1604,21 @@
           longPressTimer = null;
         }
         
+        // Calculate offset from touch point to tile top-left (for smooth positioning)
+        const tileRect = tile.getBoundingClientRect();
+        touchOffsetX = touch.clientX - tileRect.left;
+        touchOffsetY = touch.clientY - tileRect.top;
+        
         touchStartPos = { x: touch.clientX, y: touch.clientY };
-        dragSourceElement = draggable;
+        dragSourceElement = tile;
         pendingDragInfo = {
           tile: tile,
           tid: tid,
           coords: { x: touch.clientX, y: touch.clientY }
         };
         
-        // Immediate visual feedback - show user we've registered the touch
-        draggable.classList.add('touch-active');
+        // Immediate visual feedback
+        tile.classList.add('touch-active');
         
         // Start long-press timer
         longPressTimer = setTimeout(() => {
@@ -1744,8 +1716,9 @@
         const touch = e.touches[0];
         
         if (activeClone) {
-          activeClone.style.left = (touch.clientX - 50) + 'px';
-          activeClone.style.top = (touch.clientY - 24) + 'px';
+          // Position clone relative to finger using saved offset
+          activeClone.style.left = (touch.clientX - touchOffsetX) + 'px';
+          activeClone.style.top = (touch.clientY - touchOffsetY) + 'px';
         }
         
         // Update drag-over states
@@ -1787,10 +1760,12 @@
       function createDragClone(tile, x, y) {
         activeClone = tile.cloneNode(true);
         activeClone.classList.add('is-dragging');
+        activeClone.classList.remove('touch-active', 'long-press-active');
         activeClone.style.width = Math.max(tile.offsetWidth, 100) + 'px';
         activeClone.style.height = Math.max(tile.offsetHeight, 48) + 'px';
-        activeClone.style.left = (x - 50) + 'px';
-        activeClone.style.top = (y - 24) + 'px';
+        // Position using saved offset so clone appears exactly where finger is
+        activeClone.style.left = (x - touchOffsetX) + 'px';
+        activeClone.style.top = (y - touchOffsetY) + 'px';
         document.body.appendChild(activeClone);
         tile.style.opacity = '0.3';
       }
@@ -1802,9 +1777,7 @@
         // Clean up visual feedback
         if (dragSourceElement) {
           dragSourceElement.classList.remove('touch-active', 'long-press-active');
-        }
-        if (currentDragHandle) {
-          currentDragHandle.classList.remove('touch-active', 'long-press-active');
+          dragSourceElement.style.opacity = '1';
         }
         if (currentDragTile) {
           currentDragTile.style.opacity = '1';
@@ -1842,7 +1815,6 @@
         }
         
         // Reset all drag state
-        currentDragHandle = null;
         currentDragTile = null;
         dragSourceElement = null;
         pendingDragInfo = null;
@@ -1857,9 +1829,7 @@
         // Clean up visual feedback
         if (dragSourceElement) {
           dragSourceElement.classList.remove('touch-active', 'long-press-active');
-        }
-        if (currentDragHandle) {
-          currentDragHandle.classList.remove('touch-active', 'long-press-active');
+          dragSourceElement.style.opacity = '1';
         }
         if (currentDragTile) {
           currentDragTile.style.opacity = '1';
@@ -1873,21 +1843,11 @@
         document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
         
         // Reset all drag state
-        currentDragHandle = null;
         currentDragTile = null;
         dragSourceElement = null;
         pendingDragInfo = null;
         touchStartPos = null;
         dragId = null;
-      }
-      
-      // ==================== ANDROID: Mark handle as draggable ====================
-      // No individual listeners needed - using document-level event delegation
-      
-      function wireTouchEvents(handle, tile, tid) {
-        // Just mark the handle - document-level handler does the rest
-        handle.setAttribute('data-draggable', 'true');
-        handle.setAttribute('data-tile-id', tid);
       }
       
       // ==================== WINDOWS/DESKTOP: Pointer events on WHOLE TILE ====================
@@ -1903,6 +1863,12 @@
           startY = e.clientY;
           dragId = tid;
           currentDragTile = tile;
+          
+          // Calculate offset for smooth positioning
+          const tileRect = tile.getBoundingClientRect();
+          touchOffsetX = e.clientX - tileRect.left;
+          touchOffsetY = e.clientY - tileRect.top;
+          
           tile.setPointerCapture(e.pointerId);
 
           tile.onpointermove = function(m) {
@@ -1913,8 +1879,9 @@
                 saveUndoState();
                 createDragClone(tile, m.clientX, m.clientY);
               }
-              activeClone.style.left = (m.clientX - 50) + 'px';
-              activeClone.style.top = (m.clientY - 24) + 'px';
+              // Use offset for smooth positioning
+              activeClone.style.left = (m.clientX - touchOffsetX) + 'px';
+              activeClone.style.top = (m.clientY - touchOffsetY) + 'px';
               
               // Update drag-over states
               document.querySelectorAll('.drag-over').forEach(elem => elem.classList.remove('drag-over'));
@@ -1949,35 +1916,19 @@
         };
       }
       
-      // ==================== CREATE TILE WITH DRAG HANDLE ====================
+      // ==================== CREATE TILE (Full tile draggable) ====================
       
       function createTileElement(tid, className) {
         const tile = document.createElement('div');
         tile.className = className;
+        tile.textContent = state.tiles[tid].text;
         
         if (isAndroid) {
-          // ANDROID: Create drag handle (⋮⋮ grip icon) - required for scroll to work
-          const handle = document.createElement('span');
-          handle.className = 'drag-handle';
-          handle.innerHTML = '⋮⋮';
-          handle.setAttribute('data-draggable', 'true');
-          
-          // Create text container
-          const textSpan = document.createElement('span');
-          textSpan.className = 'tile-text';
-          textSpan.textContent = state.tiles[tid].text;
-          
-          tile.appendChild(handle);
-          tile.appendChild(textSpan);
-          
-          // Wire touch events to HANDLE only (allows scroll on tile body)
-          wireTouchEvents(handle, tile, tid);
+          // ANDROID: Mark tile as draggable (whole tile is draggable via long-press)
+          tile.setAttribute('data-tile-id', tid);
+          // Touch events handled at document level
         } else {
-          // WINDOWS/DESKTOP: No handle needed - whole tile is draggable
-          tile.textContent = state.tiles[tid].text;
-          tile.style.justifyContent = 'center';
-          
-          // Wire pointer events to WHOLE TILE
+          // WINDOWS/DESKTOP: Pointer events on whole tile
           wirePointerEvents(tile, tid);
         }
         
@@ -2193,15 +2144,15 @@
       loadPlan('PM');
       
       // Debug logging
-      console.log('=== Van Manager - Responsive Drag Fix ===');
+      console.log('=== Van Manager - Full Tile Drag ===');
       console.log('User Agent:', navigator.userAgent);
       console.log('isAndroid:', isAndroid);
       if (isAndroid) {
-        console.log('Mode: ANDROID - Document-level event delegation');
-        console.log('- Scroll: Touch anywhere (touch-action: auto on body)');
-        console.log('- Drag: Long-press handle (⋮⋮) for 180ms');
-        console.log('- Visual feedback: Immediate on touch, changes at drag start');
-        console.log('- Non-passive touchmove added ONLY during active drag');
+        console.log('Mode: ANDROID - Full tile long-press drag');
+        console.log('- Long-press tile for 180ms to start drag');
+        console.log('- Tile has touch-action: none (no scroll on tile)');
+        console.log('- Scroll by touching areas outside tiles');
+        console.log('- Clone positioned relative to finger touch point');
       } else {
         console.log('Mode: WINDOWS/DESKTOP');
         console.log('- Drag: Touch/click anywhere on tile');
