@@ -1376,14 +1376,15 @@
         };
         
         const planLabel = currentPlan === 'NEXT_AM' ? 'Next Day AM' : 'PM';
-        const confirmMsg = `Send ${validDogs.length} dogs (${planLabel}) to queue?` + 
-          (invalidDogs.length > 0 ? `\n\n⚠️ ${invalidDogs.length} dogs will be skipped (not in list):\n${invalidDogs.map(d => d.inputName).join(', ')}` : '');
+        const confirmMsg = `Send ${validDogs.length} dogs (${planLabel}) to Telegram for review?` + 
+          (invalidDogs.length > 0 ? `\n\n⚠️ ${invalidDogs.length} dogs will be skipped (not in list):\n${invalidDogs.map(d => d.inputName).join(', ')}` : '') +
+          `\n\nAfter reviewing in Telegram, type /send to submit to JotForm.`;
         
         if (!confirm(confirmMsg)) return;
         
         transmitBtn.disabled = true;
         transmitBtn.classList.add('transmitting');
-        transmitBtn.textContent = '🔄 Transmitting...';
+        transmitBtn.textContent = '📡 Sending to Telegram...';
         
         try {
           const response = await fetch(SCRIPT_URL, {
@@ -1418,9 +1419,9 @@
             transmitComplete = true;
             transmitBtn.classList.remove('transmitting');
             transmitBtn.classList.add('success');
-            transmitBtn.textContent = `✅ ${validDogs.length} dogs queued`;
+            transmitBtn.textContent = `✅ ${validDogs.length} dogs sent to Telegram`;
             
-            let successMsg = `${planLabel}: ${validDogs.length} dogs added to queue!`;
+            let successMsg = `${planLabel}: ${validDogs.length} dogs sent to Telegram for review!`;
             if (invalidDogs.length > 0) {
               successMsg += ` (${invalidDogs.length} skipped)`;
             }
@@ -1429,7 +1430,7 @@
             // ADDED: Show Telegram status as supplementary info
             if (result.telegramSent === false && result.telegramError) {
               console.warn('Telegram send failed:', result.telegramError);
-              showToast('⚠️ Telegram notification failed (queue still saved)', 'warning');
+              showToast('⚠️ Telegram message failed — check bot token and chat ID', 'warning');
             } else if (result.telegramMessages > 1) {
               console.log('Telegram message split into ' + result.telegramMessages + ' parts');
             }
@@ -1438,7 +1439,7 @@
               console.log('Skipped dogs (not in JotForm list):', invalidDogs.map(d => d.inputName));
             }
           } else {
-            throw new Error(result.error || result.telegramError || 'Unknown error');
+            throw new Error(result.error || result.telegramError || 'Transmit failed — check GAS deployment');
           }
           
         } catch (error) {
