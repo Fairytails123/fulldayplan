@@ -1426,11 +1426,19 @@
             }
             showToast(successMsg, 'success');
             
+            // ADDED: Show Telegram status as supplementary info
+            if (result.telegramSent === false && result.telegramError) {
+              console.warn('Telegram send failed:', result.telegramError);
+              showToast('⚠️ Telegram notification failed (queue still saved)', 'warning');
+            } else if (result.telegramMessages > 1) {
+              console.log('Telegram message split into ' + result.telegramMessages + ' parts');
+            }
+            
             if (invalidDogs.length > 0) {
               console.log('Skipped dogs (not in JotForm list):', invalidDogs.map(d => d.inputName));
             }
           } else {
-            throw new Error(result.error || 'Unknown error');
+            throw new Error(result.error || result.telegramError || 'Unknown error');
           }
           
         } catch (error) {
