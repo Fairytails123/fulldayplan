@@ -883,6 +883,55 @@
       .box { border-width: 1px; }
       .tile-inbox { border: 1px solid #999 !important; }
     }
+
+    /* Stage 1 — Van Route Automation (additive). Safe to remove block. */
+    .route-controls {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin: 10px 0 4px;
+      padding: 10px 12px;
+      background: #f1f5f9;
+      border-radius: var(--radius);
+      flex-wrap: wrap;
+    }
+    .route-controls .return-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      cursor: pointer;
+      user-select: none;
+      color: #334155;
+    }
+    .route-controls .return-toggle input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      cursor: pointer;
+      margin: 0;
+    }
+    .send-route-btn {
+      appearance: none;
+      border: 0;
+      cursor: pointer;
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      color: #fff;
+      background-color: var(--accent);
+      transition: background-color 0.15s ease, transform 0.05s ease, opacity 0.15s ease;
+      min-width: 150px;
+      text-align: center;
+    }
+    .send-route-btn:hover:not(:disabled) { filter: brightness(1.08); }
+    .send-route-btn:active:not(:disabled) { transform: translateY(1px); }
+    .send-route-btn:disabled { cursor: not-allowed; opacity: 0.85; }
+    .send-route-btn.is-sending { background-color: #64748b; }
+    .send-route-btn.is-success { background-color: var(--success); }
+    .send-route-btn.is-failed  { background-color: var(--warning); }
+    @media print { .route-controls { display: none !important; } }
   </style>
 </head>
 <body>
@@ -972,6 +1021,15 @@
             </div>
           </div>
         </div>
+        <div class="route-controls" data-van-route="bv">
+          <label class="return-toggle">
+            <input type="checkbox" class="return-trip-cb" checked>
+            <span>Return to Centre</span>
+          </label>
+          <button type="button" class="send-route-btn" data-van="BV" aria-label="Send optimised route for Big Van to driver">
+            <span class="send-route-btn__label">📍 Send Route</span>
+          </button>
+        </div>
       </div>
 
       <div class="van-section" data-van="sv">
@@ -1018,6 +1076,15 @@
             </div>
           </div>
         </div>
+        <div class="route-controls" data-van-route="sv">
+          <label class="return-toggle">
+            <input type="checkbox" class="return-trip-cb" checked>
+            <span>Return to Centre</span>
+          </label>
+          <button type="button" class="send-route-btn" data-van="SV" aria-label="Send optimised route for Small Van to driver">
+            <span class="send-route-btn__label">📍 Send Route</span>
+          </button>
+        </div>
       </div>
 
       <div class="van-section" data-van="dv">
@@ -1057,10 +1124,21 @@
             <div class="box" data-box="dv-r2"></div>
           </div>
         </div>
+        <div class="route-controls" data-van-route="dv">
+          <label class="return-toggle">
+            <input type="checkbox" class="return-trip-cb" checked>
+            <span>Return to Centre</span>
+          </label>
+          <button type="button" class="send-route-btn" data-van="DV" aria-label="Send optimised route for Dispatch Van to driver">
+            <span class="send-route-btn__label">📍 Send Route</span>
+          </button>
+        </div>
       </div>
     </div>
   </div>
 
+  <!-- Stage 1 — Van Route Automation: loaded before the main IIFE so window.RouteSender is ready. -->
+  <script src="route_sender.js"></script>
   <script>
     (function(){
       // Configuration
@@ -2176,7 +2254,15 @@
         console.log('Mode: WINDOWS/DESKTOP');
         console.log('- Drag: Touch/click anywhere on tile');
       }
-      
+
+      // Stage 1 — Van Route Automation bootstrap (additive).
+      // Hands the route_sender module read-only accessors for state and currentPlan.
+      if (window.RouteSender && typeof window.RouteSender.init === 'function') {
+        window.RouteSender.init({
+          getState: function () { return state; },
+          getCurrentPlan: function () { return currentPlan; }
+        });
+      }
     })();
   </script>
 </body>
