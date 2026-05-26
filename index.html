@@ -911,6 +911,39 @@
       cursor: pointer;
       margin: 0;
     }
+    /* Start/Return-from-Centre toggles + custom-address inputs (additive). */
+    .route-controls .route-toggles {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      flex: 1 1 auto;
+      min-width: 220px;
+    }
+    .route-controls .toggle-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .route-controls .toggle-row .return-toggle {
+      min-width: 150px;
+    }
+    .route-controls .addr-input {
+      flex: 1 1 180px;
+      min-width: 160px;
+      padding: 6px 8px;
+      font-size: 13px;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      color: #334155;
+      background: #fff;
+    }
+    .route-controls .addr-input:focus {
+      outline: 2px solid var(--accent);
+      outline-offset: 0;
+      border-color: var(--accent);
+    }
+    .route-controls .addr-input[hidden] { display: none; }
     .send-route-btn {
       appearance: none;
       border: 0;
@@ -1022,10 +1055,22 @@
           </div>
         </div>
         <div class="route-controls" data-van-route="bv">
-          <label class="return-toggle">
-            <input type="checkbox" class="return-trip-cb" checked>
-            <span>Return to Centre</span>
-          </label>
+          <div class="route-toggles">
+            <div class="toggle-row">
+              <label class="return-toggle">
+                <input type="checkbox" class="start-trip-cb" checked>
+                <span>Start from Centre</span>
+              </label>
+              <input type="text" class="addr-input start-address-input" placeholder="Enter start address" aria-label="Custom start address for Big Van" hidden>
+            </div>
+            <div class="toggle-row">
+              <label class="return-toggle">
+                <input type="checkbox" class="return-trip-cb" checked>
+                <span>Return to Centre</span>
+              </label>
+              <input type="text" class="addr-input end-address-input" placeholder="Enter end address" aria-label="Custom end address for Big Van" hidden>
+            </div>
+          </div>
           <button type="button" class="send-route-btn" data-van="BV" aria-label="Send optimised route for Big Van to driver">
             <span class="send-route-btn__label">📍 Send Route</span>
           </button>
@@ -1077,10 +1122,22 @@
           </div>
         </div>
         <div class="route-controls" data-van-route="sv">
-          <label class="return-toggle">
-            <input type="checkbox" class="return-trip-cb" checked>
-            <span>Return to Centre</span>
-          </label>
+          <div class="route-toggles">
+            <div class="toggle-row">
+              <label class="return-toggle">
+                <input type="checkbox" class="start-trip-cb" checked>
+                <span>Start from Centre</span>
+              </label>
+              <input type="text" class="addr-input start-address-input" placeholder="Enter start address" aria-label="Custom start address for Small Van" hidden>
+            </div>
+            <div class="toggle-row">
+              <label class="return-toggle">
+                <input type="checkbox" class="return-trip-cb" checked>
+                <span>Return to Centre</span>
+              </label>
+              <input type="text" class="addr-input end-address-input" placeholder="Enter end address" aria-label="Custom end address for Small Van" hidden>
+            </div>
+          </div>
           <button type="button" class="send-route-btn" data-van="SV" aria-label="Send optimised route for Small Van to driver">
             <span class="send-route-btn__label">📍 Send Route</span>
           </button>
@@ -1125,10 +1182,22 @@
           </div>
         </div>
         <div class="route-controls" data-van-route="dv">
-          <label class="return-toggle">
-            <input type="checkbox" class="return-trip-cb" checked>
-            <span>Return to Centre</span>
-          </label>
+          <div class="route-toggles">
+            <div class="toggle-row">
+              <label class="return-toggle">
+                <input type="checkbox" class="start-trip-cb" checked>
+                <span>Start from Centre</span>
+              </label>
+              <input type="text" class="addr-input start-address-input" placeholder="Enter start address" aria-label="Custom start address for Dispatch Van" hidden>
+            </div>
+            <div class="toggle-row">
+              <label class="return-toggle">
+                <input type="checkbox" class="return-trip-cb" checked>
+                <span>Return to Centre</span>
+              </label>
+              <input type="text" class="addr-input end-address-input" placeholder="Enter end address" aria-label="Custom end address for Dispatch Van" hidden>
+            </div>
+          </div>
           <button type="button" class="send-route-btn" data-van="DV" aria-label="Send optimised route for Dispatch Van to driver">
             <span class="send-route-btn__label">📍 Send Route</span>
           </button>

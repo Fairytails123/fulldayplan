@@ -87,13 +87,37 @@
     return normaliseDeparture(el && el.value);
   }
 
-  function buildPayload(van, returnTrip) {
+  // Accepts either an options object (preferred) or a legacy boolean
+  // `returnTrip` (old diagnostic call shape `buildPayload('BV', true)`).
+  //   opts = {
+  //     startFromCentre: bool   // default true
+  //     startAddress:    string // used only when startFromCentre === false
+  //     returnToCentre:  bool   // default true
+  //     endAddress:      string // used only when returnToCentre === false
+  //   }
+  function buildPayload(van, opts) {
+    if (typeof opts === 'boolean' || opts == null) {
+      opts = { returnToCentre: opts !== false };
+    }
+    var startFromCentre = opts.startFromCentre !== false;     // default true
+    var returnToCentre  = opts.returnToCentre  !== false;     // default true
+    var startAddress = startFromCentre ? '' : String(opts.startAddress || '').trim();
+    var endAddress   = returnToCentre  ? '' : String(opts.endAddress   || '').trim();
     return {
       van: String(van).toUpperCase(),
       period: getCurrentPeriod(),
       departure_time: getDepartureTime(van),
       dogs: getDogsForVan(van),
-      return_trip: !!returnTrip,
+      // New start/end model. start_from_centre / return_to_centre are the
+      // booleans; *_address carry the manually-typed address when the
+      // matching checkbox is unchecked (empty string otherwise).
+      start_from_centre: startFromCentre,
+      start_address: startAddress,
+      return_to_centre: returnToCentre,
+      end_address: endAddress,
+      // Backward-compatible alias: older workflow versions read return_trip
+      // to decide whether the route ends at the Centre.
+      return_trip: returnToCentre,
       timestamp: new Date().toISOString()
     };
   }
@@ -150,10 +174,33 @@
       return;
     }
     var controls = btn.closest('.route-controls');
-    var cb = controls ? controls.querySelector('.return-trip-cb') : null;
-    var returnTrip = cb ? !!cb.checked : true;
+    var startCb   = controls ? controls.querySelector('.start-trip-cb') : null;
+    var endCb     = controls ? controls.querySelector('.return-trip-cb') : null;
+    var startEl   = controls ? controls.querySelector('.start-address-input') : null;
+    var endEl     = controls ? controls.querySelector('.end-address-input') : null;
+    var startFromCentre = startCb ? !!startCb.checked : true;
+    var returnToCentre  = endCb ? !!endCb.checked : true;
+    var startAddress = (!startFromCentre && startEl) ? String(startEl.value || '').trim() : '';
+    var endAddress   = (!returnToCentre  && endEl)   ? String(endEl.value   || '').trim() : '';
 
-    var payload = buildPayload(van, returnTrip);
+    var failMsg = null;
+    if (!startFromCentre && !startAddress) failMsg = '⚠️ Enter start address';
+    else if (!returnToCentre && !endAddress) failMsg = '⚠️ Enter end address';
+    if (failMsg) {
+      console.warn('[RouteSender] ' + van + ': ' + failMsg);
+      setButtonState(btn, 'failed');
+      var lblA = btn.querySelector('.send-route-btn__label') || btn;
+      lblA.textContent = failMsg;
+      setTimeout(function () { setButtonState(btn, 'idle'); }, FAILURE_HOLD_MS);
+      return;
+    }
+
+    var payload = buildPayload(van, {
+      startFromCentre: startFromCentre,
+      startAddress: startAddress,
+      returnToCentre: returnToCentre,
+      endAddress: endAddress
+    });
     if (!payload.dogs || payload.dogs.length === 0) {
       console.warn('[RouteSender] No dogs assigned to ' + van + '.');
       setButtonState(btn, 'failed');
@@ -185,6 +232,37 @@
     });
   }
 
+  // Show the sibling custom-address text box when a "Start from Centre" /
+  // "Return to Centre" checkbox is UNCHECKED; hide it again when re-checked.
+  function syncAddressInput(cb) {
+    if (!cb) return;
+    var row = cb.closest('.toggle-row');
+    var input = row ? row.querySelector('.addr-input') : null;
+    if (!input) return;
+    if (cb.checked) {
+      input.hidden = true;            // centre used → address not needed
+    } else {
+      input.hidden = false;           // custom address required
+      try { input.focus(); } catch (e) {}
+    }
+  }
+
+  function handleToggleChange(ev) {
+    syncAddressInput(ev.currentTarget);
+  }
+
+  function bindToggles(root) {
+    var scope = root || document;
+    var toggles = scope.querySelectorAll('.start-trip-cb, .return-trip-cb');
+    toggles.forEach(function (cb) {
+      if (cb.dataset.toggleBound === '1') return;
+      cb.addEventListener('change', handleToggleChange);
+      cb.dataset.toggleBound = '1';
+      // Reflect the initial checkbox state (handles any pre-unchecked boxes).
+      syncAddressInput(cb);
+    });
+  }
+
   // Public surface.
   window.RouteSender = {
     init: function (opts) {
@@ -192,6 +270,7 @@
       hostGetState = typeof opts.getState === 'function' ? opts.getState : null;
       hostGetCurrentPlan = typeof opts.getCurrentPlan === 'function' ? opts.getCurrentPlan : null;
       bindButtons();
+      bindToggles();
       console.log('[RouteSender] Initialised. State accessor wired:',
         !!hostGetState, '— currentPlan accessor wired:', !!hostGetCurrentPlan);
     },
