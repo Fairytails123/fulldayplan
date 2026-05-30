@@ -41,6 +41,13 @@
   // Closures supplied by the host page at init time.
   var hostGetState = null;
   var hostGetCurrentPlan = null;
+  // Write hooks (added 2026-05-30) — let this module push the optimised stop
+  // numbers n8n returns straight into the Load Plan kennels. Both are existing
+  // index_v6.html functions, reused as-is:
+  //   hostSetStopValue(boxId, 'primary'|'secondary', value) → state.stops + localSave
+  //   hostHydrate() → re-render the boxes
+  var hostSetStopValue = null;
+  var hostHydrate = null;
 
   function safeState() {
     try { return hostGetState ? hostGetState() : null; } catch (e) { return null; }
@@ -165,6 +172,109 @@
     });
   }
 
+  // ----------------------------------------------------------------
+  // Stop-number write-back (added 2026-05-30)
+  // ----------------------------------------------------------------
+  // After a Send Route, n8n returns the optimised stops in its response
+  // (`{ received, ok, stops:[{name, stop}] }`). We drop each stop number into
+  // the kennel holding the matching dog: match the returned name to a placed
+  // tile, find its kennel (boxId) + slot (1st tile → primary, 2nd → secondary),
+  // and write via the host's setStopValue. The returned name is the master-
+  // sheet name (e.g. "Rolo Barnwell"), which may be fuller than the tile text
+  // ("Rolo"), so matching is tolerant: exact first, then leading-token.
+
+  function normName(s) {
+    return String(s == null ? '' : s).toLowerCase().replace(/\s+/g, ' ').trim();
+  }
+
+  // 3 = exact; 2 = tile name is the leading token of the route name
+  // ("rolo" ⊂ "rolo barnwell"); 1 = route name is the leading token of the
+  // tile name; 0 = no match.
+  function stopMatchScore(tileName, routeName) {
+    var a = normName(tileName), b = normName(routeName);
+    if (!a || !b) return 0;
+    if (a === b) return 3;
+    if (b.indexOf(a + ' ') === 0) return 2;
+    if (a.indexOf(b + ' ') === 0) return 1;
+    return 0;
+  }
+
+  function applyReturnedStops(van, stops, sentPeriod) {
+    if (!Array.isArray(stops) || !stops.length) return 0;
+    if (typeof hostSetStopValue !== 'function') return 0;
+    // Don't write into the wrong plan if the user switched tabs mid-send.
+    if (sentPeriod && getCurrentPeriod() !== sentPeriod) {
+      console.warn('[RouteSender] Plan changed since send (' + sentPeriod +
+        ' → ' + getCurrentPeriod() + '); skipping kennel stop write.');
+      return 0;
+    }
+    var st = safeState();
+    if (!st || !st.placements || !st.tiles) return 0;
+    var prefix = String(van).toLowerCase() + '-';
+
+    // This van's placed tiles, each with its kennel + slot.
+    var slots = [];
+    Object.keys(st.placements).forEach(function (boxId) {
+      if (boxId.indexOf(prefix) !== 0) return;
+      var tileIds = st.placements[boxId] || [];
+      tileIds.forEach(function (tileId, idx) {
+        var tile = st.tiles[tileId];
+        if (!tile || !tile.text) return;
+        slots.push({
+          boxId: boxId,
+          slot: idx === 0 ? 'primary' : 'secondary',
+          tileId: tileId,
+          name: tile.text
+        });
+      });
+    });
+    if (!slots.length) return 0;
+
+    // Greedy best-match, each tile claimed once. Process exact (score 3)
+    // matches first so a looser leading-token match can't steal an exact
+    // tile from another routed dog.
+    var ordered = stops.filter(function (s) {
+      return s && s.name && s.stop != null && s.stop !== '';
+    }).map(function (s) {
+      var bestForS = 0;
+      slots.forEach(function (slot) {
+        var sc = stopMatchScore(slot.name, s.name);
+        if (sc > bestForS) bestForS = sc;
+      });
+      return { stop: s, topScore: bestForS };
+    }).sort(function (a, b) { return b.topScore - a.topScore; });
+
+    var claimed = {};
+    var applied = 0;
+    var unmatched = [];
+    ordered.forEach(function (entry) {
+      var s = entry.stop;
+      var best = null, bestScore = 0;
+      slots.forEach(function (slot) {
+        if (claimed[slot.tileId]) return;
+        var score = stopMatchScore(slot.name, s.name);
+        if (score > bestScore) { bestScore = score; best = slot; }
+      });
+      if (best && bestScore > 0) {
+        claimed[best.tileId] = true;
+        try {
+          hostSetStopValue(best.boxId, best.slot, String(s.stop));
+          applied++;
+        } catch (e) { console.warn('[RouteSender] setStopValue failed:', e); }
+      } else {
+        unmatched.push(s.name);
+      }
+    });
+
+    if (applied && typeof hostHydrate === 'function') {
+      try { hostHydrate(); } catch (e) { console.warn('[RouteSender] hydrate failed:', e); }
+    }
+    console.log('[RouteSender] Applied ' + applied + '/' + stops.length +
+      ' stop number(s) to ' + van + ' kennels' +
+      (unmatched.length ? ('; unmatched: ' + unmatched.join(', ')) : ''));
+    return applied;
+  }
+
   function handleSendClick(ev) {
     var btn = ev.currentTarget;
     if (!btn || btn.disabled) return;
@@ -210,11 +320,27 @@
       return;
     }
 
+    // Plan active at send time — used to avoid writing stop numbers into a
+    // different plan if the user switches tabs before the response arrives.
+    var sentPeriod = payload.period;
+
     setButtonState(btn, 'sending');
-    postToN8n(payload).then(function () {
+    postToN8n(payload).then(function (res) {
       setButtonState(btn, 'success');
       setTimeout(function () { setButtonState(btn, 'idle'); }, SUCCESS_HOLD_MS);
       console.log('[RouteSender] Sent ' + van + ' route to N8N:', payload);
+      // Additive: drop the optimised stop numbers n8n returns into the kennels.
+      // Runs independently of the success state above — any parse/match issue
+      // is logged, never surfaced to the button.
+      if (res && typeof res.json === 'function') {
+        res.json().then(function (body) {
+          if (body && Array.isArray(body.stops) && body.stops.length) {
+            applyReturnedStops(van, body.stops, sentPeriod);
+          }
+        }).catch(function (e) {
+          console.warn('[RouteSender] No stop numbers in response (' + van + '):', e);
+        });
+      }
     }).catch(function (err) {
       console.error('[RouteSender] Send failed for ' + van + ':', err);
       setButtonState(btn, 'failed');
@@ -269,16 +395,22 @@
       opts = opts || {};
       hostGetState = typeof opts.getState === 'function' ? opts.getState : null;
       hostGetCurrentPlan = typeof opts.getCurrentPlan === 'function' ? opts.getCurrentPlan : null;
+      hostSetStopValue = typeof opts.setStopValue === 'function' ? opts.setStopValue : null;
+      hostHydrate = typeof opts.hydrate === 'function' ? opts.hydrate : null;
       bindButtons();
       bindToggles();
       console.log('[RouteSender] Initialised. State accessor wired:',
-        !!hostGetState, '— currentPlan accessor wired:', !!hostGetCurrentPlan);
+        !!hostGetState, '— currentPlan accessor wired:', !!hostGetCurrentPlan,
+        '— stop write-back wired:', !!hostSetStopValue);
     },
     // Diagnostics — call from DevTools to verify the payload shape.
     buildPayload: buildPayload,
     getDogsForVan: getDogsForVan,
     getCurrentPeriod: getCurrentPeriod,
     getDepartureTime: getDepartureTime,
+    // Stop-number write-back (added 2026-05-30). Call from DevTools to test:
+    //   RouteSender.applyReturnedStops('BV', [{name:'Arlo',stop:1}])
+    applyReturnedStops: applyReturnedStops,
     // For Stage 2+ when you want to wire the URL in code rather than
     // editing this file.
     setWebhookUrl: function (url) { N8N_WEBHOOK_URL = String(url || ''); }

@@ -2325,11 +2325,18 @@
       }
 
       // Stage 1 — Van Route Automation bootstrap (additive).
-      // Hands the route_sender module read-only accessors for state and currentPlan.
+      // Hands the route_sender module read-only accessors for state and currentPlan,
+      // plus two write hooks (added 2026-05-30) so the module can drop the
+      // optimised stop numbers returned by n8n straight into the kennels:
+      //   - setStopValue(boxId, 'primary'|'secondary', value) writes state.stops + localSave
+      //   - hydrate() re-renders the boxes so the new numbers show immediately
+      // Both are existing functions reused as-is (no refactor).
       if (window.RouteSender && typeof window.RouteSender.init === 'function') {
         window.RouteSender.init({
           getState: function () { return state; },
-          getCurrentPlan: function () { return currentPlan; }
+          getCurrentPlan: function () { return currentPlan; },
+          setStopValue: function (boxId, type, value) { setStopValue(boxId, type, value); },
+          hydrate: function () { hydrate(); }
         });
       }
     })();
