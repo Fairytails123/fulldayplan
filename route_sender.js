@@ -183,8 +183,25 @@
   // sheet name (e.g. "Rolo Barnwell"), which may be fuller than the tile text
   // ("Rolo"), so matching is tolerant: exact first, then leading-token.
 
+  // ---- Grooming "G.D." detection (shared canonical rule) ----
+  // Canonical regex — byte-identical to stage2_fuzzy_match.js,
+  // index_whiteboard.html and white_board.js. Matches a trailing
+  // G.D./GD./G.D/GD token (optional dots, case-insensitive). We strip it from a
+  // tile's text so "Atom G.D." still matches the response/sheet name "Atom" for
+  // the kennel stop write-back. The literal "G.D." the staffer typed stays
+  // visible on the tile itself — that's the Load-Plan signifier (the route
+  // message + whiteboard carry the ✂️ (grooming) annotation downstream).
+  var GROOMING_RE = /(^|\s)G\.?D\.?$/i;
+  function stripGroomingToken(s) {
+    var t = String(s == null ? '' : s).trim();
+    var out = t.replace(GROOMING_RE, '').trim();
+    return out || t;   // keep original if stripping empties it (a bare "GD")
+  }
+
   function normName(s) {
-    return String(s == null ? '' : s).toLowerCase().replace(/\s+/g, ' ').trim();
+    // Strip a trailing G.D. token first so a grooming tile matches its clean
+    // resolved name. No-op for ordinary names.
+    return stripGroomingToken(s).toLowerCase().replace(/\s+/g, ' ').trim();
   }
 
   // 3 = exact; 2 = tile name is the leading token of the route name
