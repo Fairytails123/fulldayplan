@@ -383,9 +383,12 @@
       color: var(--success);
     }
     
-    /* Departure Time Selector - Only for NEXT_AM */
+    /* Departure Time Selector — visible for both PM and NEXT_AM plans
+       (2026-06-03: PM-mode departure was hidden + AM-only → 3 pm routes
+       went out as "(departs 07:30)". Now always visible, 07:30–16:30 in
+       30-min steps, default set per plan via JS in loadPlan().) */
     .departure-selector {
-      display: none;
+      display: flex;
       align-items: center;
       gap: 8px;
       background: #f0fff4;
@@ -1010,12 +1013,25 @@
           <div class="departure-selector" data-van="bv">
             <label>Departs:</label>
             <select id="bv-departure">
-              <option value="07:15 am">07:15 am</option>
-              <option value="07:30 am" selected>07:30 am</option>
-              <option value="08:00 am">08:00 am</option>
-              <option value="08:30 am">08:30 am</option>
-              <option value="09:00 am">09:00 am</option>
-              <option value="09:30 am">09:30 am</option>
+              <option value="07:30">07:30</option>
+              <option value="08:00">08:00</option>
+              <option value="08:30">08:30</option>
+              <option value="09:00">09:00</option>
+              <option value="09:30">09:30</option>
+              <option value="10:00">10:00</option>
+              <option value="10:30">10:30</option>
+              <option value="11:00">11:00</option>
+              <option value="11:30">11:30</option>
+              <option value="12:00">12:00</option>
+              <option value="12:30">12:30</option>
+              <option value="13:00">13:00</option>
+              <option value="13:30">13:30</option>
+              <option value="14:00">14:00</option>
+              <option value="14:30">14:30</option>
+              <option value="15:00">15:00</option>
+              <option value="15:30">15:30</option>
+              <option value="16:00">16:00</option>
+              <option value="16:30">16:30</option>
             </select>
           </div>
           <span id="currentLabel" style="color: var(--accent);">PM Plan</span>
@@ -1083,12 +1099,25 @@
           <div class="departure-selector" data-van="sv">
             <label>Departs:</label>
             <select id="sv-departure">
-              <option value="07:15 am">07:15 am</option>
-              <option value="07:30 am" selected>07:30 am</option>
-              <option value="08:00 am">08:00 am</option>
-              <option value="08:30 am">08:30 am</option>
-              <option value="09:00 am">09:00 am</option>
-              <option value="09:30 am">09:30 am</option>
+              <option value="07:30">07:30</option>
+              <option value="08:00">08:00</option>
+              <option value="08:30">08:30</option>
+              <option value="09:00">09:00</option>
+              <option value="09:30">09:30</option>
+              <option value="10:00">10:00</option>
+              <option value="10:30">10:30</option>
+              <option value="11:00">11:00</option>
+              <option value="11:30">11:30</option>
+              <option value="12:00">12:00</option>
+              <option value="12:30">12:30</option>
+              <option value="13:00">13:00</option>
+              <option value="13:30">13:30</option>
+              <option value="14:00">14:00</option>
+              <option value="14:30">14:30</option>
+              <option value="15:00">15:00</option>
+              <option value="15:30">15:30</option>
+              <option value="16:00">16:00</option>
+              <option value="16:30">16:30</option>
             </select>
           </div>
           <span class="dog-count" id="sv-count">0 dogs</span>
@@ -1150,12 +1179,25 @@
           <div class="departure-selector" data-van="dv">
             <label>Departs:</label>
             <select id="dv-departure">
-              <option value="07:15 am">07:15 am</option>
-              <option value="07:30 am">07:30 am</option>
-              <option value="08:00 am" selected>08:00 am</option>
-              <option value="08:30 am">08:30 am</option>
-              <option value="09:00 am">09:00 am</option>
-              <option value="09:30 am">09:30 am</option>
+              <option value="07:30">07:30</option>
+              <option value="08:00">08:00</option>
+              <option value="08:30">08:30</option>
+              <option value="09:00">09:00</option>
+              <option value="09:30">09:30</option>
+              <option value="10:00">10:00</option>
+              <option value="10:30">10:30</option>
+              <option value="11:00">11:00</option>
+              <option value="11:30">11:30</option>
+              <option value="12:00">12:00</option>
+              <option value="12:30">12:30</option>
+              <option value="13:00">13:00</option>
+              <option value="13:30">13:30</option>
+              <option value="14:00">14:00</option>
+              <option value="14:30">14:30</option>
+              <option value="15:00">15:00</option>
+              <option value="15:30">15:30</option>
+              <option value="16:00">16:00</option>
+              <option value="16:30">16:30</option>
             </select>
           </div>
           <span class="dog-count" id="dv-count">0 dogs</span>
@@ -1291,7 +1333,32 @@
         'sv': 'Small van - Renault',
         'dv': 'Dispatch van - Citroen'
       };
-      
+
+      // ==================== DEPARTURE DEFAULTS (2026-06-03) ====================
+      // PM-plan default is 15:00 for all three vans (was hidden + AM-only → 3pm
+      // routes went out as "(departs 07:30)"). NEXT_AM defaults locked with Kam:
+      // SV 07:30, BV 08:30, DV 09:00. Values are 24h HH:MM matching the new
+      // <option value="…"> list in the per-van departure <select>s.
+      const DEPARTURE_DEFAULTS = {
+        PM:      { bv: '15:00', sv: '15:00', dv: '15:00' },
+        NEXT_AM: { bv: '08:30', sv: '07:30', dv: '09:00' }
+      };
+      function migrateTo24h(s) {
+        // Converts legacy "07:30 am" / "03:00 pm" values saved in
+        // localStorage to 24h "HH:MM" so they match a real <option> on the
+        // new dropdown. "15:00" passes through unchanged. Returns '' if
+        // unparseable so the caller can fall back to the plan default.
+        const m = String(s == null ? '' : s).trim()
+          .match(/^(\d{1,2}):(\d{2})\s*([ap]m)?$/i);
+        if (!m) return '';
+        let h = parseInt(m[1], 10);
+        const min = m[2];
+        const ampm = (m[3] || '').toLowerCase();
+        if (ampm === 'pm' && h < 12) h += 12;
+        if (ampm === 'am' && h === 12) h = 0;
+        return (h < 10 ? '0' + h : String(h)) + ':' + min;
+      }
+
       // ==================== PLATFORM DETECTION ====================
       const isAndroid = /Android/i.test(navigator.userAgent);
       
@@ -1685,25 +1752,39 @@
         transmitBtn.classList.remove('success', 'transmitting');
         transmitBtn.textContent = '🚀 Transmit Plan';
         
-        if (state.departures) {
-          if (state.departures.bv) document.getElementById('bv-departure').value = state.departures.bv;
-          if (state.departures.sv) document.getElementById('sv-departure').value = state.departures.sv;
-          if (state.departures.dv) document.getElementById('dv-departure').value = state.departures.dv;
-        }
-        
+        // Apply saved departure (migrating legacy "07:30 am" → "07:30") or
+        // fall back to this plan's default (PM=15:00 all vans;
+        // NEXT_AM=SV 07:30, BV 08:30, DV 09:00). Persist the resolved
+        // values so the migration / defaulting sticks across reloads.
+        const _depDefaults = DEPARTURE_DEFAULTS[p] || DEPARTURE_DEFAULTS.PM;
+        ['bv', 'sv', 'dv'].forEach(v => {
+          const el = document.getElementById(v + '-departure');
+          if (!el) return;
+          const raw = state.departures && state.departures[v];
+          const migrated = migrateTo24h(raw);
+          const valid = migrated && Array.from(el.options).some(o => o.value === migrated);
+          el.value = valid ? migrated : _depDefaults[v];
+        });
+        state.departures = {
+          bv: document.getElementById('bv-departure').value,
+          sv: document.getElementById('sv-departure').value,
+          dv: document.getElementById('dv-departure').value
+        };
+        localSave();
+
         hydrate();
       }
-      
+
       document.querySelectorAll('.departure-selector select').forEach(select => {
         select.addEventListener('change', () => {
-          if (currentPlan === 'NEXT_AM') {
-            state.departures = {
-              bv: document.getElementById('bv-departure').value,
-              sv: document.getElementById('sv-departure').value,
-              dv: document.getElementById('dv-departure').value
-            };
-            localSave();
-          }
+          // 2026-06-03: was gated on `currentPlan === 'NEXT_AM'` so PM-mode
+          // changes never saved. Now persists for both plans.
+          state.departures = {
+            bv: document.getElementById('bv-departure').value,
+            sv: document.getElementById('sv-departure').value,
+            dv: document.getElementById('dv-departure').value
+          };
+          localSave();
         });
       });
 
