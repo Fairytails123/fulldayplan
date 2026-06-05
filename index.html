@@ -423,7 +423,50 @@
     body.next-am-mode .departure-selector {
       display: flex;
     }
-    
+
+    /* Run-type Selector (Full Day / Half Day) — PM-plan ONLY (2026-06-05).
+       Mirrors .departure-selector but in a warm amber so it reads as a
+       distinct control, and is HIDDEN in Next-Day-AM mode: the full-day vs
+       half-day distinction only applies to same-day PM runs. Sits next to the
+       departure dropdown; the chosen FD/HD is sent with the route. */
+    .runtype-selector {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #fffaf0;
+      padding: 6px 12px;
+      border-radius: 8px;
+      border: 1px solid #f6c177;
+    }
+
+    .runtype-selector label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #975a16;
+    }
+
+    .runtype-selector select {
+      padding: 6px 10px;
+      border-radius: 6px;
+      border: 1px solid #f0ad4e;
+      background: #fff;
+      font-size: 13px;
+      font-weight: 600;
+      color: #975a16;
+      cursor: pointer;
+    }
+
+    .runtype-selector select:focus {
+      outline: none;
+      border-color: #dd6b20;
+      box-shadow: 0 0 0 2px rgba(221, 107, 32, 0.3);
+    }
+
+    /* Next-Day-AM has no full/half-day concept → hide the selector there. */
+    body.next-am-mode .runtype-selector {
+      display: none;
+    }
+
     /* Grid Layouts */
     .two-cols { 
       display: grid; 
@@ -799,8 +842,18 @@
       .departure-selector {
         padding: 6px 10px;
       }
-      
+
       .departure-selector select {
+        padding: 8px 10px;
+        font-size: 14px;
+      }
+
+      /* Run-type selector (PM-plan only) */
+      .runtype-selector {
+        padding: 6px 10px;
+      }
+
+      .runtype-selector select {
         padding: 8px 10px;
         font-size: 14px;
       }
@@ -1034,6 +1087,13 @@
               <option value="16:30">16:30</option>
             </select>
           </div>
+          <div class="runtype-selector" data-van="bv">
+            <label>Run:</label>
+            <select id="bv-runtype">
+              <option value="FD">FD — Full day</option>
+              <option value="HD">HD — Half day</option>
+            </select>
+          </div>
           <span id="currentLabel" style="color: var(--accent);">PM Plan</span>
           <span class="dog-count" id="bv-count">0 dogs</span>
         </div>
@@ -1120,6 +1180,13 @@
               <option value="16:30">16:30</option>
             </select>
           </div>
+          <div class="runtype-selector" data-van="sv">
+            <label>Run:</label>
+            <select id="sv-runtype">
+              <option value="FD">FD — Full day</option>
+              <option value="HD">HD — Half day</option>
+            </select>
+          </div>
           <span class="dog-count" id="sv-count">0 dogs</span>
         </div>
         <div class="two-cols">
@@ -1198,6 +1265,13 @@
               <option value="15:30">15:30</option>
               <option value="16:00">16:00</option>
               <option value="16:30">16:30</option>
+            </select>
+          </div>
+          <div class="runtype-selector" data-van="dv">
+            <label>Run:</label>
+            <select id="dv-runtype">
+              <option value="FD">FD — Full day</option>
+              <option value="HD">HD — Half day</option>
             </select>
           </div>
           <span class="dog-count" id="dv-count">0 dogs</span>
@@ -1343,6 +1417,13 @@
         PM:      { bv: '15:00', sv: '15:00', dv: '15:00' },
         NEXT_AM: { bv: '08:30', sv: '07:30', dv: '09:00' }
       };
+
+      // ==================== RUN-TYPE DEFAULT (2026-06-05) ====================
+      // Full Day (FD) / Half Day (HD) per-van selector — PM plan only. Defaults
+      // to FD (a full-day run) for all three vans; persisted in state.runTypes
+      // exactly like state.departures. The dropdown is hidden in Next-Day-AM mode
+      // and its value is not sent for AM routes (see route_sender.js getRunType).
+      const RUNTYPE_DEFAULT = 'FD';
       function migrateTo24h(s) {
         // Converts legacy "07:30 am" / "03:00 pm" values saved in
         // localStorage to 24h "HH:MM" so they match a real <option> on the
@@ -1382,7 +1463,7 @@
       
       // State - Updated structure for dual stop numbers
       let currentPlan = 'PM';
-      let state = { tiles: {}, placements: {}, stops: {}, departures: {} };
+      let state = { tiles: {}, placements: {}, stops: {}, departures: {}, runTypes: {} };
       // stops structure: { 'bv-c1': { primary: '5', secondary: '3' }, ... }
       
       let undoStack = [];
@@ -1737,7 +1818,7 @@
         currentPlan = p;
         document.getElementById('currentLabel').textContent = p.replace('_', ' ') + ' Plan';
         const raw = localStorage.getItem(STORAGE_PREFIX + p);
-        state = raw ? JSON.parse(raw) : { tiles: {}, placements: {}, stops: {}, departures: {} };
+        state = raw ? JSON.parse(raw) : { tiles: {}, placements: {}, stops: {}, departures: {}, runTypes: {} };
         
         // Migrate old stops format
         migrateStopsFormat();
@@ -1770,6 +1851,22 @@
           sv: document.getElementById('sv-departure').value,
           dv: document.getElementById('dv-departure').value
         };
+
+        // Apply saved run-type (FD/HD) per van, or fall back to the default
+        // (FD). PM-plan only — the dropdown is hidden in Next-Day-AM mode, but we
+        // still resolve/persist a value so it sticks when the user returns to PM.
+        ['bv', 'sv', 'dv'].forEach(v => {
+          const el = document.getElementById(v + '-runtype');
+          if (!el) return;
+          const saved = state.runTypes && state.runTypes[v];
+          const valid = saved && Array.from(el.options).some(o => o.value === saved);
+          el.value = valid ? saved : RUNTYPE_DEFAULT;
+        });
+        state.runTypes = {
+          bv: document.getElementById('bv-runtype').value,
+          sv: document.getElementById('sv-runtype').value,
+          dv: document.getElementById('dv-runtype').value
+        };
         localSave();
 
         hydrate();
@@ -1783,6 +1880,19 @@
             bv: document.getElementById('bv-departure').value,
             sv: document.getElementById('sv-departure').value,
             dv: document.getElementById('dv-departure').value
+          };
+          localSave();
+        });
+      });
+
+      // Persist a Full Day / Half Day (FD/HD) change (PM plan only) so it
+      // survives a reload, exactly like the departure-time selector above.
+      document.querySelectorAll('.runtype-selector select').forEach(select => {
+        select.addEventListener('change', () => {
+          state.runTypes = {
+            bv: document.getElementById('bv-runtype').value,
+            sv: document.getElementById('sv-runtype').value,
+            dv: document.getElementById('dv-runtype').value
           };
           localSave();
         });
@@ -2365,7 +2475,7 @@
       
       clearBtn.onclick = () => {
         if (confirm("Clear all local data for this plan? This cannot be undone.")) {
-          state = { tiles: {}, placements: {}, stops: {}, departures: {} };
+          state = { tiles: {}, placements: {}, stops: {}, departures: {}, runTypes: {} };
           undoStack = [JSON.stringify(state)];
           localSave();
           hydrate();

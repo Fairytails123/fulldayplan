@@ -94,6 +94,17 @@
     return normaliseDeparture(el && el.value);
   }
 
+  // Full Day (FD) / Half Day (HD) selector — PM plan ONLY. The dropdown is hidden
+  // in Next-Day-AM mode (it still exists in the DOM), so we gate on the current
+  // period and send '' for AM routes. Whitelisted to FD/HD so only a known token
+  // ever reaches the payload.
+  function getRunType(van) {
+    if (getCurrentPeriod() !== 'PM') return '';
+    var el = document.getElementById(String(van).toLowerCase() + '-runtype');
+    var v = el && el.value ? String(el.value).toUpperCase().trim() : '';
+    return (v === 'FD' || v === 'HD') ? v : '';
+  }
+
   // Accepts either an options object (preferred) or a legacy boolean
   // `returnTrip` (old diagnostic call shape `buildPayload('BV', true)`).
   //   opts = {
@@ -114,6 +125,8 @@
       van: String(van).toUpperCase(),
       period: getCurrentPeriod(),
       departure_time: getDepartureTime(van),
+      // Full Day (FD) / Half Day (HD) — PM-plan routes only ('' on Next-Day-AM).
+      run_type: getRunType(van),
       dogs: getDogsForVan(van),
       // New start/end model. start_from_centre / return_to_centre are the
       // booleans; *_address carry the manually-typed address when the
@@ -425,6 +438,7 @@
     getDogsForVan: getDogsForVan,
     getCurrentPeriod: getCurrentPeriod,
     getDepartureTime: getDepartureTime,
+    getRunType: getRunType,
     // Stop-number write-back (added 2026-05-30). Call from DevTools to test:
     //   RouteSender.applyReturnedStops('BV', [{name:'Arlo',stop:1}])
     applyReturnedStops: applyReturnedStops,
