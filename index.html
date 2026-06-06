@@ -467,6 +467,20 @@
       display: none;
     }
 
+    /* Keep the Departs + Run dropdowns on ONE row, side by side, even when
+       .card-title switches to flex-direction:column on tablet/mobile (≤900px).
+       Without this wrapper each selector is its own full-width column item, so
+       the Run box wraps UNDER Departs and wastes the space beside it. The
+       wrapper is a single flex item in the column, and lays its two children
+       out in a row (wrapping only if the screen is too narrow to fit both). */
+    .selector-row {
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
     /* Grid Layouts */
     .two-cols { 
       display: grid; 
@@ -1063,6 +1077,7 @@
       <div class="van-section" data-van="bv">
         <div class="card-title">
           <span>🚐 Big Van (BV)</span>
+          <div class="selector-row">
           <div class="departure-selector" data-van="bv">
             <label>Departs:</label>
             <select id="bv-departure">
@@ -1093,6 +1108,7 @@
               <option value="FD">FD</option>
               <option value="HD">HD</option>
             </select>
+          </div>
           </div>
           <span id="currentLabel" style="color: var(--accent);">PM Plan</span>
           <span class="dog-count" id="bv-count">0 dogs</span>
@@ -1156,6 +1172,7 @@
       <div class="van-section" data-van="sv">
         <div class="card-title">
           <span>🚗 Small Van (SV)</span>
+          <div class="selector-row">
           <div class="departure-selector" data-van="sv">
             <label>Departs:</label>
             <select id="sv-departure">
@@ -1186,6 +1203,7 @@
               <option value="FD">FD</option>
               <option value="HD">HD</option>
             </select>
+          </div>
           </div>
           <span class="dog-count" id="sv-count">0 dogs</span>
         </div>
@@ -1243,6 +1261,7 @@
       <div class="van-section" data-van="dv">
         <div class="card-title">
           <span>📦 Dispatch Van (DV)</span>
+          <div class="selector-row">
           <div class="departure-selector" data-van="dv">
             <label>Departs:</label>
             <select id="dv-departure">
@@ -1273,6 +1292,7 @@
               <option value="FD">FD</option>
               <option value="HD">HD</option>
             </select>
+          </div>
           </div>
           <span class="dog-count" id="dv-count">0 dogs</span>
         </div>
