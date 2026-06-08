@@ -1037,17 +1037,19 @@
     @media print { .route-controls { display: none !important; } }
 
     /* ===== Second-address (ALT) tile control — added 2026-06-08 ===== */
-    /* A ▼ button on staging tiles opens a First/Second Address menu that sets/clears a
-       trailing " ALT" token on the tile name (reuses the live ALT routing pipeline).
-       CRITICAL: the ▼ must NOT stopPropagation on pointerdown/touchstart — the whole tile
-       is the drag handle, so doing that creates a dead zone in the tile corner that blocks
-       dragging (a finger grabbing the top of a tile lands on it). The ▼ opens the menu on
-       CLICK only; a press-drag that starts on the ▼ still drags the tile. */
-    .tile { position: relative; }
+    /* A small ▼ overlay on each staging tile opens a First/Second Address menu that
+       sets/clears a trailing " ALT" token on the tile name (reuses the live ALT routing
+       pipeline). CRITICAL (iOS): the draggable TILE itself is left 100% UNCHANGED — no
+       position and no child element is added to it — because modifying the tile broke
+       pointer-event dragging on iOS Safari (the whole tile became immovable). The ▼ is a
+       SEPARATE element anchored to #tray and positioned by JS over each tile's top-right
+       corner, so touching the tile body drags exactly as before; only the tiny ▼ corner
+       opens the menu (on click). */
+    #tray { position: relative; }   /* anchor for the ▼ overlays; #tray is not a drag handle */
     .alt-toggle {
-      position: absolute; top: 1px; right: 1px;
+      position: absolute;            /* left/top set by JS, anchored to #tray (NOT a tile child) */
       width: 18px; height: 18px; line-height: 18px;
-      text-align: center; font-size: 9px; cursor: pointer;
+      text-align: center; font-size: 9px; cursor: pointer; z-index: 50;
       border-radius: 3px; background: rgba(0,0,0,.06); color: #475569;
       -webkit-user-select: none; user-select: none;
     }
@@ -2359,19 +2361,19 @@
       }
 
       // ==================== SECOND-ADDRESS (ALT) TILE CONTROL ====================
-      // A ▼ button on every staging tile opens a First/Second Address menu. "Second
+      // A small ▼ control on every staging tile opens a First/Second Address menu. "Second
       // Address" locks the dog to its 2nd address by appending a trailing " ALT" token to
       // the tile name (the token the route pipeline already resolves); "First Address"
       // strips it. The lock lives on state.tiles[id].text (keyed by tile, not placement),
       // so localSave persists it and it stays put when the tile is dragged into / around
-      // the load plan. Fully additive — createTileElement is untouched; the control is
-      // attached in hydrate via decorateStagingTile.
+      // the load plan.
       //
-      // DRAG-SAFETY: the whole tile is the drag handle (desktop tile.onpointerdown; Android
-      // document touchstart — both bubble-phase). The ▼ must NOT listen on
-      // pointerdown/mousedown/touchstart at all — stopping them there blocks the drag and
-      // makes the tile corner a dead zone. The ▼ only handles click (open menu) + dblclick
-      // (don't trigger the tile rename). A press-drag that begins on the ▼ still drags the tile.
+      // DRAG-SAFETY (iOS): the draggable TILE is left 100% UNCHANGED — we do NOT add a
+      // child to it or change its CSS. (Earlier attempts that put the ▼ INSIDE the tile,
+      // or set position:relative on it, broke pointer-event dragging on iOS Safari — the
+      // whole tile became immovable.) Instead the ▼ is a SEPARATE overlay element appended
+      // to #tray and positioned over each tile's top-right corner (decorateStagingTile),
+      // so touching the tile body drags exactly as before. The ▼ handles click only.
       const ALT_RE = /(^|\s)ALT$/i;
       function stripAlt(s) {
         const t = String(s == null ? '' : s).trim();
@@ -2463,19 +2465,25 @@
         const btn = document.createElement('div');
         btn.className = 'alt-toggle' + (isAltLocked(state.tiles[tid] && state.tiles[tid].text) ? ' is-alt' : '');
         btn.title = 'Pick-up address (1st / 2nd)';
-        // ONLY click + dblclick — deliberately no pointerdown/touchstart/mousedown listeners,
-        // so the ▼ never blocks the tile's drag (see DRAG-SAFETY note above).
+        // The ▼ is a SEPARATE overlay (not a tile child), so it only needs a click handler;
+        // it is never in the tile's drag path, so it cannot block dragging.
         btn.addEventListener('click', function (e) {
           e.stopPropagation();
           openAltMenu(tid, btn);
         });
-        btn.addEventListener('dblclick', function (e) { e.stopPropagation(); e.preventDefault(); });
         return btn;
       }
 
+      // Attach the ▼ as a separate overlay in #tray (NOT a child of the draggable tile),
+      // positioned over the tile's top-right corner. Keeping the tile itself untouched is
+      // what preserves iOS Safari dragging. Called from hydrate right after the tile is
+      // appended (its offsetLeft/Top/Width are then laid out, relative to the positioned #tray).
       function decorateStagingTile(tileEl, tid) {
-        if (!tileEl || !state.tiles[tid]) return;
-        tileEl.appendChild(makeAltToggle(tid));
+        if (!tileEl || !state.tiles[tid] || !tileEl.parentNode) return;
+        const btn = makeAltToggle(tid);
+        tileEl.parentNode.appendChild(btn);
+        btn.style.left = (tileEl.offsetLeft + tileEl.offsetWidth - 19) + 'px';
+        btn.style.top  = (tileEl.offsetTop + 1) + 'px';
       }
 
       function handleDragEnter(e) {
