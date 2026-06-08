@@ -211,10 +211,22 @@
     return out || t;   // keep original if stripping empties it (a bare "GD")
   }
 
+  // Second-address marker (added 2026-06-08) — a trailing "ALT" token staff type on
+  // a dog's tile (e.g. "Tallulah ALT") to route it to its 2nd address. Stripped
+  // here (like G.D.) so the tile still matches the route response's CANONICAL name
+  // ("Tallulah") for the kennel stop write-back. The token only flags the address
+  // server-side (Stage 2); it never changes the dog's identity. No-op otherwise.
+  var ALT_RE = /(^|\s)ALT$/i;
+  function stripAltToken(s) {
+    var t = String(s == null ? '' : s).trim();
+    var out = t.replace(ALT_RE, '').trim();
+    return out || t;   // keep original if stripping empties it (a bare "ALT")
+  }
+
   function normName(s) {
-    // Strip a trailing G.D. token first so a grooming tile matches its clean
-    // resolved name. No-op for ordinary names.
-    return stripGroomingToken(s).toLowerCase().replace(/\s+/g, ' ').trim();
+    // Strip a trailing ALT (2nd-address) then G.D. (grooming) token so a marked
+    // tile matches its clean resolved name. No-op for ordinary names.
+    return stripGroomingToken(stripAltToken(s)).toLowerCase().replace(/\s+/g, ' ').trim();
   }
 
   // 3 = exact; 2 = tile name is the leading token of the route name
