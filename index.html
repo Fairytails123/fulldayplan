@@ -1048,14 +1048,19 @@
     #tray { position: relative; }   /* anchor for the ▼ overlays; #tray is not a drag handle */
     .alt-toggle {
       position: absolute;            /* left/top set by JS, anchored to #tray (NOT a tile child) */
-      width: 18px; height: 18px; line-height: 18px;
-      text-align: center; font-size: 9px; cursor: pointer; z-index: 50;
-      border-radius: 3px; background: rgba(0,0,0,.06); color: #475569;
+      width: 22px; height: 22px; line-height: 22px;
+      text-align: center; font-size: 11px; font-weight: 700; cursor: pointer;
+      /* z-index MUST be above the tiles: .tile is a flex item with z-index:100, and a flex
+         item with a z-index creates a stacking context even when position:static — so a lower
+         value paints the ▼ UNDER the tile (only visible as the tile lifts into the drag shadow). */
+      z-index: 200;
+      border-radius: 50%; background: #2563eb; color: #fff;
+      box-shadow: 0 1px 3px rgba(0,0,0,.35);
       -webkit-user-select: none; user-select: none;
     }
     .alt-toggle::before { content: '\25BC'; }   /* ▼ via CSS so tile.textContent stays clean */
-    .alt-toggle:hover { background: rgba(0,0,0,.12); }
-    .alt-toggle.is-alt { background: #2563eb; color: #fff; }   /* blue when locked to 2nd address */
+    .alt-toggle:hover { background: #1d4ed8; }
+    .alt-toggle.is-alt { background: #f59e0b; }   /* amber when the dog is locked to its 2nd address */
     .alt-menu {
       position: fixed; z-index: 9999; background: #fff;
       border: 1px solid #cbd5e1; border-radius: 8px;
@@ -2482,8 +2487,12 @@
         if (!tileEl || !state.tiles[tid] || !tileEl.parentNode) return;
         const btn = makeAltToggle(tid);
         tileEl.parentNode.appendChild(btn);
-        btn.style.left = (tileEl.offsetLeft + tileEl.offsetWidth - 19) + 'px';
-        btn.style.top  = (tileEl.offsetTop + 1) + 'px';
+        const place = function () {
+          btn.style.left = (tileEl.offsetLeft + tileEl.offsetWidth - 23) + 'px';
+          btn.style.top  = (tileEl.offsetTop + 1) + 'px';
+        };
+        place();
+        requestAnimationFrame(place);   // re-place after layout/fitText settles
       }
 
       function handleDragEnter(e) {
