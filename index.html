@@ -1035,6 +1035,36 @@
     .send-route-btn.is-success { background-color: var(--success); }
     .send-route-btn.is-failed  { background-color: var(--warning); }
     @media print { .route-controls { display: none !important; } }
+
+    /* ===== Second-address (ALT) tile control — added 2026-06-08 ===== */
+    /* A ▼ button on staging tiles opens a First/Second Address menu that
+       sets/clears a trailing " ALT" token on the tile name (reuses the live
+       ALT routing pipeline). Additive only — the protected createTileElement
+       is untouched; the ▼ is attached in hydrate via decorateStagingTile. */
+    .tile { position: relative; }            /* anchor the inset ▼ (overflow:hidden stays) */
+    .alt-toggle {
+      position: absolute; top: 2px; right: 2px;
+      width: 16px; height: 16px; line-height: 16px;
+      text-align: center; font-size: 10px; cursor: pointer;
+      border-radius: 3px; background: rgba(0,0,0,.06); color: #475569;
+      z-index: 120; -webkit-user-select: none; user-select: none;
+    }
+    .alt-toggle:hover { background: rgba(0,0,0,.12); }
+    .alt-toggle.is-alt { background: #2563eb; color: #fff; }   /* blue when locked to 2nd address */
+    .alt-menu {
+      position: fixed; z-index: 9999; background: #fff;
+      border: 1px solid #cbd5e1; border-radius: 8px;
+      box-shadow: 0 8px 24px rgba(0,0,0,.18);
+      min-width: 160px; font-size: 13px; overflow: hidden;
+    }
+    .alt-menu .alt-menu-head {
+      padding: 6px 12px; font-size: 11px; font-weight: 700; color: #64748b;
+      background: #f8fafc; border-bottom: 1px solid #e2e8f0;
+    }
+    .alt-menu .alt-opt { padding: 9px 12px; cursor: pointer; white-space: nowrap; }
+    .alt-menu .alt-opt:hover { background: #f1f5f9; }
+    .alt-menu .alt-opt.sel { font-weight: 700; color: #2563eb; }
+    .alt-menu .alt-opt.sel::after { content: ' \2713'; }       /* tick on the chosen option */
   </style>
 </head>
 <body>
@@ -2324,7 +2354,130 @@
         
         return tile;
       }
-      
+
+      // ==================== SECOND-ADDRESS (ALT) TILE CONTROL ====================
+      // A ▼ button on every staging tile opens a First/Second Address menu.
+      // "Second Address" locks the dog to its 2nd address by appending a trailing
+      // " ALT" token to the tile name (the same token the route pipeline already
+      // resolves); "First Address" strips it. The lock lives on state.tiles[id].text
+      // (keyed by tile, not placement), so localSave persists it and it stays put
+      // when the tile is dragged into / around the load plan. Fully additive —
+      // createTileElement is untouched; the control is attached here in hydrate.
+      const ALT_RE = /(^|\s)ALT$/i;
+      function stripAlt(s) {
+        const t = String(s == null ? '' : s).trim();
+        const out = t.replace(ALT_RE, '').trim();
+        return out || t;                       // keep original if stripping empties it (bare "ALT")
+      }
+      function isAltLocked(s) { return ALT_RE.test(String(s == null ? '' : s).trim()); }
+
+      let openAltMenuEl = null;
+      let altMenuOutsideHandler = null;
+      let altMenuKeyHandler = null;
+
+      function closeAltMenu() {
+        if (altMenuOutsideHandler) {
+          document.removeEventListener('pointerdown', altMenuOutsideHandler, true);
+          altMenuOutsideHandler = null;
+        }
+        if (altMenuKeyHandler) {
+          document.removeEventListener('keydown', altMenuKeyHandler);
+          altMenuKeyHandler = null;
+        }
+        if (openAltMenuEl) { openAltMenuEl.remove(); openAltMenuEl = null; }
+      }
+
+      function setAltState(tid, wantAlt) {
+        const tile = state.tiles[tid];
+        if (!tile) { closeAltMenu(); return; }
+        const next = wantAlt ? (stripAlt(tile.text) + ' ALT') : stripAlt(tile.text);
+        if (next === tile.text) { closeAltMenu(); return; }   // no-op (already in that state)
+        saveUndoState();
+        tile.text = next;
+        localSave();
+        closeAltMenu();
+        hydrate();
+        showToast(wantAlt ? 'Locked to 2nd address' : 'Set to 1st address', 'info');
+      }
+
+      function openAltMenu(tid, anchorEl) {
+        closeAltMenu();
+        const tile = state.tiles[tid];
+        if (!tile) return;
+        const locked = isAltLocked(tile.text);
+
+        const menu = document.createElement('div');
+        menu.className = 'alt-menu';
+        const head = document.createElement('div');
+        head.className = 'alt-menu-head';
+        head.textContent = 'Pick-up address';
+        menu.appendChild(head);
+
+        [['First Address', false], ['Second Address', true]].forEach(pair => {
+          const label = pair[0], wantAlt = pair[1];
+          const opt = document.createElement('div');
+          opt.className = 'alt-opt' + ((wantAlt === locked) ? ' sel' : '');
+          opt.textContent = label;
+          opt.addEventListener('click', function (e) {
+            e.stopPropagation();
+            setAltState(tid, wantAlt);
+          });
+          menu.appendChild(opt);
+        });
+
+        // Swallow drag-starting events so interacting with the menu never drags a tile.
+        ['pointerdown', 'mousedown', 'touchstart'].forEach(evt => {
+          menu.addEventListener(evt, function (e) { e.stopPropagation(); });
+        });
+
+        // Parent to <body> so the menu survives hydrate's tile teardown and isn't
+        // clipped by the tile's overflow:hidden; position it under the ▼.
+        document.body.appendChild(menu);
+        const r = anchorEl.getBoundingClientRect();
+        const mw = menu.offsetWidth || 160, mh = menu.offsetHeight || 90;
+        let left = r.right - mw;                                  // right-align to the ▼
+        if (left < 4) left = 4;
+        if (left + mw > window.innerWidth - 4) left = window.innerWidth - mw - 4;
+        let top = r.bottom + 4;
+        if (top + mh > window.innerHeight - 4) top = r.top - mh - 4;   // flip up if no room below
+        if (top < 4) top = 4;
+        menu.style.left = left + 'px';
+        menu.style.top = top + 'px';
+        openAltMenuEl = menu;
+
+        altMenuOutsideHandler = function (e) {
+          if (openAltMenuEl && !openAltMenuEl.contains(e.target) && e.target !== anchorEl) {
+            closeAltMenu();
+          }
+        };
+        document.addEventListener('pointerdown', altMenuOutsideHandler, true);  // capture phase
+        altMenuKeyHandler = function (e) { if (e.key === 'Escape') closeAltMenu(); };
+        document.addEventListener('keydown', altMenuKeyHandler);
+      }
+
+      function makeAltToggle(tid) {
+        const btn = document.createElement('div');
+        btn.className = 'alt-toggle' + (isAltLocked(state.tiles[tid] && state.tiles[tid].text) ? ' is-alt' : '');
+        btn.textContent = '▼';                              // ▼
+        btn.title = 'Pick-up address (1st / 2nd)';
+        // Stop drag from starting on either platform (both drag handlers are bubble-phase).
+        ['pointerdown', 'mousedown', 'touchstart'].forEach(evt => {
+          btn.addEventListener(evt, function (e) { e.stopPropagation(); });
+        });
+        btn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          openAltMenu(tid, btn);
+        });
+        // A fast double-tap on the ▼ must not reach the tile's rename (ondblclick).
+        btn.addEventListener('dblclick', function (e) { e.stopPropagation(); e.preventDefault(); });
+        return btn;
+      }
+
+      function decorateStagingTile(tileEl, tid) {
+        if (!tileEl || !state.tiles[tid]) return;
+        tileEl.appendChild(makeAltToggle(tid));
+      }
+
       function handleDragEnter(e) {
         e.currentTarget.classList.add('drag-over');
       }
@@ -2423,6 +2576,7 @@
           if (!placed.has(id)) {
             const t = createTileElement(id, 'tile');
             tray.appendChild(t);
+            decorateStagingTile(t, id);   // ▼ First/Second Address control (staging only)
             // fitText: use text span on Android, whole tile on Windows
             const textEl = t.querySelector('.tile-text') || t;
             requestAnimationFrame(() => fitText(textEl));
