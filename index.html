@@ -642,85 +642,69 @@
       transform: translateX(-50%);
     }
 
-    /* ── Van door markers (side + back) ──────────────────────────────
-       Drawn ON the .kennel-grid "van body" outline as labelled openings,
-       from the rough hand-drawn reference: a SIDE door on the left wall of
-       the FRONT (cargo) section, and a BACK door on the rear wall of the
-       BACK section (below the wheel arches). Purely decorative —
-       pointer-events:none so they are NEVER a drop target and never block a
-       tile drag; they live as absolutely-positioned children of
-       .kennel-grid (NOT inside a .box), so hydrate() — which only clears
-       .box innerHTML + re-adds wheel arches — never touches them. BV and BVX
-       share the identical front/back layout, so they get the identical
-       doors; SV is smaller, so its side door uses the .span1 variant. */
+    /* ── Van door markers (side + back) — subtle figures on the van-body
+       boundary ───────────────────────────────────────────────────────
+       Small "door" glyphs hung on the OUTSIDE edge of the .kennel-grid
+       outline (NOT a labelled box, NOT a reserved interior band), so they
+       cost ~no usable kennel space: the front grid keeps its FULL width
+       (the side door sits in the existing ~18px outer-left margin) and the
+       back grid only a thin strip. From the owner's hand-drawn reference:
+       SIDE door on the left wall of the FRONT (cargo) section, BACK door on
+       the rear wall of the BACK section. pointer-events:none → never a drop
+       target / never block a tile drag; children of .kennel-grid but NOT
+       inside a .box → survive hydrate() (mirrors the wheel-arch pattern).
+       BV/BVX (same layout) get identical figures; SV gets the same figures
+       on its own smaller grid. The hover title gives the full name. */
     .van-door {
       position: absolute;
       z-index: 2;
       pointer-events: none;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: #f3f7fc;
-      border: 2px solid var(--accent);
-      border-radius: 5px;
-      box-shadow: inset 0 0 0 1px #fff;
+      background: #eef3fa;
+      border: 1.5px solid var(--accent);
       box-sizing: border-box;
     }
-    .van-door__label {
-      font-size: 9px;
-      line-height: 1;
-      font-weight: 800;
-      letter-spacing: 1.5px;
-      color: var(--accent);
-      text-transform: uppercase;
-      white-space: nowrap;
-      user-select: none;
-      -webkit-user-select: none;
-    }
 
-    /* SIDE door — left wall of the FRONT (cargo) grid. */
-    .kennel-grid[data-door="side"] { position: relative; padding-left: 30px; }
-    .van-door--side { left: -1px; width: 24px; }
-    .van-door--side .van-door__label {
-      writing-mode: vertical-rl;
-      transform: rotate(180deg);   /* read bottom→top, like the reference */
+    /* SIDE door — a slim door panel hung on the OUTSIDE of the left wall. */
+    .kennel-grid[data-door="side"] { position: relative; }   /* no padding → kennels keep full width */
+    .van-door--side {
+      left: -12px;                  /* sits in the outer-left margin, off the kennels */
+      top: 50%;
+      transform: translateY(-50%);
+      width: 13px;
+      height: 32px;
+      border-radius: 3px 0 0 3px;   /* rounded outer (wall) side */
+      border-right: none;           /* opens toward the van interior */
     }
-    .van-door--side::after {       /* slim sliding-door handle */
+    .van-door--side::after {        /* sliding-door handle */
       content: '';
       position: absolute;
-      right: 4px; top: 50%;
-      width: 2px; height: 16px; margin-top: -8px;
+      right: 2px; top: 50%;
+      width: 1.5px; height: 12px; margin-top: -6px;
       background: var(--accent);
       border-radius: 2px;
-      opacity: 0.5;
     }
-    .van-door--side.span2 { top: 33%; bottom: 6px; }   /* BV/BVX: beside lower 2 rows */
-    .van-door--side.span1 { top: 47%; bottom: 6px; }   /* SV: beside the lower row */
 
-    /* BACK door — rear wall of the BACK grid (below the wheel arches). */
-    .kennel-grid[data-door="back"] { position: relative; padding-bottom: 32px; }
+    /* BACK door — a short double-leaf on the rear wall (thin bottom strip). */
+    .kennel-grid[data-door="back"] { position: relative; padding-bottom: 11px; }
     .van-door--back {
-      bottom: 4px;
+      bottom: 1px;
       left: 50%;
       transform: translateX(-50%);
-      width: 60%;
-      max-width: 230px;
-      height: 22px;
+      width: 38px;
+      height: 8px;
+      border-radius: 0 0 3px 3px;   /* rounded outer (rear) side */
+      border-top: none;             /* opens toward the van interior */
     }
-    .van-door--back::before,       /* rear double-door split (top + bottom ticks) */
-    .van-door--back::after {
+    .van-door--back::after {        /* centre split of the rear double doors */
       content: '';
       position: absolute;
-      left: 50%; width: 2px; margin-left: -1px;
-      background: var(--accent); opacity: 0.5;
+      left: 50%; top: 0; bottom: 1px;
+      width: 1.5px; margin-left: -0.75px;
+      background: var(--accent);
     }
-    .van-door--back::before { top: 2px; height: 5px; }
-    .van-door--back::after  { bottom: 2px; height: 5px; }
 
     @media (max-width: 400px) {
-      .kennel-grid[data-door="side"] { padding-left: 26px; }
-      .van-door--side { width: 21px; }
-      .van-door__label { font-size: 8px; letter-spacing: 1px; }
+      .van-door--side { left: -11px; width: 11px; height: 28px; }
     }
 
     /* Dragging State - NO transform scale/rotate (causes visual jump) */
@@ -1225,7 +1209,7 @@
         </div>
         <div class="two-cols">
           <div class="kennel-grid" data-door="side">
-            <div class="van-door van-door--side span2"><span class="van-door__label">SIDE DOOR</span></div>
+            <div class="van-door van-door--side" title="Side door" aria-label="Side door"></div>
             <div style="display:grid; grid-template-columns:repeat(3,1fr)">
               <div class="box" data-box="bv-c1"></div>
               <div class="box" data-box="bv-c2"></div>
@@ -1241,7 +1225,7 @@
             </div>
           </div>
           <div class="kennel-grid" data-door="back">
-            <div class="van-door van-door--back"><span class="van-door__label">BACK DOOR</span></div>
+            <div class="van-door van-door--back" title="Back door" aria-label="Back door"></div>
             <div style="display:grid; grid-template-columns:repeat(3,1fr)">
               <div class="box" data-box="bv-b1"></div>
               <div class="box" data-box="bv-b2"></div>
@@ -1321,7 +1305,7 @@
         </div>
         <div class="two-cols">
           <div class="kennel-grid" data-door="side">
-            <div class="van-door van-door--side span1"><span class="van-door__label">SIDE DOOR</span></div>
+            <div class="van-door van-door--side" title="Side door" aria-label="Side door"></div>
             <div style="display:grid; grid-template-columns:repeat(3,1fr)">
               <div class="box" data-box="sv-c1"></div>
               <div class="box" data-box="sv-c2"></div>
@@ -1333,7 +1317,7 @@
             </div>
           </div>
           <div class="kennel-grid" data-door="back">
-            <div class="van-door van-door--back"><span class="van-door__label">BACK DOOR</span></div>
+            <div class="van-door van-door--back" title="Back door" aria-label="Back door"></div>
             <div style="display:grid; grid-template-columns:repeat(3,1fr)">
               <div class="box" data-box="sv-b1"></div>
               <div class="box" data-box="sv-b2"></div>
@@ -1415,7 +1399,7 @@
         </div>
         <div class="two-cols">
           <div class="kennel-grid" data-door="side">
-            <div class="van-door van-door--side span2"><span class="van-door__label">SIDE DOOR</span></div>
+            <div class="van-door van-door--side" title="Side door" aria-label="Side door"></div>
             <div style="display:grid; grid-template-columns:repeat(3,1fr)">
               <div class="box" data-box="bvx-c1"></div>
               <div class="box" data-box="bvx-c2"></div>
@@ -1431,7 +1415,7 @@
             </div>
           </div>
           <div class="kennel-grid" data-door="back">
-            <div class="van-door van-door--back"><span class="van-door__label">BACK DOOR</span></div>
+            <div class="van-door van-door--back" title="Back door" aria-label="Back door"></div>
             <div style="display:grid; grid-template-columns:repeat(3,1fr)">
               <div class="box" data-box="bvx-b1"></div>
               <div class="box" data-box="bvx-b2"></div>
