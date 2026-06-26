@@ -1000,7 +1000,7 @@
     /* Print Styles */
     @media print {
       body { background: #fff !important; }
-      .plan-nav, .topbar, .toast-container { display: none !important; }
+      .plan-nav, .topbar, .toast-container, #reorderView { display: none !important; }
       .page { max-width: 100%; padding: 0; }
       .layout-card { box-shadow: none; padding: 10px; }
       .van-section { page-break-inside: avoid; }
@@ -1129,6 +1129,39 @@
     .alt-menu .alt-opt:hover { background: #f1f5f9; }
     .alt-menu .alt-opt.sel { font-weight: 700; color: #2563eb; }
     .alt-menu .alt-opt.sel::after { content: ' \2713'; }   /* tick on the chosen option */
+
+    /* ===== Reorder Routes — staging tab (added 2026-06-26) ===== */
+    #reorderView { max-width: 1200px; margin: 0 auto; padding: 16px; display: grid; gap: 18px; }
+    .reorder-head { display: flex; align-items: center; gap: 10px; font-size: 14px; color: #475569; }
+    .reorder-poll-dot { width: 10px; height: 10px; border-radius: 50%; background: #cbd5e0; flex: 0 0 auto; }
+    .reorder-poll-dot.is-ok { background: var(--success); animation: reorderPulse 1.6s ease-out; }
+    .reorder-poll-dot.is-bad { background: var(--danger); }
+    @keyframes reorderPulse { 0% { box-shadow: 0 0 0 0 rgba(47,133,90,0.5); } 100% { box-shadow: 0 0 0 8px rgba(47,133,90,0); } }
+    .reorder-section { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px 16px; }
+    .reorder-section-title { margin: 0 0 12px; font-size: 16px; font-weight: 700; color: #1f2937; }
+    .reorder-slots { display: grid; grid-template-columns: 1fr; gap: 14px; }
+    .reorder-empty { color: #94a3b8; font-style: italic; padding: 6px 2px; }
+    .reorder-slot { border: 1px solid #e2e8f0; border-top: 3px solid var(--accent); border-radius: 8px; padding: 12px; background: #fff; }
+    .reorder-slot-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+    .van-badge { display: inline-block; padding: 3px 10px; border-radius: 999px; color: #fff; font-weight: 700; font-size: 13px; letter-spacing: .3px; }
+    .van-badge--bv  { background: var(--accent); }
+    .van-badge--bvx { background: var(--secondary); }
+    .van-badge--sv  { background: var(--info); }
+    .reorder-staged-at { color: #64748b; font-size: 12px; }
+    .reorder-updated-flag { background: var(--info); color: #fff; font-size: 11px; padding: 1px 8px; border-radius: 999px; }
+    .reorder-skip { color: #b45309; font-size: 12px; flex-basis: 100%; }
+    .reorder-list { list-style: none; margin: 0 0 10px; padding: 0; }
+    .reorder-tile { display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 10px 12px; margin: 8px 0; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 15px; }
+    .reorder-tile--solo { opacity: .92; }
+    .reorder-pos { flex: 0 0 26px; width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; background: var(--accent); color: #fff; border-radius: 50%; font-weight: 700; font-size: 13px; }
+    .reorder-grip { flex: 0 0 auto; cursor: grab; color: #94a3b8; font-size: 20px; line-height: 1; touch-action: none; user-select: none; -webkit-user-select: none; padding: 0 4px; }
+    .reorder-grip:active { cursor: grabbing; }
+    .reorder-name { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+    .reorder-marks { flex: 0 0 auto; }
+    .reorder-placeholder { height: 52px; margin: 8px 0; border: 2px dashed var(--accent); border-radius: 8px; background: #ebf8ff; list-style: none; }
+    .reorder-tile.is-dragging { background: #fff; }
+    .reorder-send { width: 100%; margin-top: 4px; }
+    @media (min-width: 900px) { .reorder-slots { grid-template-columns: 1fr 1fr; } }
   </style>
 </head>
 <body>
@@ -1137,6 +1170,7 @@
   <div class="plan-nav">
     <div class="nav-tab active" data-plan="PM">🌆 PM Plan</div>
     <div class="nav-tab" data-plan="NEXT_AM">📅 Next Day AM</div>
+    <div class="nav-tab" data-plan="REORDER">🔄 Reorder Routes</div>
   </div>
   
   <div class="page">
@@ -1259,8 +1293,8 @@
               <input type="text" class="addr-input end-address-input" placeholder="Enter end address" aria-label="Custom end address for Big Van" hidden>
             </div>
           </div>
-          <button type="button" class="send-route-btn" data-van="BV" aria-label="Send optimised route for Big Van to driver">
-            <span class="send-route-btn__label">📍 Send Route</span>
+          <button type="button" class="send-route-btn" data-van="BV" aria-label="Stage optimised route for Big Van to driver">
+            <span class="send-route-btn__label">📍 Stage Route</span>
           </button>
         </div>
       </div>
@@ -1350,8 +1384,8 @@
               <input type="text" class="addr-input end-address-input" placeholder="Enter end address" aria-label="Custom end address for Small Van" hidden>
             </div>
           </div>
-          <button type="button" class="send-route-btn" data-van="SV" aria-label="Send optimised route for Small Van to driver">
-            <span class="send-route-btn__label">📍 Send Route</span>
+          <button type="button" class="send-route-btn" data-van="SV" aria-label="Stage optimised route for Small Van to driver">
+            <span class="send-route-btn__label">📍 Stage Route</span>
           </button>
         </div>
       </div>
@@ -1449,16 +1483,21 @@
               <input type="text" class="addr-input end-address-input" placeholder="Enter end address" aria-label="Custom end address for BVX" hidden>
             </div>
           </div>
-          <button type="button" class="send-route-btn" data-van="BVX" aria-label="Send optimised route for BVX to driver">
-            <span class="send-route-btn__label">📍 Send Route</span>
+          <button type="button" class="send-route-btn" data-van="BVX" aria-label="Stage optimised route for BVX to driver">
+            <span class="send-route-btn__label">📍 Stage Route</span>
           </button>
         </div>
       </div>
     </div>
   </div>
 
+  <!-- Reorder Routes — staging tab (added 2026-06-26). JS (route_reorder.js) builds the sections/cards. -->
+  <div id="reorderView" hidden></div>
+
   <!-- Stage 1 — Van Route Automation: loaded before the main IIFE so window.RouteSender is ready. -->
   <script src="route_sender.js"></script>
+  <!-- Reorder Routes module — loaded after route_sender so window.RouteReorder is ready before the tab switcher binds. -->
+  <script src="route_reorder.js"></script>
   <script>
     (function(){
       // Configuration
@@ -2759,6 +2798,12 @@
         tab.onclick = () => {
           document.querySelectorAll('.nav-tab').forEach(x => x.classList.remove('active'));
           tab.classList.add('active');
+          // Reorder Routes tab (added 2026-06-26): show the staging view instead of a plan.
+          if (tab.dataset.plan === 'REORDER') {
+            if (window.RouteReorder) window.RouteReorder.enter();
+            return;
+          }
+          if (window.RouteReorder) window.RouteReorder.exit();
           loadPlan(tab.dataset.plan);
         };
       });
