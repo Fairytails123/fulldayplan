@@ -147,7 +147,8 @@
         'align-items:center;justify-content:center;margin-left:2px;border:none;border-radius:50%;background:#fee2e2;' +
         'color:#b91c1c;font-size:14px;font-weight:700;line-height:1;cursor:pointer;padding:0;}' +
       '.reorder-tile .reorder-del:hover{background:#fecaca;color:#7f1d1d;}' +
-      '.reorder-sent-flag{background:var(--success);color:#fff;font-size:11px;padding:1px 8px;border-radius:999px;}';
+      '.reorder-sent-flag{background:var(--success);color:#fff;font-size:11px;padding:1px 8px;border-radius:999px;}' +
+      '.reorder-day{background:#eef2ff;color:#3730a3;font-size:11px;font-weight:700;padding:1px 8px;border-radius:999px;letter-spacing:.3px;}';
     var el = document.createElement('style');
     el.id = 'reorder-extra-styles';
     el.textContent = css;
@@ -182,6 +183,30 @@
     view.__built = true;
   }
 
+  // Day+date stamp ("MON 28/06") for a card. Prefer the server-computed ctx.dt
+  // (set by Format Route at stage time, so it matches the Telegram message exactly);
+  // fall back to computing from staged_at + section for routes staged before this
+  // feature (today for PM/Half-Day, the next day for NEXT_AM). Europe/London.
+  function dayStampFor(rec) {
+    if (rec && rec.ctx && rec.ctx.dt) return String(rec.ctx.dt);
+    try {
+      var d = (rec && rec.staged_at) ? new Date(rec.staged_at) : new Date();
+      if (isNaN(d.getTime())) d = new Date();
+      if (rec && rec.section === 'NEXT_AM') d = new Date(d.getTime() + 86400000);
+      var parts = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Europe/London', weekday: 'short', day: '2-digit', month: '2-digit'
+      }).formatToParts(d);
+      var wd = '', dd = '', mm = '';
+      parts.forEach(function (p) {
+        if (p.type === 'weekday') wd = p.value;
+        else if (p.type === 'day') dd = p.value;
+        else if (p.type === 'month') mm = p.value;
+      });
+      if (!wd || !dd || !mm) return '';
+      return wd.slice(0, 3).toUpperCase() + ' ' + dd + '/' + mm;
+    } catch (e) { return ''; }
+  }
+
   function buildCard(rec) {
     var card = document.createElement('div');
     card.className = 'reorder-slot';
@@ -190,6 +215,7 @@
     card.innerHTML =
       '<div class="reorder-slot-head">' +
         '<span class="van-badge ' + vanCls + '">' + escapeHtml(rec.van) + '</span>' +
+        '<span class="reorder-day" hidden></span>' +
         '<span class="reorder-staged-at"></span>' +
         '<span class="reorder-updated-flag" hidden>updated</span>' +
         '<span class="reorder-sent-flag" hidden></span>' +
@@ -203,6 +229,12 @@
   }
 
   function updateCardMeta(card, rec) {
+    var day = card.querySelector('.reorder-day');
+    if (day) {
+      var stamp = dayStampFor(rec);
+      day.textContent = stamp;
+      day.hidden = !stamp;
+    }
     var at = card.querySelector('.reorder-staged-at');
     if (at) at.textContent = 'staged ' + fmtTime(rec.staged_at) + (rec.last_reordered_by ? ' · edited' : '');
     var skip = card.querySelector('.reorder-skip');
@@ -501,6 +533,9 @@
       end_address: ctx.ea || '',
       return_trip: ctx.r !== false,
       dogs: dogs,
+      // Carry the staged day+date stamp so the Telegram message shows the SAME stamp
+      // as the tab (Format Route whitelists + reuses it; empty → it computes its own).
+      run_stamp: ctx.dt || '',
       skip_optimisation: true,
       timestamp: new Date().toISOString()
     };
