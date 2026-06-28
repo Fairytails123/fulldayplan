@@ -36,6 +36,8 @@
   var POLL_MS = 5000;
   var SAVE_DEBOUNCE_MS = 600;
   var REQUEST_TIMEOUT_MS = 30000;
+  var SENT_RESET_MS = 2500;   // after a send: hold "✅ Sent", then re-enable so the (persisting) route can be re-sent
+  var CLEAR_TOMBSTONE_MS = 6000;   // ignore a just-cleared slot for this long so an in-flight poll can't re-add its card
 
   var SECTIONS = [
     { key: 'HALF_DAY', title: '☀️ Today — Half Day' },
@@ -49,6 +51,7 @@
   var pollTimer = null;
   var pollFails = 0;
   var slots = {};   // slot_key -> { record, card, stopsById, renderedRev, dragging, pendingSave, saveTimer, staleRemove, preDragOrder }
+  var cleared = {}; // slot_key -> Date.now() tombstone: a slot we just removed (so a stale in-flight poll can't re-add its card)
   var drag = null;  // active drag context
 
   // ---- small helpers --------------------------------------------
@@ -127,9 +130,34 @@
   }
 
   // ---- skeleton + card DOM --------------------------------------
+  // Styles for the controls this module ADDS (per-tile ✕ remove, per-section
+  // Clear-route button, the "✅ sent" flag). Injected once so the whole feature
+  // stays in this single self-contained file; the base .reorder-* styles live in
+  // index_v6.html and are unchanged.
+  function ensureStyles() {
+    if (document.getElementById('reorder-extra-styles')) return;
+    var css =
+      '.reorder-section-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 12px;}' +
+      '.reorder-section-head .reorder-section-title{margin:0;}' +
+      '.reorder-clear-section{flex:0 0 auto;border:1px solid #fecaca;background:#fff5f5;color:#b91c1c;' +
+        'font-size:12px;font-weight:600;padding:5px 10px;border-radius:8px;cursor:pointer;line-height:1.2;}' +
+      '.reorder-clear-section:hover:not(:disabled){background:#fee2e2;}' +
+      '.reorder-clear-section:disabled{opacity:.4;cursor:default;}' +
+      '.reorder-tile .reorder-del{flex:0 0 auto;align-self:flex-start;width:24px;height:24px;display:inline-flex;' +
+        'align-items:center;justify-content:center;margin-left:2px;border:none;border-radius:50%;background:#fee2e2;' +
+        'color:#b91c1c;font-size:14px;font-weight:700;line-height:1;cursor:pointer;padding:0;}' +
+      '.reorder-tile .reorder-del:hover{background:#fecaca;color:#7f1d1d;}' +
+      '.reorder-sent-flag{background:var(--success);color:#fff;font-size:11px;padding:1px 8px;border-radius:999px;}';
+    var el = document.createElement('style');
+    el.id = 'reorder-extra-styles';
+    el.textContent = css;
+    document.head.appendChild(el);
+  }
+
   function buildSkeleton() {
     var view = document.getElementById('reorderView');
     if (!view) return;
+    ensureStyles();
     view.innerHTML = '';
     var head = document.createElement('div');
     head.className = 'reorder-head';
@@ -141,10 +169,15 @@
       s.className = 'reorder-section';
       s.setAttribute('data-section', sec.key);
       s.innerHTML =
-        '<h2 class="reorder-section-title">' + sec.title + '</h2>' +
+        '<div class="reorder-section-head">' +
+          '<h2 class="reorder-section-title">' + sec.title + '</h2>' +
+          '<button type="button" class="reorder-clear-section" data-section="' + sec.key + '" disabled>🗑 Clear route</button>' +
+        '</div>' +
         '<div class="reorder-slots" data-section="' + sec.key + '"></div>' +
         '<div class="reorder-empty" data-section="' + sec.key + '">No routes staged</div>';
       view.appendChild(s);
+      var clr = s.querySelector('.reorder-clear-section');
+      if (clr) clr.addEventListener('click', function () { clearSection(sec.key); });
     });
     view.__built = true;
   }
@@ -159,6 +192,7 @@
         '<span class="van-badge ' + vanCls + '">' + escapeHtml(rec.van) + '</span>' +
         '<span class="reorder-staged-at"></span>' +
         '<span class="reorder-updated-flag" hidden>updated</span>' +
+        '<span class="reorder-sent-flag" hidden></span>' +
         '<span class="reorder-skip" hidden></span>' +
       '</div>' +
       '<ol class="reorder-list"></ol>' +
@@ -212,10 +246,18 @@
         '<span class="reorder-pos">' + (i + 1) + '</span>' +
         (solo ? '' : '<span class="reorder-grip" aria-hidden="true">⠿</span>') +
         '<span class="reorder-name"></span>' +
-        '<span class="reorder-marks">' + marks + '</span>';
+        '<span class="reorder-marks">' + marks + '</span>' +
+        '<button type="button" class="reorder-del" title="Remove from route" aria-label="Remove from route">✕</button>';
       var nameEl = li.querySelector('.reorder-name');
       nameEl.textContent = members.join(' & ') || '—';
       nameEl.title = members.join(' & ');
+      // ✕ removes this stop. Drag only ever starts on the .reorder-grip handle, so a
+      // plain click here can't begin a drag (no pointerdown on the tile body).
+      var delBtn = li.querySelector('.reorder-del');
+      if (delBtn) delBtn.addEventListener('click', function (ev) {
+        ev.preventDefault(); ev.stopPropagation();
+        removeStop(st, id);
+      });
       ol.appendChild(li);
       if (!solo) wireGrip(st, li.querySelector('.reorder-grip'));
     });
@@ -322,6 +364,8 @@
   // ---- save (debounced, optimistic, rollback) -------------------
   function scheduleSave(st) {
     st.pendingSave = true;
+    var sf = st.card && st.card.querySelector('.reorder-sent-flag');
+    if (sf) sf.hidden = true;          // route changed since the last send → drop the "sent" flag
     if (st.saveTimer) clearTimeout(st.saveTimer);
     st.saveTimer = setTimeout(function () { doSave(st); }, SAVE_DEBOUNCE_MS);
   }
@@ -345,6 +389,65 @@
   function rollback(st) {
     renderTiles(st, st.record);       // record.ctx.o is the last known-good order
     st.renderedRev = st.record.rev;
+  }
+
+  // ---- remove a stop / clear a slot / clear a whole section -----
+  // ✕ on a tile: drop that stop. If it was the LAST stop the route is empty, so
+  // the whole slot is cleared (card removed); otherwise the reduced order is
+  // persisted through the SAME saveOrder plumbing as a drag (optimistic + rollback).
+  function removeStop(st, stopId) {
+    if (!st || st.dragging) return;
+    var ol = st.card && st.card.querySelector('.reorder-list');
+    if (!ol) return;
+    var remaining = currentOrderIds(ol).filter(function (x) { return x !== stopId; });
+    if (!remaining.length) {
+      // last dog → removing it empties the route, so the whole slot is cleared.
+      if (!window.confirm('Remove the last dog? This clears the whole route from this section.')) return;
+      clearOneSlot(st, 'route cleared');
+      return;
+    }
+    var li = ol.querySelector('.reorder-tile[data-stop-id="' + stopId + '"]');
+    if (li) ol.removeChild(li);
+    renumber(ol);
+    scheduleSave(st);                 // saves the shortened ctx.o; server keeps the slot STAGED
+  }
+
+  // Clear one slot server-side (status CLEARED) and drop its card on confirmed ok.
+  function clearOneSlot(st, reason) {
+    if (!st || !st.record) return;
+    var slotKey = st.record.slot_key;
+    st.pendingSave = true;            // keep the poll/reconcile off this slot mid-clear
+    if (st.saveTimer) { clearTimeout(st.saveTimer); st.saveTimer = null; }
+    postStore({ action: 'clearSlot', token: TOKEN, slot_key: slotKey })
+      .then(function (r) {
+        if (r && r.ok) {
+          removeCard(st);
+          toast(vanFromKey(slotKey) + ' ' + (reason || 'route cleared'), 'info');
+        } else { st.pendingSave = false; toast('Could not clear route — try again', 'error'); }
+      })
+      .catch(function () { st.pendingSave = false; toast('Could not clear route — try again', 'error'); });
+  }
+
+  // "Clear route" (per section): clear EVERY staged slot in that section only.
+  function clearSection(sectionKey) {
+    var keys = Object.keys(slots).filter(function (k) {
+      return slots[k] && slots[k].record && slots[k].record.section === sectionKey;
+    });
+    if (!keys.length) { toast('No staged routes in this section', 'info'); return; }
+    var label = sectionKey;
+    SECTIONS.forEach(function (s) { if (s.key === sectionKey) label = s.title; });
+    if (!window.confirm('Clear all staged routes in "' + label +
+        '"? They will be removed from the Reorder Routes tab.')) return;
+    keys.forEach(function (k) { if (slots[k]) clearOneSlot(slots[k], 'route cleared'); });
+  }
+
+  // Show a persistent "✅ sent HH:MM" flag on the card after a successful send.
+  function markCardSent(st) {
+    if (!st || !st.card) return;
+    var f = st.card.querySelector('.reorder-sent-flag');
+    if (!f) return;
+    f.textContent = '✅ sent ' + fmtTime(new Date().toISOString());
+    f.hidden = false;
   }
 
   // ---- send final route -----------------------------------------
@@ -407,20 +510,24 @@
       return res.json().catch(function () { return {}; });
     }).then(function (body) {
       if (!body || body.ok !== true) throw new Error((body && body.error) || 'route not ok');
+      // SENT to Telegram. The route deliberately STAYS in the Reorder Routes tab —
+      // it is NOT cleared/removed — so staff can keep reordering and re-send it until
+      // end of operations. A slot only leaves when a fresh route is staged to that
+      // same slot (overwrite) or someone manually presses ✕ / Clear route.
       setBtn(btn, 'success');
-      // Clear ONLY on confirmed success.
-      postStore({ action: 'clearSlot', token: TOKEN, slot_key: slotKey }).catch(function () {});
-      toast(ctx.v + ' route sent to drivers', 'success');
-      setTimeout(function () { removeCard(st); }, 900);
+      markCardSent(st);
+      toast('✅ ' + ctx.v + ' route sent to Telegram — it stays here so you can reorder & resend', 'success');
+      setTimeout(function () { if (slots[slotKey]) setBtn(btn, 'idle'); }, SENT_RESET_MS);
     }).catch(function () {
       setBtn(btn, 'failed');
       setTimeout(function () { setBtn(btn, 'idle'); }, 4000);
-      toast('Send failed — slot kept, retry', 'error');
+      toast('Send failed — route kept, retry', 'error');
     });
   }
 
   // ---- reconcile (poll) -----------------------------------------
   function removeCard(st) {
+    if (st.record) cleared[st.record.slot_key] = Date.now();   // tombstone: block a stale in-flight poll re-adding this card
     if (st.card && st.card.parentNode) st.card.parentNode.removeChild(st.card);
     if (st.record) delete slots[st.record.slot_key];
     refreshEmptyStates();
@@ -429,7 +536,10 @@
     SECTIONS.forEach(function (sec) {
       var mount = document.querySelector('.reorder-slots[data-section="' + sec.key + '"]');
       var empty = document.querySelector('.reorder-empty[data-section="' + sec.key + '"]');
-      if (mount && empty) empty.style.display = mount.children.length ? 'none' : '';
+      var has = !!(mount && mount.children.length);
+      if (mount && empty) empty.style.display = has ? 'none' : '';
+      var clr = document.querySelector('.reorder-clear-section[data-section="' + sec.key + '"]');
+      if (clr) clr.disabled = !has;   // Clear route only active when the section has routes
     });
   }
   function vanFromKey(key) { var p = String(key).split('__'); return p[1] || key; }
@@ -463,6 +573,13 @@
       }).forEach(function (rec) {
         var st = slots[rec.slot_key];
         if (!st) {
+          // Suppress a card re-appearing from a poll whose GET was in flight when we
+          // just cleared this slot (✕-last / Clear route). A CLEARED slot is never
+          // returned by loadStaged, so this only guards that brief race; it expires
+          // after a few seconds, after which a genuine (re-staged) slot re-creates.
+          var tomb = cleared[rec.slot_key];
+          if (tomb && (Date.now() - tomb < CLEAR_TOMBSTONE_MS)) return;
+          if (tomb) delete cleared[rec.slot_key];
           st = slots[rec.slot_key] = {
             record: rec, card: null, stopsById: {}, renderedRev: null,
             dragging: false, pendingSave: false, saveTimer: null, staleRemove: false
@@ -480,6 +597,8 @@
             renderTiles(st, rec);
             st.renderedRev = rec.rev;
             flashUpdated(st.card);
+            var sf2 = st.card.querySelector('.reorder-sent-flag');
+            if (sf2) sf2.hidden = true;   // remote change (reorder / fresh stage) → no longer the sent route
           }
           updateCardMeta(st.card, rec);
         }
