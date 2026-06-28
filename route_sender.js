@@ -33,9 +33,12 @@
   var REQUEST_TIMEOUT_MS = 30000;
 
   // Button labels.
-  var LABEL_IDLE    = '📍 Send Route';        // 📍
-  var LABEL_SENDING = '⏳ Sending route…';     // ⏳ …
-  var LABEL_SUCCESS = '✅ Route sent';              // ✅
+  // Reorder Routes (2026-06-26): this per-van button now STAGES the optimised
+  // route into the "Reorder Routes" tab (it no longer goes straight to Telegram),
+  // so the labels read "Stage", not "Send".
+  var LABEL_IDLE    = '📍 Stage Route';        // 📍 → Reorder Routes tab
+  var LABEL_SENDING = '⏳ Staging route…';      // ⏳ …
+  var LABEL_SUCCESS = '✅ Staged';              // ✅ see the Reorder Routes tab
   var LABEL_FAILED  = '⚠️ Failed — retry'; // ⚠️ —
 
   // Closures supplied by the host page at init time.
@@ -138,6 +141,14 @@
       // Backward-compatible alias: older workflow versions read return_trip
       // to decide whether the route ends at the Centre.
       return_trip: returnToCentre,
+      // Reorder Routes (2026-06-26): STAGE this route instead of sending it.
+      // n8n runs Stage 2+3+4 (fuzzy match + RouteXL optimise + format), then —
+      // because stage_only is true — writes the ReorderQueue sheet and responds,
+      // SKIPPING the Telegram send + whiteboard write. Staff reorder in the
+      // "Reorder Routes" tab and press "Send Final Route" (route_reorder.js) for
+      // the real delivery. Only the per-van buttons stage; the final send builds
+      // its own payload without stage_only.
+      stage_only: true,
       timestamp: new Date().toISOString()
     };
   }
@@ -369,6 +380,12 @@
     setButtonState(btn, 'sending');
     postToN8n(payload).then(function (res) {
       setButtonState(btn, 'success');
+      // Reorder Routes (2026-06-26): nudge staff to the staging tab.
+      try {
+        if (window.RouteReorder && window.RouteReorder.toast) {
+          window.RouteReorder.toast('Staged in Reorder Routes — drag to reorder, then Send Final', 'info');
+        }
+      } catch (e) {}
       setTimeout(function () { setButtonState(btn, 'idle'); }, SUCCESS_HOLD_MS);
       console.log('[RouteSender] Sent ' + van + ' route to N8N:', payload);
       // Additive: drop the optimised stop numbers n8n returns into the kennels.
