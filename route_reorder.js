@@ -90,6 +90,25 @@
     } catch (e) { return ''; }
   }
 
+  // Short, staff-friendly label for WHY a dog was held out of the staged route,
+  // so the "not staged" banner is actionable (e.g. tells staff a grooming dog
+  // needs adding to the grooming tab, not the master). Mirrors the skip reasons
+  // emitted by Stage 2/3 (stage2_fuzzy_match.js / stage3_build_routexl_request.js).
+  function skipReasonLabel(s) {
+    if (!s) return '';
+    switch (s.reason) {
+      case 'not_found':      return s.is_grooming ? 'not on grooming tab' : 'not on master sheet';
+      case 'no_address':     return 'no address on master sheet';
+      case 'no_coordinates': return 'not geocoded yet';
+      case 'suspect_far':    return 'address looks wrong — add a postcode';
+      case 'alt_no_table':
+      case 'alt_not_listed':
+      case 'alt_no_address':
+      case 'alt_no_coordinates': return 'no 2nd address set';
+      default: return s.reason || '';
+    }
+  }
+
   // Reuse the page's toast look (.toast-container/.toast/.toast-*). We build the
   // DOM directly rather than calling the inline IIFE's showToast (different scope).
   function toast(msg, type) {
@@ -242,7 +261,11 @@
       if (rec.skipped && rec.skipped.length) {
         skip.hidden = false;
         skip.textContent = '⚠️ ' + rec.skipped.length + ' not staged: ' +
-          rec.skipped.map(function (s) { return (s && (s.dog || s.name)) || '?'; }).join(', ');
+          rec.skipped.map(function (s) {
+            var nm = (s && (s.dog || s.name)) || '?';
+            var why = skipReasonLabel(s);
+            return why ? (nm + ' (' + why + ')') : nm;
+          }).join(', ');
       } else { skip.hidden = true; skip.textContent = ''; }
     }
   }
