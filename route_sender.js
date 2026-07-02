@@ -72,6 +72,34 @@
     return dogs;
   }
 
+  // Kennel-position map for a van: { <normalised dog name>: <position code> }
+  // e.g. { "bluey cat": "SMP", "ned bird": "BBD" }. The position code is the
+  // data-pos attribute on the kennel box the dog is placed in (STP/SMP/BBD/…,
+  // added with the on-diagram labels 2026-07-02). Sent with the route so the
+  // Telegram message can show each dog's spot in the van; keyed by normName
+  // (the SAME token-stripping+lowercasing used for the stop write-back) so it
+  // joins to the route's canonical dog names server-side. Purely display data.
+  function getPositionsForVan(van) {
+    var st = safeState();
+    var out = {};
+    if (!st || !st.placements || !st.tiles) return out;
+    var prefix = String(van).toLowerCase() + '-';
+    Object.keys(st.placements).forEach(function (boxId) {
+      if (boxId.indexOf(prefix) !== 0) return;
+      var boxEl = document.querySelector('[data-box="' + boxId + '"]');
+      var pos = (boxEl && boxEl.dataset) ? String(boxEl.dataset.pos || '').trim() : '';
+      if (!pos) return;
+      (st.placements[boxId] || []).forEach(function (tileId) {
+        var tile = st.tiles[tileId];
+        if (tile && tile.text) {
+          var key = normName(tile.text);
+          if (key) out[key] = pos;
+        }
+      });
+    });
+    return out;
+  }
+
   function getCurrentPeriod() {
     try {
       var p = hostGetCurrentPlan ? hostGetCurrentPlan() : null;
@@ -131,6 +159,9 @@
       // Full Day (FD) / Half Day (HD) — PM-plan routes only ('' on Next-Day-AM).
       run_type: getRunType(van),
       dogs: getDogsForVan(van),
+      // Kennel position per dog (data-pos of its box: STP/SMP/BBD/…) — shown in
+      // the Telegram route message so the driver sees where each dog is in the van.
+      positions: getPositionsForVan(van),
       // New start/end model. start_from_centre / return_to_centre are the
       // booleans; *_address carry the manually-typed address when the
       // matching checkbox is unchecked (empty string otherwise).
