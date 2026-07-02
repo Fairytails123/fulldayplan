@@ -559,6 +559,10 @@
       // Carry the staged day+date stamp so the Telegram message shows the SAME stamp
       // as the tab (Format Route whitelists + reuses it; empty → it computes its own).
       run_stamp: ctx.dt || '',
+      // Carry the staged kennel positions (ROUTE_CTX.kp, { <normName(dog)>: <code> })
+      // so the delivered message shows each dog's 📦 van spot — the final send is a
+      // fresh webhook POST, so without this the positions never reach Format Route.
+      positions: ctx.kp || {},
       skip_optimisation: true,
       timestamp: new Date().toISOString()
     };
