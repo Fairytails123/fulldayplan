@@ -1190,6 +1190,16 @@
       border-radius: 3px;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
     }
+    /* 2-dog kennels: the purple secondary stop-# input takes the top-right
+       corner, so move the position tag to the BOTTOM-right to keep it visible.
+       (:has() unsupported on very old browsers → tag simply stays top-right,
+       i.e. the prior behaviour — graceful, no regression.) */
+    .box:has(.box-inner.two)[data-pos]::after {
+      top: auto;
+      bottom: 4px;
+      z-index: 101;                        /* above the z:100 tile flex-items so the tag shows OVER the 2nd dog */
+      background: rgba(255, 255, 255, 0.92);
+    }
     .van-label {
       position: absolute;
       z-index: 3;
