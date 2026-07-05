@@ -31,7 +31,7 @@
 
   // ---- config ----------------------------------------------------
   var REORDER_URL = 'https://script.google.com/macros/s/AKfycbxUeIiIJQZZeoo3aXHDdqVZNNqFKLhWhi_WhPVb6GUIvkMlfNxTKsOXyCTGdvAEsMLC/exec';
-  var N8N_WEBHOOK_URL = 'https://ftmanager.app.n8n.cloud/webhook/van-route';
+  var N8N_WEBHOOK_URL = 'https://auto.thefairytails.co.uk/webhook/van-route';
   var TOKEN = 'ft-k9-board-2024-sec';
   var POLL_MS = 5000;
   var SAVE_DEBOUNCE_MS = 600;
