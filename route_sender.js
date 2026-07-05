@@ -25,7 +25,7 @@
   // CUSTOMISE: paste your N8N production webhook URL here.
   // (Create the workflow first — see Stage 1 integration guide.)
   // ----------------------------------------------------------------
-  var N8N_WEBHOOK_URL = 'https://ftmanager.app.n8n.cloud/webhook/van-route';
+  var N8N_WEBHOOK_URL = 'https://auto.thefairytails.co.uk/webhook/van-route';
 
   // Timing constants — match the plan's state machine.
   var SUCCESS_HOLD_MS = 3000;
