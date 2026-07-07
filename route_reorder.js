@@ -46,6 +46,17 @@
   ];
   var VAN_ORDER = ['BV', 'BVX', 'SV'];
 
+  // "Add Dog" — section → route defaults used ONLY when creating a brand-new slot
+  // (an add to a van+route that has nothing staged). period + run_type + a sensible
+  // default departure; mirrors the Load Plan's own defaults + the Half-Day 12:30.
+  var SECTION_DEFAULTS = {
+    HALF_DAY: { p: 'PM',      rt: 'HD', t: '12:30' },
+    PM:       { p: 'PM',      rt: 'FD', t: '15:00' },
+    NEXT_AM:  { p: 'NEXT_AM', rt: '',   t: '08:00' }
+  };
+  var NEXT_AM_DEPART = { BV: '08:30', BVX: '08:30', SV: '07:30' }; // NEXT_AM default depart per van
+  var STAGING_LS_KEY = 'reorder_staging_v1';
+
   // ---- state -----------------------------------------------------
   var active = false;
   var pollTimer = null;
@@ -53,6 +64,7 @@
   var slots = {};   // slot_key -> { record, card, stopsById, renderedRev, dragging, pendingSave, saveTimer, staleRemove, preDragOrder }
   var cleared = {}; // slot_key -> Date.now() tombstone: a slot we just removed (so a stale in-flight poll can't re-add its card)
   var drag = null;  // active drag context
+  var staging = []; // "Add Dog" pending tiles: [{id,name,address,van,section,status,lat,lng,km,reason}], persisted in localStorage
 
   // ---- small helpers --------------------------------------------
   function deviceId() {
@@ -167,7 +179,49 @@
         'color:#b91c1c;font-size:14px;font-weight:700;line-height:1;cursor:pointer;padding:0;}' +
       '.reorder-tile .reorder-del:hover{background:#fecaca;color:#7f1d1d;}' +
       '.reorder-sent-flag{background:var(--success);color:#fff;font-size:11px;padding:1px 8px;border-radius:999px;}' +
-      '.reorder-day{background:#eef2ff;color:#3730a3;font-size:11px;font-weight:700;padding:1px 8px;border-radius:999px;letter-spacing:.3px;}';
+      '.reorder-day{background:#eef2ff;color:#3730a3;font-size:11px;font-weight:700;padding:1px 8px;border-radius:999px;letter-spacing:.3px;}' +
+      // ---- Add Dog panel ----
+      '.reorder-add{background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:14px 16px;}' +
+      '.reorder-add-head{font-weight:700;font-size:15px;margin:0 0 10px;color:#0f172a;}' +
+      '.reorder-add-form{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}' +
+      '.reorder-add-form input,.reorder-add-form select{font-size:14px;padding:8px 10px;border:1px solid #cbd5e1;' +
+        'border-radius:8px;background:#fff;color:#0f172a;min-height:38px;box-sizing:border-box;}' +
+      '.reorder-add-name{flex:1 1 140px;min-width:120px;}' +
+      '.reorder-add-addr{flex:2 1 240px;min-width:160px;}' +
+      '.reorder-add-van,.reorder-add-route{flex:0 0 auto;cursor:pointer;}' +
+      '.reorder-add-btn{flex:0 0 auto;border:none;border-radius:8px;background:#2563eb;color:#fff;font-size:14px;' +
+        'font-weight:600;padding:9px 16px;cursor:pointer;min-height:38px;}' +
+      '.reorder-add-btn:hover{background:#1d4ed8;}' +
+      // ---- staging tiles ----
+      '.reorder-staging{display:flex;flex-direction:column;gap:8px;margin-top:12px;}' +
+      '.reorder-stage-tile{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;' +
+        'padding:10px 12px;border-radius:10px;border:1px solid #e2e8f0;background:#fff;}' +
+      '.reorder-stage--checking{border-color:#cbd5e1;background:#f8fafc;}' +
+      '.reorder-stage--valid{border-color:#bbf7d0;background:#f0fdf4;}' +
+      '.reorder-stage--invalid{border-color:#fecaca;background:#fff5f5;}' +
+      '.reorder-stage-main{display:flex;flex-direction:column;gap:1px;min-width:0;flex:1 1 200px;}' +
+      '.reorder-stage-name{font-weight:700;font-size:14px;color:#0f172a;}' +
+      '.reorder-stage-meta{font-size:11px;color:#64748b;font-weight:600;}' +
+      '.reorder-stage-addr{font-size:12px;color:#475569;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;}' +
+      '.reorder-stage-side{display:flex;align-items:center;gap:10px;flex:0 0 auto;flex-wrap:wrap;justify-content:flex-end;}' +
+      '.reorder-stage-status{font-size:12px;font-weight:600;}' +
+      '.reorder-stage--valid .reorder-stage-status{color:#15803d;}' +
+      '.reorder-stage--invalid .reorder-stage-status{color:#b91c1c;}' +
+      '.reorder-stage--checking .reorder-stage-status{color:#64748b;}' +
+      '.reorder-stage-actions{display:flex;gap:6px;align-items:center;}' +
+      '.reorder-stage-add{border:none;border-radius:8px;background:var(--success,#16a34a);color:#fff;font-size:12px;' +
+        'font-weight:700;padding:6px 12px;cursor:pointer;}' +
+      '.reorder-stage-recheck{border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#334155;font-size:12px;' +
+        'font-weight:600;padding:6px 10px;cursor:pointer;}' +
+      '.reorder-stage-x{border:none;border-radius:50%;width:24px;height:24px;background:#fee2e2;color:#b91c1c;' +
+        'font-size:13px;font-weight:700;cursor:pointer;line-height:1;padding:0;}' +
+      '.reorder-stage-x:hover{background:#fecaca;}' +
+      // ---- per-card foot (Reverse + Send) ----
+      '.reorder-slot-foot{display:flex;gap:8px;align-items:stretch;margin-top:4px;}' +
+      '.reorder-slot-foot .reorder-send{flex:1 1 auto;}' +
+      '.reorder-reverse{flex:0 0 auto;border:1px solid #c7d2fe;background:#eef2ff;color:#3730a3;font-size:13px;' +
+        'font-weight:700;padding:0 14px;border-radius:8px;cursor:pointer;}' +
+      '.reorder-reverse:hover{background:#e0e7ff;}';
     var el = document.createElement('style');
     el.id = 'reorder-extra-styles';
     el.textContent = css;
@@ -184,6 +238,7 @@
     head.innerHTML = '<span class="reorder-poll-dot" id="reorderPollDot"></span>' +
       '<span id="reorderStatus">Drag stops to reorder, then Send Final Route — syncs across devices</span>';
     view.appendChild(head);
+    view.appendChild(buildAddPanel());
     SECTIONS.forEach(function (sec) {
       var s = document.createElement('section');
       s.className = 'reorder-section';
@@ -200,6 +255,203 @@
       if (clr) clr.addEventListener('click', function () { clearSection(sec.key); });
     });
     view.__built = true;
+  }
+
+  // ---- Add Dog panel + staging area ------------------------------
+  // A dispatcher types a dog name + address, picks a van + route, and presses
+  // "Check address". The dog shows as a STAGED tile that is geocode-validated
+  // server-side (green = ready / red = needs attention). A valid tile's "Add to
+  // <van>" commits the dog to that slot (appending to an existing staged route,
+  // or CREATING a new route if none is staged). The added dog carries its coords
+  // to the final send as an extra_stop (sendFinal), so an off-master dog routes.
+  function buildAddPanel() {
+    var wrap = document.createElement('section');
+    wrap.className = 'reorder-add';
+    var vanOpts = VAN_ORDER.map(function (v) {
+      return '<option value="' + v + '">' + v + '</option>';
+    }).join('');
+    var secOpts = SECTIONS.map(function (s) {
+      return '<option value="' + s.key + '">' + s.title + '</option>';
+    }).join('');
+    wrap.innerHTML =
+      '<div class="reorder-add-head">➕ Add a dog to a route</div>' +
+      '<div class="reorder-add-form">' +
+        '<input type="text" class="reorder-add-name" placeholder="Dog name" autocomplete="off">' +
+        '<input type="text" class="reorder-add-addr" placeholder="Full address incl. postcode" autocomplete="off">' +
+        '<select class="reorder-add-van" aria-label="Van">' + vanOpts + '</select>' +
+        '<select class="reorder-add-route" aria-label="Route">' + secOpts + '</select>' +
+        '<button type="button" class="reorder-add-btn">Check address</button>' +
+      '</div>' +
+      '<div class="reorder-staging" aria-live="polite"></div>';
+    var btn = wrap.querySelector('.reorder-add-btn');
+    if (btn) btn.addEventListener('click', function () { stagingAdd(wrap); });
+    ['.reorder-add-name', '.reorder-add-addr'].forEach(function (sel) {
+      var el = wrap.querySelector(sel);
+      if (el) el.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); stagingAdd(wrap); }
+      });
+    });
+    return wrap;
+  }
+
+  function saveStaging() {
+    try { localStorage.setItem(STAGING_LS_KEY, JSON.stringify(staging)); } catch (e) {}
+  }
+  function loadStaging() {
+    try {
+      var raw = localStorage.getItem(STAGING_LS_KEY);
+      staging = raw ? (JSON.parse(raw) || []) : [];
+      if (!Array.isArray(staging)) staging = [];
+    } catch (e) { staging = []; }
+    // any tile left mid-check from a previous session → mark for a re-check
+    staging.forEach(function (it) {
+      if (it && it.status === 'checking') { it.status = 'invalid'; it.reason = 'not checked — press Re-check'; }
+    });
+  }
+  function stagingId() { return 'a' + Math.floor(Math.random() * 1e9).toString(36) + Date.now().toString(36); }
+  function findStaging(id) {
+    for (var i = 0; i < staging.length; i++) if (staging[i].id === id) return staging[i];
+    return null;
+  }
+  function removeStaging(id) {
+    staging = staging.filter(function (x) { return x.id !== id; });
+    saveStaging(); stagingRender();
+  }
+  function sectionTitle(key) {
+    var t = key;
+    SECTIONS.forEach(function (s) { if (s.key === key) t = s.title; });
+    return t;
+  }
+
+  function stagingAdd(wrap) {
+    var nameEl = wrap.querySelector('.reorder-add-name');
+    var addrEl = wrap.querySelector('.reorder-add-addr');
+    var name = (nameEl.value || '').trim();
+    var addr = (addrEl.value || '').trim();
+    var van = wrap.querySelector('.reorder-add-van').value;
+    var section = wrap.querySelector('.reorder-add-route').value;
+    if (!name) { toast('Enter a dog name', 'error'); nameEl.focus(); return; }
+    if (!addr) { toast('Enter an address', 'error'); addrEl.focus(); return; }
+    var item = {
+      id: stagingId(), name: name, address: addr, van: van, section: section,
+      status: 'checking', lat: null, lng: null, km: null, reason: ''
+    };
+    staging.push(item);
+    saveStaging();
+    stagingRender();
+    nameEl.value = ''; addrEl.value = '';   // clear the form for the next dog
+    nameEl.focus();
+    stagingGeocode(item);
+  }
+
+  function stagingGeocode(item) {
+    var cur0 = findStaging(item.id);
+    if (cur0) { cur0.status = 'checking'; cur0.reason = ''; saveStaging(); stagingRender(); }
+    postStore({ action: 'geocodeAddress', token: TOKEN, address: item.address })
+      .then(function (r) {
+        var cur = findStaging(item.id);
+        if (!cur) return;
+        if (r && r.ok) {
+          cur.status = 'valid'; cur.lat = r.lat; cur.lng = r.lng; cur.km = r.km; cur.reason = '';
+        } else {
+          cur.status = 'invalid';
+          cur.reason = (r && r.message) || 'Address check failed';
+          cur.lat = (r && r.lat != null) ? r.lat : null;
+          cur.lng = (r && r.lng != null) ? r.lng : null;
+        }
+        saveStaging(); stagingRender();
+      })
+      .catch(function () {
+        var cur = findStaging(item.id);
+        if (!cur) return;
+        cur.status = 'invalid'; cur.reason = 'Address check failed — try again';
+        saveStaging(); stagingRender();
+      });
+  }
+
+  function stagingCommit(item) {
+    if (!item || item.status !== 'valid') return;
+    var d = SECTION_DEFAULTS[item.section] || { p: 'PM', rt: '', t: '' };
+    var depart = d.t;
+    if (item.section === 'NEXT_AM') depart = NEXT_AM_DEPART[item.van] || d.t;
+    var newCtx = { p: d.p, rt: d.rt, t: depart, r: true, s: true, sa: '', ea: '' };
+    postStore({
+      action: 'addStagedDog', token: TOKEN, section: item.section, van: item.van,
+      dog: { name: item.name, address: item.address, lat: item.lat, lng: item.lng },
+      added_by: deviceId(), new_ctx: newCtx
+    }).then(function (r) {
+      if (r && r.ok) {
+        removeStaging(item.id);
+        // An intentional re-stage to a just-cleared slot must clear its tombstone, else
+        // the new card is suppressed for up to CLEAR_TOMBSTONE_MS despite the success toast.
+        if (r.slot_key) delete cleared[r.slot_key];
+        toast('✓ ' + item.name + ' added to ' + item.van + (r.created ? ' — new route created' : ''), 'success');
+        poll();   // refresh the target card immediately
+      } else {
+        toast((r && r.error) || 'Could not add dog — try again', 'error');
+      }
+    }).catch(function () { toast('Could not add dog — try again', 'error'); });
+  }
+
+  function stagingRender() {
+    var host = document.querySelector('.reorder-staging');
+    if (!host) return;
+    host.innerHTML = '';
+    staging.forEach(function (it) {
+      var tile = document.createElement('div');
+      tile.className = 'reorder-stage-tile reorder-stage--' + it.status;
+      var statusHtml, actionsHtml;
+      if (it.status === 'checking') {
+        statusHtml = '<span class="reorder-stage-status">⏳ checking address…</span>';
+        actionsHtml = '<button type="button" class="reorder-stage-x" data-id="' + it.id + '" title="Remove">✕</button>';
+      } else if (it.status === 'valid') {
+        statusHtml = '<span class="reorder-stage-status">✓ ready' + (it.km != null ? ' · ' + it.km + ' km' : '') + '</span>';
+        actionsHtml =
+          '<button type="button" class="reorder-stage-add" data-id="' + it.id + '">Add to ' + escapeHtml(it.van) + '</button>' +
+          '<button type="button" class="reorder-stage-x" data-id="' + it.id + '" title="Remove">✕</button>';
+      } else {
+        statusHtml = '<span class="reorder-stage-status">⚠️ ' + escapeHtml(it.reason || 'needs attention') + '</span>';
+        actionsHtml =
+          '<button type="button" class="reorder-stage-recheck" data-id="' + it.id + '">Re-check</button>' +
+          '<button type="button" class="reorder-stage-x" data-id="' + it.id + '" title="Remove">✕</button>';
+      }
+      tile.innerHTML =
+        '<div class="reorder-stage-main">' +
+          '<span class="reorder-stage-name">' + escapeHtml(it.name) + '</span>' +
+          '<span class="reorder-stage-meta">' + escapeHtml(it.van) + ' · ' + escapeHtml(sectionTitle(it.section)) + '</span>' +
+          '<span class="reorder-stage-addr" title="' + escapeHtml(it.address) + '">' + escapeHtml(it.address) + '</span>' +
+        '</div>' +
+        '<div class="reorder-stage-side">' + statusHtml +
+          '<div class="reorder-stage-actions">' + actionsHtml + '</div>' +
+        '</div>';
+      host.appendChild(tile);
+    });
+    [].slice.call(host.querySelectorAll('.reorder-stage-add')).forEach(function (b) {
+      b.addEventListener('click', function () { var it = findStaging(b.getAttribute('data-id')); if (it) stagingCommit(it); });
+    });
+    [].slice.call(host.querySelectorAll('.reorder-stage-recheck')).forEach(function (b) {
+      b.addEventListener('click', function () { var it = findStaging(b.getAttribute('data-id')); if (it) stagingGeocode(it); });
+    });
+    [].slice.call(host.querySelectorAll('.reorder-stage-x')).forEach(function (b) {
+      b.addEventListener('click', function () { removeStaging(b.getAttribute('data-id')); });
+    });
+  }
+
+  // "🔁 Reverse": flip the staged stop order in one tap, then persist through the
+  // SAME saveOrder plumbing as a drag. The final send uses skip_optimisation:true,
+  // so the reversed staff order is exactly what RouteXL returns (with ETAs) and
+  // delivers. A single-stop route has nothing to reverse.
+  function reverseRoute(slotKey) {
+    var st = slots[slotKey];
+    if (!st || st.dragging) return;
+    var ol = st.card && st.card.querySelector('.reorder-list');
+    if (!ol) return;
+    var tiles = [].slice.call(ol.querySelectorAll('.reorder-tile'));
+    if (tiles.length < 2) { toast('Nothing to reverse (single stop)', 'info'); return; }
+    tiles.reverse().forEach(function (li) { ol.appendChild(li); });
+    renumber(ol);
+    scheduleSave(st);
+    toast('Route reversed', 'info');
   }
 
   // Day+date stamp ("MON 28/06") for a card. Prefer the server-computed ctx.dt
@@ -241,9 +493,14 @@
         '<span class="reorder-skip" hidden></span>' +
       '</div>' +
       '<ol class="reorder-list"></ol>' +
-      '<button type="button" class="send-route-btn reorder-send">' +
-        '<span class="send-route-btn__label">📍 Send Final Route</span></button>';
+      '<div class="reorder-slot-foot">' +
+        '<button type="button" class="reorder-reverse" title="Reverse the stop order">🔁 Reverse</button>' +
+        '<button type="button" class="send-route-btn reorder-send">' +
+          '<span class="send-route-btn__label">📍 Send Final Route</span></button>' +
+      '</div>';
     card.querySelector('.reorder-send').addEventListener('click', function () { sendFinal(rec.slot_key); });
+    var rev = card.querySelector('.reorder-reverse');
+    if (rev) rev.addEventListener('click', function () { reverseRoute(rec.slot_key); });
     return card;
   }
 
@@ -567,6 +824,20 @@
       timestamp: new Date().toISOString()
     };
 
+    // Dogs ADDED via the "Add Dog" panel are off the Master sheet, so they carry
+    // their geocoded coords as extra_stops → Stage 2 routes them via the
+    // _pre_resolved bypass WITHOUT is_update (the header stays "route ready").
+    // Filter ctx.ex to dogs still on the route (a removed added-dog leaves its ex
+    // entry behind but must NOT be re-injected).
+    var present = {};
+    dogs.forEach(function (nm) { present[normNm(nm)] = true; });
+    var extra = (ctx.ex || []).filter(function (e) {
+      return e && e.lat != null && e.lng != null && present[normNm(e.d)];
+    }).map(function (e) {
+      return { dog: e.d, address: e.a, lat: Number(e.lat), lng: Number(e.lng) };
+    });
+    if (extra.length) payload.extra_stops = extra;
+
     setBtn(btn, 'sending');
     postN8n(payload).then(function (res) {
       return res.json().catch(function () { return {}; });
@@ -690,7 +961,8 @@
     active = true;
     var view = document.getElementById('reorderView');
     if (!view) return;
-    if (!view.__built) buildSkeleton();
+    if (!view.__built) { buildSkeleton(); loadStaging(); }
+    stagingRender();   // re-render any pending "Add Dog" tiles (persisted per device)
     view.hidden = false;
     var page = document.querySelector('.page');
     if (page) page.style.display = 'none';
