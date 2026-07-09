@@ -22,6 +22,9 @@
  * every order change (drag, Reverse, ✕, remote edit). Coordinates ride the staged
  * ctx (`c`/`sc`/`ec`, written by Format Route; `ex` for Add-Dog stops) — nothing is
  * re-geocoded client-side, so the map shows exactly the points RouteXL optimised on.
+ * "⛶ Full screen" blows the same map up to fill the desktop/mobile viewport (a CSS
+ * overlay, not the Fullscreen API — iOS Safari only grants that to <video>); Escape
+ * or "✕ Close" returns it to the card.
  *
  * Backend contract (all on the EXISTING Apps Script web app the page already
  * uses for Share/Fetch):
@@ -271,9 +274,22 @@
       '.reorder-mapbar{display:flex;align-items:center;justify-content:space-between;gap:8px;' +
         'padding:6px 10px;font-size:12px;color:#475569;border-top:1px solid #e2e8f0;background:#fff;}' +
       '.reorder-mapnote{flex:1 1 auto;min-width:0;color:#b45309;font-weight:600;}' +
-      '.reorder-mapfit{flex:0 0 auto;border:1px solid #cbd5e1;background:#fff;color:#334155;font-size:12px;' +
-        'font-weight:600;padding:4px 10px;border-radius:6px;cursor:pointer;}' +
-      '.reorder-mapfit:hover{background:#f1f5f9;}' +
+      '.reorder-mapbtns{flex:0 0 auto;display:flex;gap:6px;align-items:center;}' +
+      '.reorder-mapfit,.reorder-mapfull{flex:0 0 auto;border:1px solid #cbd5e1;background:#fff;color:#334155;' +
+        'font-size:12px;font-weight:600;padding:6px 10px;border-radius:6px;cursor:pointer;min-height:32px;}' +
+      '.reorder-mapfit:hover,.reorder-mapfull:hover{background:#f1f5f9;}' +
+      // ---- full-screen overlay ----
+      // A CSS overlay, NOT the Fullscreen API: iOS Safari refuses requestFullscreen on
+      // anything but <video>, so the API would silently do nothing on half the devices.
+      // position:fixed + inset:0 fills the layout viewport on every engine we ship to.
+      '.reorder-mapwrap.is-full{position:fixed;top:0;left:0;right:0;bottom:0;z-index:10000;margin:0;' +
+        'border:0;border-radius:0;display:flex;flex-direction:column;background:#fff;}' +
+      '.reorder-mapwrap.is-full .reorder-map{flex:1 1 auto;height:auto;min-height:0;}' +
+      // bar to the TOP in full screen so Close is always reachable (thumb-friendly on mobile)
+      '.reorder-mapwrap.is-full .reorder-mapbar{order:-1;border-top:0;border-bottom:1px solid #e2e8f0;' +
+        'padding:10px 12px;padding-top:calc(10px + env(safe-area-inset-top,0px));}' +
+      '.reorder-mapwrap.is-full .reorder-mapfull{background:#0284c7;border-color:#0284c7;color:#fff;}' +
+      'body.reorder-map-open{overflow:hidden;}' +
       // numbered stop markers — mirror the .reorder-pos tile badge so map == list
       '.reorder-pin{background:transparent;border:0;}' +
       '.reorder-pin span{display:flex;align-items:center;justify-content:center;width:26px;height:26px;' +
@@ -629,6 +645,59 @@
     st.map.fitBounds(st.mapBounds, { padding: [26, 26], maxZoom: 15 });
   }
 
+  // ---- full screen ------------------------------------------------
+  // The panel is deliberately small so it sits inline with the stops, but a driver
+  // checking a 15-stop route wants the whole screen. "⛶ Full screen" blows the SAME
+  // map up to fill the viewport (no second map, no reload — just a resize), on desktop
+  // and mobile alike. Escape or "✕ Close" returns it to the card.
+  //
+  // Implemented as a CSS overlay rather than the Fullscreen API on purpose: iOS Safari
+  // only grants requestFullscreen() to <video>, so the API is a silent no-op on iPhones
+  // and iPads — which is most of the staff. position:fixed + inset:0 works everywhere.
+  var fullscreenSlot = null;   // at most one map is full screen at a time
+
+  function setFullscreen(st, on) {
+    if (!st || !st.card) return;
+    var wrap = st.card.querySelector('.reorder-mapwrap');
+    var btn = st.card.querySelector('.reorder-mapfull');
+    if (!wrap) return;
+    if (on) {
+      wrap.classList.add('is-full');
+      document.body.classList.add('reorder-map-open');   // stop the page scrolling behind
+      if (btn) { btn.textContent = '✕ Close'; btn.title = 'Back to the route card'; }
+      fullscreenSlot = st.record.slot_key;
+    } else {
+      wrap.classList.remove('is-full');
+      document.body.classList.remove('reorder-map-open');
+      if (btn) { btn.textContent = '⛶ Full screen'; btn.title = 'Fill the screen'; }
+      if (fullscreenSlot === (st.record && st.record.slot_key)) fullscreenSlot = null;
+    }
+    // The container just changed size — Leaflet must re-measure, then re-frame the route.
+    // Two ticks: one after the class applies, one after layout/scroll settles (iOS).
+    var refit = function () { try { if (st.map) { st.map.invalidateSize(); fitMap(st); } } catch (e) {} };
+    setTimeout(refit, 0);
+    setTimeout(refit, 250);
+  }
+
+  function toggleFullscreen(slotKey) {
+    var st = slots[slotKey];
+    if (!st || !st.mapOpen || !st.map) return;
+    var wrap = st.card.querySelector('.reorder-mapwrap');
+    setFullscreen(st, !(wrap && wrap.classList.contains('is-full')));
+  }
+
+  function exitFullscreenFor(st) {
+    if (st && st.record && fullscreenSlot === st.record.slot_key) setFullscreen(st, false);
+  }
+
+  // Escape always gets you out — a full-screen map with no visible way back is a trap.
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape' || !fullscreenSlot) return;
+    var st = slots[fullscreenSlot];
+    if (st) setFullscreen(st, false);
+    else { document.body.classList.remove('reorder-map-open'); fullscreenSlot = null; }
+  });
+
   // Redraw the markers + order line. Cheap (a few dozen layers) so it can run on
   // every order change. ALWAYS guarded: a map error must never break a drag or a send.
   function syncMap(st) {
@@ -717,6 +786,7 @@
   }
 
   function closeMap(st) {
+    exitFullscreenFor(st);           // never leave a full-screen overlay on a hidden map
     st.mapOpen = false;
     var wrap = st.card && st.card.querySelector('.reorder-mapwrap');
     var btn = st.card && st.card.querySelector('.reorder-mapbtn');
@@ -731,6 +801,9 @@
   }
 
   function destroyMap(st) {
+    // A card can vanish under a full-screen map (cleared or re-staged on another device).
+    // Drop the overlay + body scroll-lock BEFORE the DOM goes, or the page is left frozen.
+    exitFullscreenFor(st);
     try {
       if (st && st.map) { st.map.remove(); }
     } catch (e) {}
@@ -798,7 +871,10 @@
         '<div class="reorder-map"></div>' +
         '<div class="reorder-mapbar">' +
           '<span class="reorder-mapnote"></span>' +
-          '<button type="button" class="reorder-mapfit" title="Zoom to fit the whole route">⤢ Fit</button>' +
+          '<span class="reorder-mapbtns">' +
+            '<button type="button" class="reorder-mapfit" title="Zoom to fit the whole route">⤢ Fit</button>' +
+            '<button type="button" class="reorder-mapfull" title="Fill the screen">⛶ Full screen</button>' +
+          '</span>' +
         '</div>' +
       '</div>' +
       '<div class="reorder-slot-foot">' +
@@ -817,6 +893,8 @@
       var st = slots[rec.slot_key];
       if (st) { try { st.map && st.map.invalidateSize(); fitMap(st); } catch (e) {} }
     });
+    var fullBtn = card.querySelector('.reorder-mapfull');
+    if (fullBtn) fullBtn.addEventListener('click', function () { toggleFullscreen(rec.slot_key); });
     return card;
   }
 
@@ -1306,6 +1384,13 @@
     active = false;
     if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
     if (drag) { try { onDragEnd(); } catch (e) {} }
+    // Switching tabs while a map is full screen would leave a position:fixed overlay
+    // (and a scroll-locked body) covering the Load Plan. Always come out first.
+    if (fullscreenSlot) {
+      var fs = slots[fullscreenSlot];
+      if (fs) setFullscreen(fs, false);
+      else { document.body.classList.remove('reorder-map-open'); fullscreenSlot = null; }
+    }
     var view = document.getElementById('reorderView');
     if (view) view.hidden = true;
     var page = document.querySelector('.page');
