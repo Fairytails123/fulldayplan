@@ -16,10 +16,17 @@
  * grip-drag list. Exposes window.RouteReorder = { enter, exit } which the tab
  * switcher calls.
  *
+ * "🗺 Check on Map" (added 2026-07-09): each card can open an inline Leaflet map
+ * (lazy-loaded, OSM tiles) plotting its stops in the CURRENT tile order, so staff
+ * can sanity-check the route geographically before Send Final Route. It re-draws on
+ * every order change (drag, Reverse, ✕, remote edit). Coordinates ride the staged
+ * ctx (`c`/`sc`/`ec`, written by Format Route; `ex` for Add-Dog stops) — nothing is
+ * re-geocoded client-side, so the map shows exactly the points RouteXL optimised on.
+ *
  * Backend contract (all on the EXISTING Apps Script web app the page already
  * uses for Share/Fetch):
  *   GET  ?action=loadStaged&token=…        -> { ok, slots:[ {slot_key, section,
- *        van, ctx:{v,p,t,rt,r,s,sa,ea,d,o,aa,gg}, skipped, staged_at, rev, …} ] }
+ *        van, ctx:{v,p,t,rt,r,s,sa,ea,d,o,aa,gg,c,sc,ec,ex}, skipped, staged_at, rev, …} ] }
  *   POST { action:'saveOrder', token, slot_key, o, last_reordered_by }
  *   POST { action:'clearSlot', token, slot_key }
  * Final send goes to the EXISTING n8n webhook, not the Apps Script.
@@ -57,6 +64,23 @@
   var NEXT_AM_DEPART = { BV: '08:30', BVX: '08:30', SV: '07:30' }; // NEXT_AM default depart per van
   var STAGING_LS_KEY = 'reorder_staging_v1';
 
+  // ---- map ("Check on Map") --------------------------------------
+  // Leaflet is loaded LAZILY on the first "Check on Map" tap, so the Load Plan
+  // never blocks on (or pays for) a CDN fetch it may not need, and a CDN outage
+  // degrades to a toast instead of a broken page. SRI hashes pin the exact
+  // 1.9.4 bytes (verified against the published leafletjs.com integrity values).
+  var LEAFLET_JS = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+  var LEAFLET_JS_SRI = 'sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=';
+  var LEAFLET_CSS = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+  var LEAFLET_CSS_SRI = 'sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=';
+  var TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+  var TILE_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+  // Fairy Tails K9 Centre (TN35 5DT) — byte-identical to stage3_build_routexl_request.js
+  // CENTRE. Only a FALLBACK: used when a staged ctx has no sc/ec (a slot created by
+  // the Add Dog panel, or one staged before this feature shipped).
+  var CENTRE_LATLNG = [50.8741198, 0.6255011];
+  var leafletPromise = null;
+
   // ---- state -----------------------------------------------------
   var active = false;
   var pollTimer = null;
@@ -80,6 +104,20 @@
 
   function normNm(s) {
     return String(s == null ? '' : s).toLowerCase().replace(/\s+/g, ' ').trim();
+  }
+
+  // normKey — the COORDINATE key. Must stay byte-identical to stage4_format_route.js
+  // `normaliseName()` (which builds ctx.c's keys) and to stage2's `normalise()`.
+  // NOT the same as normNm above: this also folds accents (Zoë → zoe) and strips
+  // punctuation, so a name that stage4 keyed as "zoe ardern" is found here too.
+  // Idempotent, so re-normalising an already-normalised ctx.c key is a no-op.
+  function normKey(s) {
+    return String(s == null ? '' : s)
+      .toLowerCase()
+      .normalize('NFKD')
+      .replace(/[^\p{Letter}\p{Number}\s'-]/gu, '')
+      .replace(/\s+/g, ' ')
+      .trim();
   }
   function normSet(arr) {
     var m = {};
@@ -216,12 +254,35 @@
       '.reorder-stage-x{border:none;border-radius:50%;width:24px;height:24px;background:#fee2e2;color:#b91c1c;' +
         'font-size:13px;font-weight:700;cursor:pointer;line-height:1;padding:0;}' +
       '.reorder-stage-x:hover{background:#fecaca;}' +
-      // ---- per-card foot (Reverse + Send) ----
-      '.reorder-slot-foot{display:flex;gap:8px;align-items:stretch;margin-top:4px;}' +
-      '.reorder-slot-foot .reorder-send{flex:1 1 auto;}' +
-      '.reorder-reverse{flex:0 0 auto;border:1px solid #c7d2fe;background:#eef2ff;color:#3730a3;font-size:13px;' +
-        'font-weight:700;padding:0 14px;border-radius:8px;cursor:pointer;}' +
-      '.reorder-reverse:hover{background:#e0e7ff;}';
+      // ---- per-card foot (Map + Reverse on row 1, Send full-width on row 2) ----
+      '.reorder-slot-foot{display:flex;gap:8px;align-items:stretch;margin-top:4px;flex-wrap:wrap;}' +
+      '.reorder-slot-foot .reorder-send{flex:1 1 100%;}' +
+      '.reorder-reverse,.reorder-mapbtn{flex:1 1 0;min-width:120px;min-height:38px;border-radius:8px;' +
+        'font-size:13px;font-weight:700;padding:0 12px;cursor:pointer;}' +
+      '.reorder-reverse{border:1px solid #c7d2fe;background:#eef2ff;color:#3730a3;}' +
+      '.reorder-reverse:hover{background:#e0e7ff;}' +
+      '.reorder-mapbtn{border:1px solid #bae6fd;background:#f0f9ff;color:#075985;}' +
+      '.reorder-mapbtn:hover{background:#e0f2fe;}' +
+      '.reorder-mapbtn.is-open{background:#0284c7;border-color:#0284c7;color:#fff;}' +
+      // ---- map panel ----
+      '.reorder-mapwrap{margin:4px 0 10px;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;background:#f8fafc;}' +
+      '.reorder-map{height:300px;width:100%;background:#e8eef3;}' +
+      '@media (max-width:600px){.reorder-map{height:260px;}}' +
+      '.reorder-mapbar{display:flex;align-items:center;justify-content:space-between;gap:8px;' +
+        'padding:6px 10px;font-size:12px;color:#475569;border-top:1px solid #e2e8f0;background:#fff;}' +
+      '.reorder-mapnote{flex:1 1 auto;min-width:0;color:#b45309;font-weight:600;}' +
+      '.reorder-mapfit{flex:0 0 auto;border:1px solid #cbd5e1;background:#fff;color:#334155;font-size:12px;' +
+        'font-weight:600;padding:4px 10px;border-radius:6px;cursor:pointer;}' +
+      '.reorder-mapfit:hover{background:#f1f5f9;}' +
+      // numbered stop markers — mirror the .reorder-pos tile badge so map == list
+      '.reorder-pin{background:transparent;border:0;}' +
+      '.reorder-pin span{display:flex;align-items:center;justify-content:center;width:26px;height:26px;' +
+        'border-radius:50%;background:var(--accent,#2b6cb0);color:#fff;font-weight:700;font-size:13px;' +
+        'border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4);}' +
+      '.reorder-pin--start span{background:var(--success,#2f855a);font-size:14px;}' +
+      '.reorder-pin--end span{background:#b91c1c;font-size:14px;}' +
+      '.reorder-pop{font-size:13px;line-height:1.45;}' +
+      '.reorder-pop b{display:block;margin-bottom:2px;}';
     var el = document.createElement('style');
     el.id = 'reorder-extra-styles';
     el.textContent = css;
@@ -437,6 +498,245 @@
     });
   }
 
+  // ---- "🗺 Check on Map" ------------------------------------------
+  // An inline Leaflet panel per card, sitting directly above Send Final Route so
+  // staff get a final geographic sanity-check before delivering. It plots the stops
+  // in the CURRENT tile order (numbers match the tiles) and re-draws the moment the
+  // order changes — a drag, a 🔁 Reverse, a ✕ removal, or a remote edit from another
+  // device. Read-only: the map never writes an order.
+  //
+  // Coordinates come from the staged ctx and are NEVER re-geocoded here:
+  //   ctx.c  { <normKey(dog)>: [lat,lng] }  every routed dog (added by Format Route —
+  //                                         the exact points RouteXL optimised on)
+  //   ctx.ex [{ d, a, lat, lng }]           dogs added via the ➕ Add Dog panel
+  //   ctx.sc / ctx.ec                       start / end point ([lat,lng] or null)
+  // A route staged BEFORE this feature has no ctx.c — those slots show a "re-stage"
+  // prompt rather than a half-empty map.
+
+  // Lazy-load Leaflet once, on the first map open. Resolves with window.L.
+  function ensureLeaflet() {
+    if (window.L) return Promise.resolve(window.L);
+    if (leafletPromise) return leafletPromise;
+    leafletPromise = new Promise(function (resolve, reject) {
+      var css = document.createElement('link');
+      css.rel = 'stylesheet';
+      css.href = LEAFLET_CSS;
+      css.integrity = LEAFLET_CSS_SRI;
+      css.crossOrigin = '';
+      document.head.appendChild(css);
+
+      var js = document.createElement('script');
+      js.src = LEAFLET_JS;
+      js.integrity = LEAFLET_JS_SRI;
+      js.crossOrigin = '';
+      js.async = true;
+      js.onload = function () {
+        if (window.L) { resolve(window.L); return; }
+        leafletPromise = null;   // never cache a rejection — a later tap must be able to retry
+        reject(new Error('leaflet loaded but window.L missing'));
+      };
+      js.onerror = function () {
+        leafletPromise = null;   // let a later tap retry (transient CDN blip)
+        reject(new Error('leaflet failed to load'));
+      };
+      document.head.appendChild(js);
+    });
+    return leafletPromise;
+  }
+
+  // { <normKey(dog)>: [lat,lng] } for every dog we can plot on this slot.
+  // An added dog (ctx.ex) wins over ctx.c — if a dog was re-added at a corrected
+  // address, ex holds the newer coordinate.
+  function coordIndexFor(ctx) {
+    var idx = {};
+    var c = (ctx && ctx.c && typeof ctx.c === 'object' && !Array.isArray(ctx.c)) ? ctx.c : {};
+    Object.keys(c).forEach(function (k) {
+      var p = c[k];
+      if (!Array.isArray(p) || p.length < 2) return;
+      var la = Number(p[0]), ln = Number(p[1]);
+      if (isFinite(la) && isFinite(ln)) idx[normKey(k)] = [la, ln];
+    });
+    ((ctx && ctx.ex) || []).forEach(function (e) {
+      if (!e) return;
+      var la = Number(e.lat), ln = Number(e.lng);
+      var k = normKey(e.d);
+      if (k && isFinite(la) && isFinite(ln)) idx[k] = [la, ln];
+    });
+    return idx;
+  }
+
+  // A household stop is one tile with several members sharing one address, so the
+  // first member that resolves gives the stop's point.
+  function stopCoord(members, idx) {
+    for (var i = 0; i < (members || []).length; i++) {
+      var p = idx[normKey(members[i])];
+      if (p) return p;
+    }
+    return null;
+  }
+
+  function ctxPointOr(p, fallback) {
+    if (Array.isArray(p) && p.length >= 2 && isFinite(Number(p[0])) && isFinite(Number(p[1]))) {
+      return [Number(p[0]), Number(p[1])];
+    }
+    return fallback || null;
+  }
+
+  // Build the plot for a slot from the CURRENT tile order in the DOM.
+  function mapPlotFor(st) {
+    var ctx = (st.record && st.record.ctx) || {};
+    var idx = coordIndexFor(ctx);
+    var ol = st.card && st.card.querySelector('.reorder-list');
+    var stops = [], missing = [];
+    if (ol) {
+      currentOrderIds(ol).forEach(function (id, i) {
+        var members = st.stopsById[id] || [];
+        var pt = stopCoord(members, idx);
+        if (pt) stops.push({ n: i + 1, pt: pt, members: members });
+        else missing.push(members.join(' & ') || '?');
+      });
+    }
+    // sc/ec absent (slot created by Add Dog, or staged before this feature) →
+    // fall back to the Centre where the route params say we start/end there.
+    var start = ctxPointOr(ctx.sc, ctx.s !== false ? CENTRE_LATLNG : null);
+    var end = ctxPointOr(ctx.ec, ctx.r !== false ? CENTRE_LATLNG : null);
+    return { stops: stops, missing: missing, start: start, end: end, plottable: Object.keys(idx).length > 0 };
+  }
+
+  function pinIcon(L, label, cls) {
+    return L.divIcon({
+      className: 'reorder-pin' + (cls ? ' ' + cls : ''),
+      html: '<span>' + escapeHtml(label) + '</span>',
+      iconSize: [26, 26],
+      iconAnchor: [13, 13],
+      popupAnchor: [0, -14]
+    });
+  }
+
+  // Popup: stop number + dog name(s) + a direct navigation link to that exact point.
+  // encodeURIComponent is CORRECT here — the Telegram-iOS "+ not %20" rule applies to
+  // links sent THROUGH Telegram, not to a link opened from a browser page. Coordinates
+  // carry no characters needing encoding anyway.
+  function popupHtml(n, members, pt) {
+    var url = 'https://www.google.com/maps/dir/?api=1&destination=' +
+      encodeURIComponent(pt[0] + ',' + pt[1]) + '&dir_action=navigate';
+    return '<div class="reorder-pop"><b>' + n + '. ' + escapeHtml(members.join(' & ') || '—') + '</b>' +
+      '<a href="' + url + '" target="_blank" rel="noopener noreferrer">Open in Google Maps</a></div>';
+  }
+
+  function fitMap(st) {
+    if (!st.map || !st.mapBounds || !st.mapBounds.isValid()) return;
+    st.map.fitBounds(st.mapBounds, { padding: [26, 26], maxZoom: 15 });
+  }
+
+  // Redraw the markers + order line. Cheap (a few dozen layers) so it can run on
+  // every order change. ALWAYS guarded: a map error must never break a drag or a send.
+  function syncMap(st) {
+    try {
+      if (!st || !st.mapOpen || !st.map || !window.L) return;
+      var L = window.L;
+      var plot = mapPlotFor(st);
+      if (st.mapLayer) st.mapLayer.clearLayers();
+      else st.mapLayer = L.layerGroup().addTo(st.map);
+
+      var line = [];
+      if (plot.start) {
+        line.push(plot.start);
+        L.marker(plot.start, { icon: pinIcon(L, '🏠', 'reorder-pin--start'), zIndexOffset: -100 })
+          .bindPopup('<div class="reorder-pop"><b>Start</b></div>').addTo(st.mapLayer);
+      }
+      plot.stops.forEach(function (s) {
+        line.push(s.pt);
+        L.marker(s.pt, { icon: pinIcon(L, String(s.n)), zIndexOffset: s.n })
+          .bindPopup(popupHtml(s.n, s.members, s.pt)).addTo(st.mapLayer);
+      });
+      if (plot.end) {
+        line.push(plot.end);
+        // A return-to-Centre route ends where it started; don't stack a 2nd pin there.
+        var sameAsStart = plot.start && plot.end[0] === plot.start[0] && plot.end[1] === plot.start[1];
+        if (!sameAsStart) {
+          L.marker(plot.end, { icon: pinIcon(L, '🏁', 'reorder-pin--end'), zIndexOffset: -100 })
+            .bindPopup('<div class="reorder-pop"><b>End</b></div>').addTo(st.mapLayer);
+        }
+      }
+      if (line.length > 1) {
+        L.polyline(line, { color: '#0284c7', weight: 3, opacity: 0.75, dashArray: '1 6', lineCap: 'round' })
+          .addTo(st.mapLayer);
+      }
+      st.mapBounds = line.length ? L.latLngBounds(line) : null;
+
+      var note = st.card.querySelector('.reorder-mapnote');
+      if (note) {
+        if (plot.missing.length) {
+          note.textContent = '⚠️ ' + plot.missing.length + ' stop' + (plot.missing.length > 1 ? 's' : '') +
+            ' not on the map (' + plot.missing.join(', ') + ') — re-stage to plot';
+        } else {
+          note.textContent = plot.stops.length + ' stop' + (plot.stops.length === 1 ? '' : 's') +
+            ' in the order shown above';
+        }
+      }
+    } catch (e) { /* never let the map break the tab */ }
+  }
+
+  function openMap(st) {
+    var wrap = st.card.querySelector('.reorder-mapwrap');
+    var btn = st.card.querySelector('.reorder-mapbtn');
+    var ctx = (st.record && st.record.ctx) || {};
+    // Nothing to plot at all → say so instead of showing an empty grey box.
+    if (!Object.keys(coordIndexFor(ctx)).length) {
+      toast('No map data — re-stage this route from the Load Plan', 'info');
+      return;
+    }
+    ensureLeaflet().then(function (L) {
+      // Identity, not presence: while Leaflet was fetching (only the first open is
+      // truly async), a poll may have cleared this slot AND a re-stage rebuilt a NEW
+      // st under the same key. Building a map on the old, DOM-detached card would
+      // leak a Leaflet instance that destroyMap can never reach.
+      if (slots[st.record.slot_key] !== st) return;
+      st.mapOpen = true;
+      wrap.hidden = false;
+      if (btn) { btn.classList.add('is-open'); btn.textContent = '🗺 Hide map'; }
+      if (!st.map) {
+        st.map = L.map(st.card.querySelector('.reorder-map'), {
+          scrollWheelZoom: false,          // don't hijack page scroll
+          zoomControl: true,
+          attributionControl: true
+        }).setView(CENTRE_LATLNG, 12);
+        L.tileLayer(TILE_URL, { attribution: TILE_ATTR, maxZoom: 19 }).addTo(st.map);
+      }
+      syncMap(st);
+      // The container was display:none until now, so Leaflet measured 0×0.
+      setTimeout(function () {
+        if (!st.map || !st.mapOpen) return;
+        st.map.invalidateSize();
+        fitMap(st);
+      }, 0);
+    }).catch(function () {
+      toast('Could not load the map — check the connection and try again', 'error');
+    });
+  }
+
+  function closeMap(st) {
+    st.mapOpen = false;
+    var wrap = st.card && st.card.querySelector('.reorder-mapwrap');
+    var btn = st.card && st.card.querySelector('.reorder-mapbtn');
+    if (wrap) wrap.hidden = true;
+    if (btn) { btn.classList.remove('is-open'); btn.textContent = '🗺 Check on Map'; }
+  }
+
+  function toggleMap(slotKey) {
+    var st = slots[slotKey];
+    if (!st || !st.card) return;
+    if (st.mapOpen) closeMap(st); else openMap(st);
+  }
+
+  function destroyMap(st) {
+    try {
+      if (st && st.map) { st.map.remove(); }
+    } catch (e) {}
+    if (st) { st.map = null; st.mapLayer = null; st.mapBounds = null; st.mapOpen = false; }
+  }
+
   // "🔁 Reverse": flip the staged stop order in one tap, then persist through the
   // SAME saveOrder plumbing as a drag. The final send uses skip_optimisation:true,
   // so the reversed staff order is exactly what RouteXL returns (with ETAs) and
@@ -450,6 +750,7 @@
     if (tiles.length < 2) { toast('Nothing to reverse (single stop)', 'info'); return; }
     tiles.reverse().forEach(function (li) { ol.appendChild(li); });
     renumber(ol);
+    syncMap(st);            // map follows the reversed order immediately
     scheduleSave(st);
     toast('Route reversed', 'info');
   }
@@ -493,7 +794,15 @@
         '<span class="reorder-skip" hidden></span>' +
       '</div>' +
       '<ol class="reorder-list"></ol>' +
+      '<div class="reorder-mapwrap" hidden>' +
+        '<div class="reorder-map"></div>' +
+        '<div class="reorder-mapbar">' +
+          '<span class="reorder-mapnote"></span>' +
+          '<button type="button" class="reorder-mapfit" title="Zoom to fit the whole route">⤢ Fit</button>' +
+        '</div>' +
+      '</div>' +
       '<div class="reorder-slot-foot">' +
+        '<button type="button" class="reorder-mapbtn" title="See this route on a map">🗺 Check on Map</button>' +
         '<button type="button" class="reorder-reverse" title="Reverse the stop order">🔁 Reverse</button>' +
         '<button type="button" class="send-route-btn reorder-send">' +
           '<span class="send-route-btn__label">📍 Send Final Route</span></button>' +
@@ -501,6 +810,13 @@
     card.querySelector('.reorder-send').addEventListener('click', function () { sendFinal(rec.slot_key); });
     var rev = card.querySelector('.reorder-reverse');
     if (rev) rev.addEventListener('click', function () { reverseRoute(rec.slot_key); });
+    var mapBtn = card.querySelector('.reorder-mapbtn');
+    if (mapBtn) mapBtn.addEventListener('click', function () { toggleMap(rec.slot_key); });
+    var fitBtn = card.querySelector('.reorder-mapfit');
+    if (fitBtn) fitBtn.addEventListener('click', function () {
+      var st = slots[rec.slot_key];
+      if (st) { try { st.map && st.map.invalidateSize(); fitMap(st); } catch (e) {} }
+    });
     return card;
   }
 
@@ -573,6 +889,9 @@
       ol.appendChild(li);
       if (!solo) wireGrip(st, li.querySelector('.reorder-grip'));
     });
+    // Tiles were rebuilt (fresh stage, a remote reorder, or a failed-save rollback)
+    // — an open map must follow. No-op when the map is closed.
+    syncMap(st);
   }
 
   function currentOrderIds(ol) {
@@ -670,6 +989,7 @@
       toast('That route was cleared elsewhere', 'info');
       return;
     }
+    syncMap(st);            // map follows the dropped order immediately
     scheduleSave(st);
   }
 
@@ -721,6 +1041,7 @@
     var li = ol.querySelector('.reorder-tile[data-stop-id="' + stopId + '"]');
     if (li) ol.removeChild(li);
     renumber(ol);
+    syncMap(st);                      // map drops the removed stop immediately
     scheduleSave(st);                 // saves the shortened ctx.o; server keeps the slot STAGED
   }
 
@@ -861,6 +1182,7 @@
   // ---- reconcile (poll) -----------------------------------------
   function removeCard(st) {
     if (st.record) cleared[st.record.slot_key] = Date.now();   // tombstone: block a stale in-flight poll re-adding this card
+    destroyMap(st);                                            // release the Leaflet instance with its card
     if (st.card && st.card.parentNode) st.card.parentNode.removeChild(st.card);
     if (st.record) delete slots[st.record.slot_key];
     refreshEmptyStates();
@@ -892,6 +1214,7 @@
       if (keys[key]) return;
       var st = slots[key];
       if (st.dragging || st.pendingSave) { st.staleRemove = true; return; }
+      destroyMap(st);
       if (st.card && st.card.parentNode) st.card.parentNode.removeChild(st.card);
       delete slots[key];
       toast(vanFromKey(key) + ' route cleared', 'info');
@@ -915,7 +1238,8 @@
           if (tomb) delete cleared[rec.slot_key];
           st = slots[rec.slot_key] = {
             record: rec, card: null, stopsById: {}, renderedRev: null,
-            dragging: false, pendingSave: false, saveTimer: null, staleRemove: false
+            dragging: false, pendingSave: false, saveTimer: null, staleRemove: false,
+            map: null, mapLayer: null, mapBounds: null, mapOpen: false
           };
           st.card = buildCard(rec);
           mount.appendChild(st.card);
@@ -969,6 +1293,14 @@
     poll();
     if (pollTimer) clearInterval(pollTimer);
     pollTimer = setInterval(function () { if (active && !document.hidden) poll(); }, POLL_MS);
+    // Any map left open when the tab was switched away measured itself against a
+    // display:none parent — re-measure now that the view is visible again.
+    setTimeout(function () {
+      Object.keys(slots).forEach(function (k) {
+        var st = slots[k];
+        if (st && st.mapOpen && st.map) { try { st.map.invalidateSize(); fitMap(st); } catch (e) {} }
+      });
+    }, 0);
   }
   function exit() {
     active = false;
