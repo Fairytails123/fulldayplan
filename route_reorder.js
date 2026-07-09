@@ -298,7 +298,15 @@
       '.reorder-pin--start span{background:var(--success,#2f855a);font-size:14px;}' +
       '.reorder-pin--end span{background:#b91c1c;font-size:14px;}' +
       '.reorder-pop{font-size:13px;line-height:1.45;}' +
-      '.reorder-pop b{display:block;margin-bottom:2px;}';
+      '.reorder-pop b{display:block;margin-bottom:2px;}' +
+      // stop numbers pop when the ORDER changes, so a reorder is visibly acknowledged
+      '@keyframes reorderPinPop{0%{transform:scale(1);}45%{transform:scale(1.45);}100%{transform:scale(1);}}' +
+      '.reorder-map.is-repinned .reorder-pin span{animation:reorderPinPop .36s ease-out;}' +
+      // direction arrow along each leg of the route
+      '.reorder-arrow{background:transparent;border:0;}' +
+      '.reorder-arrow i{display:block;width:0;height:0;border-left:6px solid #0284c7;' +
+        'border-top:4.5px solid transparent;border-bottom:4.5px solid transparent;' +
+        'filter:drop-shadow(0 0 1px #fff) drop-shadow(0 0 1px #fff);}';
     var el = document.createElement('style');
     el.id = 'reorder-extra-styles';
     el.textContent = css;
@@ -629,6 +637,89 @@
     });
   }
 
+  // Fairy Tails routes are a tight cluster of Hastings streets, so several stops land
+  // within a pin's width of each other. Drawn at their true points they OVERLAP and the
+  // later pin hides the earlier one — a reorder then looks like nothing happened, because
+  // the same blob is on top with a different number under it. So: pins that would collide
+  // are fanned out around a small circle and tethered to their true point by a leader
+  // line. The route LINE still uses the true points, so the geometry is never a lie.
+  // Screen distance depends on zoom, so this is recomputed on every zoom (see createMap).
+  var PIN_COLLIDE_PX = 32;   // > the 26px pin, so numbers never touch
+  var PIN_MAX_SHIFT_PX = 46; // never drag a pin so far it reads as a different street
+
+  function spreadPins(L, map, stops) {
+    var truth = stops.map(function (s) { return map.latLngToLayerPoint(L.latLng(s.pt[0], s.pt[1])); });
+    var pos = truth.map(function (p) { return p.clone(); });
+    var n = stops.length;
+
+    // Exactly-coincident pins have no direction to separate along, so seed them apart
+    // deterministically (same input -> same layout, no jitter between redraws).
+    for (var i = 0; i < n; i++) {
+      for (var j = i + 1; j < n; j++) {
+        if (pos[i].distanceTo(pos[j]) < 0.5) {
+          var a = (2 * Math.PI * j) / n - Math.PI / 2;
+          pos[j] = pos[j].add(L.point(Math.cos(a), Math.sin(a)));
+        }
+      }
+    }
+
+    // Relax: push every colliding pair apart, then tug each pin gently back toward its
+    // true point. A handful of passes settles ≤22 pins; transitive clusters resolve too
+    // (the reason a one-pass grouping left pins 21px apart).
+    for (var pass = 0; pass < 24; pass++) {
+      var moved = false;
+      for (var x = 0; x < n; x++) {
+        for (var y = x + 1; y < n; y++) {
+          var dx = pos[y].x - pos[x].x, dy = pos[y].y - pos[x].y;
+          var d = Math.sqrt(dx * dx + dy * dy) || 0.001;
+          if (d >= PIN_COLLIDE_PX) continue;
+          var push = (PIN_COLLIDE_PX - d) / 2;
+          var ux = dx / d, uy = dy / d;
+          pos[x] = pos[x].subtract(L.point(ux * push, uy * push));
+          pos[y] = pos[y].add(L.point(ux * push, uy * push));
+          moved = true;
+        }
+      }
+      // spring back toward truth, and hard-clamp the displacement
+      for (var k = 0; k < n; k++) {
+        pos[k] = pos[k].add(truth[k].subtract(pos[k]).multiplyBy(0.06));
+        var off = pos[k].subtract(truth[k]);
+        var len = Math.sqrt(off.x * off.x + off.y * off.y);
+        if (len > PIN_MAX_SHIFT_PX) pos[k] = truth[k].add(off.multiplyBy(PIN_MAX_SHIFT_PX / len));
+      }
+      if (!moved) break;
+    }
+
+    return stops.map(function (s, idx) {
+      var shifted = pos[idx].distanceTo(truth[idx]) > 3;
+      var ll = map.layerPointToLatLng(pos[idx]);
+      return { pin: shifted ? [ll.lat, ll.lng] : s.pt, tether: shifted ? s.pt : null };
+    });
+  }
+
+  // A small arrowhead at the midpoint of each leg, rotated to the direction of travel —
+  // without it a dotted line between numbered pins doesn't say which way the van goes.
+  function addArrows(L, map, layer, line) {
+    for (var i = 0; i < line.length - 1; i++) {
+      var a = map.latLngToLayerPoint(L.latLng(line[i][0], line[i][1]));
+      var b = map.latLngToLayerPoint(L.latLng(line[i + 1][0], line[i + 1][1]));
+      if (a.distanceTo(b) < 34) continue;           // leg too short to hold an arrow
+      var mid = map.layerPointToLatLng(L.point((a.x + b.x) / 2, (a.y + b.y) / 2));
+      var deg = Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI;
+      L.marker(mid, {
+        interactive: false,
+        keyboard: false,
+        zIndexOffset: -200,
+        icon: L.divIcon({
+          className: 'reorder-arrow',
+          html: '<i style="transform:rotate(' + deg.toFixed(1) + 'deg)"></i>',
+          iconSize: [10, 10],
+          iconAnchor: [5, 5]
+        })
+      }).addTo(layer);
+    }
+  }
+
   // Popup: stop number + dog name(s) + a direct navigation link to that exact point.
   // encodeURIComponent is CORRECT here — the Telegram-iOS "+ not %20" rule applies to
   // links sent THROUGH Telegram, not to a link opened from a browser page. Coordinates
@@ -708,19 +799,36 @@
       if (st.mapLayer) st.mapLayer.clearLayers();
       else st.mapLayer = L.layerGroup().addTo(st.map);
 
+      // The route line always follows the TRUE stop coordinates (pins may be fanned out).
       var line = [];
+      if (plot.start) line.push(plot.start);
+      plot.stops.forEach(function (s) { line.push(s.pt); });
+      if (plot.end) line.push(plot.end);
+
+      if (line.length > 1) {
+        L.polyline(line, { color: '#0284c7', weight: 3, opacity: 0.75, dashArray: '1 6', lineCap: 'round' })
+          .addTo(st.mapLayer);
+        addArrows(L, st.map, st.mapLayer, line);
+      }
+
+      // Fan out any pins that would sit on top of each other, and tether them home.
+      var placed = spreadPins(L, st.map, plot.stops);
+      placed.forEach(function (p, i) {
+        if (!p.tether) return;
+        L.polyline([p.tether, p.pin], { color: '#64748b', weight: 1, opacity: 0.6, interactive: false })
+          .addTo(st.mapLayer);
+      });
+
       if (plot.start) {
-        line.push(plot.start);
         L.marker(plot.start, { icon: pinIcon(L, '🏠', 'reorder-pin--start'), zIndexOffset: -100 })
           .bindPopup('<div class="reorder-pop"><b>Start</b></div>').addTo(st.mapLayer);
       }
-      plot.stops.forEach(function (s) {
-        line.push(s.pt);
-        L.marker(s.pt, { icon: pinIcon(L, String(s.n)), zIndexOffset: s.n })
+      plot.stops.forEach(function (s, i) {
+        // EARLIER stops paint on top: if anything still overlaps, you want to see stop 1.
+        L.marker(placed[i].pin, { icon: pinIcon(L, String(s.n)), zIndexOffset: 1000 - s.n })
           .bindPopup(popupHtml(s.n, s.members, s.pt)).addTo(st.mapLayer);
       });
       if (plot.end) {
-        line.push(plot.end);
         // A return-to-Centre route ends where it started; don't stack a 2nd pin there.
         var sameAsStart = plot.start && plot.end[0] === plot.start[0] && plot.end[1] === plot.start[1];
         if (!sameAsStart) {
@@ -728,11 +836,21 @@
             .bindPopup('<div class="reorder-pop"><b>End</b></div>').addTo(st.mapLayer);
         }
       }
-      if (line.length > 1) {
-        L.polyline(line, { color: '#0284c7', weight: 3, opacity: 0.75, dashArray: '1 6', lineCap: 'round' })
-          .addTo(st.mapLayer);
-      }
       st.mapBounds = line.length ? L.latLngBounds(line) : null;
+
+      // Pop the numbers when the ORDER actually changed (not on a pan/zoom redraw), so a
+      // drag/Reverse is visibly acknowledged even when two stops share a street corner.
+      var orderKey = plot.stops.map(function (s) { return s.members.join('+'); }).join('>');
+      if (st.mapOrderKey !== undefined && st.mapOrderKey !== orderKey) {
+        var el = st.card.querySelector('.reorder-map');
+        if (el) {
+          el.classList.remove('is-repinned');
+          void el.offsetWidth;                 // restart the CSS animation
+          el.classList.add('is-repinned');
+          setTimeout(function () { el.classList.remove('is-repinned'); }, 500);
+        }
+      }
+      st.mapOrderKey = orderKey;
 
       var note = st.card.querySelector('.reorder-mapnote');
       if (note) {
@@ -772,6 +890,9 @@
           attributionControl: true
         }).setView(CENTRE_LATLNG, 12);
         L.tileLayer(TILE_URL, { attribution: TILE_ATTR, maxZoom: 19 }).addTo(st.map);
+        // Pin fan-out and arrow placement are computed in SCREEN space, so they must be
+        // rebuilt whenever the zoom changes (zoom in far enough and nothing collides).
+        st.map.on('zoomend', function () { syncMap(st); });
       }
       syncMap(st);
       // The container was display:none until now, so Leaflet measured 0×0.
