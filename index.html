@@ -70,10 +70,32 @@
       background: #e2e8f0; 
     }
     
-    .nav-tab.active { 
-      background: var(--accent); 
+    .nav-tab.active {
+      background: var(--accent);
       color: #fff;
       border-color: var(--accent);
+    }
+
+    /* 🚐 Drive — driver-app link tab (added 2026-07-10). Deliberately NOT
+       .nav-tab: the plan-switcher binds click on .nav-tab and would treat
+       this link as a plan tab. Plain anchor, opens the /drive page. */
+    .nav-tab-drive {
+      padding: 12px 24px;
+      border: 1px solid #ddd;
+      border-bottom: none;
+      border-radius: 8px 8px 0 0;
+      font-weight: 600;
+      background: #f8fafc;
+      transition: all 0.2s ease;
+      font-size: 14px;
+      text-decoration: none;
+      color: inherit;
+      margin-left: auto;
+      display: inline-block;
+    }
+
+    .nav-tab-drive:hover {
+      background: #e2e8f0;
     }
     
     /* Main Layout */
@@ -1232,6 +1254,7 @@
     <div class="nav-tab active" data-plan="PM">🌆 PM Plan</div>
     <div class="nav-tab" data-plan="NEXT_AM">📅 Next Day AM</div>
     <div class="nav-tab" data-plan="REORDER">🔄 Reorder Routes</div>
+    <a class="nav-tab-drive" href="drive/" target="_blank" rel="noopener">🚐 Drive</a>
   </div>
   
   <div class="page">
