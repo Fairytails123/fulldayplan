@@ -100,6 +100,58 @@
   .drift { margin-top: 8px; font-size: 13px; color: var(--ink-dim); }
   .drift b.ahead { color: var(--good); } .drift b.behind { color: var(--warn); }
 
+  /* ── Kennel board ────────────────────────────────────── */
+  .kboard {
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 12px 14px; margin-bottom: 16px;
+  }
+  .kboard .kb-head {
+    display: flex; align-items: center; justify-content: space-between;
+    cursor: pointer; user-select: none;
+  }
+  .kboard .kb-head h4 { margin: 0; font-size: 14px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-dim); }
+  .kboard .kb-head .kb-count { font-size: 13px; font-weight: 800; color: var(--accent); }
+  .kboard .kb-head .kb-caret { color: var(--ink-faint); font-size: 12px; margin-left: 8px; transition: transform .25s; }
+  .kboard.collapsed .kb-caret { transform: rotate(-90deg); }
+  .kb-body { margin-top: 12px; }
+  .kboard.collapsed .kb-body { display: none; }
+  .kb-grids { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .kb-grid { background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; padding: 8px; }
+  .kb-grid .kb-lbl { text-align: center; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-faint); margin-bottom: 6px; }
+  .kb-row { display: grid; gap: 5px; margin-bottom: 5px; }
+  .kb-row:last-child { margin-bottom: 0; }
+  .kb-box {
+    position: relative; border-radius: 7px; min-height: 44px;
+    border: 1.5px solid var(--line); background: color-mix(in srgb, var(--bg) 60%, var(--panel-2));
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    padding: 3px 2px; overflow: hidden;
+    transition: background .4s, border-color .4s, box-shadow .4s;
+  }
+  .kb-box .kb-pos { font-size: 8.5px; letter-spacing: 0.08em; color: var(--ink-faint); font-weight: 700; }
+  .kb-box .kb-dog { font-size: 10.5px; font-weight: 800; line-height: 1.05; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .kb-box.exp { border-style: dashed; border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+  .kb-box.exp .kb-dog { color: var(--ink-dim); }
+  .kb-box.occ {
+    background: color-mix(in srgb, var(--accent) 26%, var(--panel-2));
+    border-color: var(--accent);
+  }
+  .kb-box.occ .kb-dog { color: var(--ink); }
+  .kb-box.aboard {
+    background: color-mix(in srgb, var(--warn) 20%, var(--panel-2));
+    border-color: var(--warn);
+  }
+  .kb-box.pop { animation: kbpop .6s cubic-bezier(.2,.9,.3,1.4); }
+  @keyframes kbpop { 0% { transform: scale(0.82); } 55% { transform: scale(1.08); } 100% { transform: scale(1); } }
+  .kb-box .kb-arch {
+    position: absolute; bottom: -1px; width: 16px; height: 8px;
+    background: var(--line); border-radius: 8px 8px 0 0; opacity: .8;
+  }
+  .kb-legend { display: flex; gap: 14px; margin-top: 9px; font-size: 11px; color: var(--ink-faint); flex-wrap: wrap; }
+  .kb-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
+  .kb-legend .l-occ i { background: color-mix(in srgb, var(--accent) 30%, var(--panel-2)); border: 1px solid var(--accent); }
+  .kb-legend .l-exp i { border: 1px dashed color-mix(in srgb, var(--accent) 50%, var(--line)); }
+  .kb-legend .l-aboard i { background: color-mix(in srgb, var(--warn) 22%, var(--panel-2)); border: 1px solid var(--warn); }
+
   /* ── Timeline ────────────────────────────────────────── */
   .tl { position: relative; padding-left: 30px; }
   .tl::before {
@@ -270,6 +322,7 @@
 <dialog id="dlg"></dialog>
 <div class="toast" id="toast"></div>
 
+<script src="kennels.js"></script>
 <script>
 (function () {
   'use strict';
@@ -367,6 +420,82 @@
     clearTimeout(el._t); el._t = setTimeout(function () { el.classList.remove('show'); }, 2400);
   }
 
+  /* ── kennel board ── */
+  /* Parse a stop's kennel string into [{dog, code}] pairs.
+     Formats seen in the render blob: "STD" (single dog) or
+     "Hugo: SBP · Milo: SBD" (multi-dog stop). */
+  function kennelAssignments(s) {
+    var raw = String(s.kennel || '');
+    if (!raw) return [];
+    var out = [], re = /(?:([A-Za-z'’\- ]+?)\s*[:–-]\s*)?\b([SB][TMB][PMD])\b/g, m;
+    while ((m = re.exec(raw))) {
+      var dog = (m[1] || '').trim() || String(s.dog_name || '').split(/\s+/)[0] || '';
+      out.push({ dog: dog.split(/\s+/)[0], code: m[2] });
+    }
+    return out;
+  }
+  /* Occupancy per kennel code from the stops' effective statuses.
+     pickup:  collected -> occupied · pending/arrived -> expected · skipped -> free
+     dropoff: dropped -> free · pending/arrived -> occupied · skipped -> STILL ABOARD */
+  function occupancy() {
+    var occ = {};
+    var stops = (state.data && state.data.stops || []).slice().sort(function (a, b) { return a.seq - b.seq; });
+    stops.forEach(function (s) {
+      var st = effStatus(s).st;
+      kennelAssignments(s).forEach(function (a) {
+        if (s.stop_type === 'dropoff') {
+          if (st === 'dropped') delete occ[a.code];
+          else if (st === 'skipped') occ[a.code] = { dog: a.dog, cls: 'aboard' };
+          else occ[a.code] = { dog: a.dog, cls: 'occ' };
+        } else {
+          if (st === 'collected' || st === 'dropped') occ[a.code] = { dog: a.dog, cls: 'occ' };
+          else if (st === 'skipped') delete occ[a.code];
+          else occ[a.code] = { dog: a.dog, cls: 'exp' };
+        }
+      });
+    });
+    return occ;
+  }
+  function occupiedList() {
+    var occ = occupancy(), out = [];
+    Object.keys(occ).forEach(function (c) { if (occ[c].cls === 'occ' || occ[c].cls === 'aboard') out.push({ code: c, dog: occ[c].dog }); });
+    return out;
+  }
+  function kennelBoard() {
+    var layout = (window.FT_KENNELS || {})[state.van];
+    if (!layout || !state.data || !state.data.route) return '';
+    var occ = occupancy();
+    var prev = state.prevOcc || {};
+    var occN = Object.keys(occ).filter(function (c) { return occ[c].cls !== 'exp'; }).length;
+    var totalBoxes = layout.side.concat(layout.back).reduce(function (n, r) { return n + r.length; }, 0);
+    var collapsed = lsGet('veta_kb_collapsed', false);
+    function grid(rows, lbl) {
+      var h = '<div class="kb-grid"><div class="kb-lbl">' + lbl + '</div>';
+      rows.forEach(function (row) {
+        h += '<div class="kb-row" style="grid-template-columns:repeat(' + row.length + ',1fr)">';
+        row.forEach(function (code) {
+          var o = occ[code];
+          var was = JSON.stringify(prev[code] || null), is = JSON.stringify(o || null);
+          var pop = was !== is ? ' pop' : '';
+          h += '<div class="kb-box ' + (o ? o.cls : '') + pop + '">';
+          h += '<span class="kb-pos">' + code + '</span>';
+          if (o) h += '<span class="kb-dog">' + esc(o.dog) + '</span>';
+          if ((layout.arches || []).indexOf(code) >= 0) h += '<span class="kb-arch"></span>';
+          h += '</div>';
+        });
+        h += '</div>';
+      });
+      return h + '</div>';
+    }
+    var h = '<div class="kboard' + (collapsed ? ' collapsed' : '') + '" id="kboard">';
+    h += '<div class="kb-head" id="kbHead"><h4>🚐 Van kennels</h4><div><span class="kb-count num">' + occN + ' / ' + totalBoxes + ' in van</span><span class="kb-caret">▼</span></div></div>';
+    h += '<div class="kb-body"><div class="kb-grids">' + grid(layout.side, 'Side door') + grid(layout.back, 'Back door') + '</div>';
+    h += '<div class="kb-legend"><span class="l-occ"><i></i>In the van</span><span class="l-exp"><i></i>To collect</span><span class="l-aboard"><i></i>Skipped drop — still aboard</span></div>';
+    h += '</div></div>';
+    state.prevOcc = occ;
+    return h;
+  }
+
   function stopCard(s, isNow, routeActive) {
     var eff = effStatus(s);
     var cls = 'stop';
@@ -441,6 +570,8 @@
     }
     h += '</div>';
 
+    h += kennelBoard();
+
     if (rst === 'completed') {
       h += '<div class="empty" style="padding:26px 12px"><div class="art">🏁</div><h2>Route finished</h2><p>' + doneN + ' done · ' + (closed - doneN) + ' skipped' + (total - closed ? ' · <b style="color:var(--warn)">' + (total - closed) + ' never marked</b>' : '') + '</p></div>';
     }
@@ -462,6 +593,12 @@
 
     main.querySelectorAll('.btn[data-act]').forEach(function (b) {
       b.addEventListener('click', function () { onAction(b.getAttribute('data-act'), Number(b.getAttribute('data-seq'))); });
+    });
+    var kbHead = document.getElementById('kbHead');
+    if (kbHead) kbHead.addEventListener('click', function () {
+      var el = document.getElementById('kboard');
+      el.classList.toggle('collapsed');
+      lsSet('veta_kb_collapsed', el.classList.contains('collapsed'));
     });
   }
 
@@ -492,9 +629,12 @@
   }
   function confirmEnd() {
     var open = (state.data.stops || []).filter(function (s) { return CLOSED.indexOf(effStatus(s).st) < 0; });
-    var body = open.length
-      ? '<p style="color:var(--warn)"><b>' + open.length + ' stop' + (open.length > 1 ? 's are' : ' is') + ' not marked:</b></p><ul>' + open.map(function (s) { return '<li>' + s.seq + ' — ' + esc(s.dog_name) + '</li>'; }).join('') + '</ul><p>Mark them Done/Skip first if the dogs were handled.</p>'
-      : '<p>All stops are marked. Nice one.</p>';
+    var aboard = occupiedList();
+    var body = '';
+    if (open.length) body += '<p style="color:var(--warn)"><b>' + open.length + ' stop' + (open.length > 1 ? 's are' : ' is') + ' not marked:</b></p><ul>' + open.map(function (s) { return '<li>' + s.seq + ' — ' + esc(s.dog_name) + '</li>'; }).join('') + '</ul>';
+    if (aboard.length) body += '<p style="color:var(--bad)"><b>🚨 Kennels still occupied:</b></p><ul>' + aboard.map(function (k) { return '<li><b>' + esc(k.code) + '</b> — ' + esc(k.dog) + '</li>'; }).join('') + '</ul><p>Check the van before you finish.</p>';
+    if (!body) body = '<p>All stops marked and every kennel is empty. Nice one.</p>';
+    else if (open.length && !aboard.length) body += '<p>Mark them Done/Skip first if the dogs were handled.</p>';
     dialog('🏁 End the route?', body,
       [['End route 🏁', 'go', 'btn skip'], ['Back', '', 'btn nav']],
       function (c) { if (c === 'go') { setRouteOverlay('end'); sendTap('end', 0); render(); toast('🏁 Route ended'); } });
