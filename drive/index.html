@@ -1,0 +1,609 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0b0f14">
+<title>Fairy Tails — Drive</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0b0f14;
+    --panel: #131a22;
+    --panel-2: #1a232e;
+    --line: #26313d;
+    --ink: #f2f6fa;
+    --ink-dim: #93a3b3;
+    --ink-faint: #5b6b7b;
+    --good: #2dd4a7;
+    --warn: #fbbf24;
+    --bad: #f87171;
+    --accent: #2dd4bf;      /* van colour, set at runtime */
+    --accent-ink: #06251f;
+    --radius: 18px;
+    --pad: clamp(12px, 3.5vw, 20px);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Bricolage Grotesque", -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 16px;
+    line-height: 1.35;
+    min-height: 100dvh;
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 92px);
+    background-image:
+      radial-gradient(1100px 500px at 85% -10%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 60%),
+      radial-gradient(700px 380px at -10% 8%, rgba(255,255,255,0.03), transparent 60%);
+    background-attachment: fixed;
+  }
+  .num { font-variant-numeric: tabular-nums; }
+
+  /* ── Top bar ─────────────────────────────────────────── */
+  header {
+    position: sticky; top: 0; z-index: 30;
+    display: flex; align-items: center; gap: 10px;
+    padding: calc(env(safe-area-inset-top, 0px) + 10px) var(--pad) 10px;
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line);
+  }
+  .van-chip {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: var(--accent); color: var(--accent-ink);
+    font-weight: 800; letter-spacing: 0.04em;
+    border-radius: 999px; padding: 6px 14px; font-size: 15px;
+    border: 0; cursor: pointer;
+  }
+  .van-chip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent-ink); opacity: 0.55; }
+  #routeMeta { flex: 1; min-width: 0; }
+  #routeMeta .rid { font-weight: 600; font-size: 13px; color: var(--ink-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #routeMeta .sub { font-size: 12px; color: var(--ink-faint); }
+  .icon-btn {
+    background: var(--panel-2); border: 1px solid var(--line); color: var(--ink-dim);
+    width: 42px; height: 42px; border-radius: 12px; font-size: 18px; cursor: pointer;
+    display: grid; place-items: center; flex: none;
+  }
+  .icon-btn:active { transform: scale(0.94); }
+  #syncDot { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 8px); right: 8px; width: 7px; height: 7px; border-radius: 50%; background: var(--good); transition: background .3s; }
+  #syncDot.err { background: var(--bad); }
+
+  /* ── Banners ─────────────────────────────────────────── */
+  .banner {
+    margin: 10px var(--pad) 0; padding: 9px 14px; border-radius: 12px;
+    font-size: 13px; font-weight: 600; display: none;
+  }
+  .banner.show { display: block; }
+  #devBanner { background: #2a2410; color: var(--warn); border: 1px dashed #6b5b17; }
+  #offBanner { background: #2a1414; color: var(--bad); border: 1px dashed #6b2a2a; }
+  #queueBanner { background: #10222a; color: #7dd3fc; border: 1px dashed #1e4657; }
+
+  main { padding: 14px var(--pad) 0; max-width: 640px; margin: 0 auto; }
+
+  /* ── Progress strip ──────────────────────────────────── */
+  .progress-card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 14px 16px; margin-bottom: 16px;
+  }
+  .progress-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .progress-top .big { font-size: 26px; font-weight: 800; }
+  .progress-top .big small { color: var(--ink-faint); font-size: 15px; font-weight: 600; }
+  .pill { font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px; letter-spacing: 0.03em; }
+  .pill.staged { background: #223041; color: #93c5fd; }
+  .pill.active { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent); }
+  .pill.completed { background: #1c2b22; color: var(--good); }
+  .bar { height: 8px; border-radius: 99px; background: var(--panel-2); margin-top: 10px; overflow: hidden; }
+  .bar > i { display: block; height: 100%; border-radius: 99px; background: var(--accent); width: 0%; transition: width .6s cubic-bezier(.2,.8,.2,1); }
+  .drift { margin-top: 8px; font-size: 13px; color: var(--ink-dim); }
+  .drift b.ahead { color: var(--good); } .drift b.behind { color: var(--warn); }
+
+  /* ── Timeline ────────────────────────────────────────── */
+  .tl { position: relative; padding-left: 30px; }
+  .tl::before {
+    content: ""; position: absolute; left: 11px; top: 8px; bottom: 8px; width: 2px;
+    background: linear-gradient(var(--line), var(--line));
+  }
+  .stop { position: relative; margin-bottom: 14px; animation: rise .35s both; }
+  @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  .stop .node {
+    position: absolute; left: -30px; top: 18px; width: 24px; height: 24px; border-radius: 50%;
+    background: var(--bg); border: 2px solid var(--ink-faint);
+    display: grid; place-items: center; font-size: 11px; font-weight: 800; color: var(--ink-dim);
+    z-index: 1;
+  }
+  .stop.done .node   { border-color: var(--good); background: var(--good); color: #06251f; }
+  .stop.skip .node   { border-color: var(--bad); color: var(--bad); background: #1d1113; }
+  .stop.now  .node   { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 20%, transparent); animation: pulse 2.2s infinite; }
+  @keyframes pulse { 0%,100% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent); } 50% { box-shadow: 0 0 0 9px color-mix(in srgb, var(--accent) 8%, transparent); } }
+
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 14px 16px;
+  }
+  .stop.done .card, .stop.skip .card { opacity: 0.55; }
+  .stop.now .card { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 7%, var(--panel)), var(--panel) 55%); }
+
+  .row1 { display: flex; align-items: flex-start; gap: 10px; }
+  .dog { flex: 1; min-width: 0; }
+  .dog .name { font-size: 19px; font-weight: 800; line-height: 1.15; overflow-wrap: anywhere; }
+  .stop.now .dog .name { font-size: 24px; }
+  .dog .owner { font-size: 13px; color: var(--ink-faint); margin-top: 1px; }
+  .eta { text-align: right; flex: none; }
+  .eta .t { font-size: 21px; font-weight: 800; letter-spacing: 0.01em; }
+  .stop.now .eta .t { font-size: 27px; color: var(--accent); }
+  .eta .lbl { font-size: 10px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--ink-faint); }
+  .typ { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-faint); }
+  .typ.dropoff { color: #93c5fd; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--panel-2); border: 1px solid var(--line);
+    border-radius: 10px; padding: 6px 10px; font-size: 14px; font-weight: 700;
+  }
+  .chip.key { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 17px; letter-spacing: 0.14em; color: var(--warn); border-color: #4a3d12; background: #201a08; }
+  .chip.kennel { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+  .chip.kennel small { color: var(--ink-faint); font-weight: 600; letter-spacing: 0.02em; }
+  .addr { margin-top: 9px; font-size: 14px; color: var(--ink-dim); overflow-wrap: anywhere; }
+  .note {
+    margin-top: 9px; font-size: 14px; background: #241d0d; color: #fde68a;
+    border-left: 3px solid var(--warn); border-radius: 8px; padding: 8px 11px;
+  }
+  .status-line { margin-top: 9px; font-size: 13px; font-weight: 700; }
+  .status-line.done { color: var(--good); }
+  .status-line.skip { color: var(--bad); }
+  .status-line.arrived { color: var(--accent); }
+  .status-line .q { color: var(--ink-faint); font-weight: 600; }
+
+  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 12px; }
+  .actions .wide { grid-column: 1 / -1; }
+  .btn {
+    border: 0; border-radius: 13px; padding: 13px 10px; font-size: 16px; font-weight: 800;
+    font-family: inherit; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    min-height: 52px; letter-spacing: 0.01em;
+  }
+  .btn:active { transform: scale(0.97); }
+  .btn.nav { background: var(--panel-2); color: var(--ink); border: 1px solid var(--line); }
+  .btn.call { background: var(--panel-2); color: var(--ink); border: 1px solid var(--line); }
+  .btn.done { background: var(--good); color: #052e22; }
+  .btn.skip { background: transparent; color: var(--bad); border: 1.5px solid #4c2626; }
+  .btn[disabled] { opacity: 0.45; pointer-events: none; }
+  .stop.now .btn.done { font-size: 18px; min-height: 58px; }
+
+  /* ── Footer action ───────────────────────────────────── */
+  #footer {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+    padding: 10px var(--pad) calc(env(safe-area-inset-bottom, 0px) + 12px);
+    background: linear-gradient(transparent, var(--bg) 34%);
+    display: none;
+  }
+  #footer.show { display: block; }
+  #footer .btn { width: 100%; max-width: 640px; margin: 0 auto; display: flex; }
+  .btn.start { background: var(--accent); color: var(--accent-ink); font-size: 19px; min-height: 60px; }
+  .btn.end { background: var(--panel-2); color: var(--ink-dim); border: 1px solid var(--line); }
+
+  /* ── Empty / picker / dialogs ────────────────────────── */
+  .empty { text-align: center; color: var(--ink-dim); padding: 60px 20px; }
+  .empty .art { font-size: 52px; margin-bottom: 12px; }
+  .empty h2 { color: var(--ink); font-size: 21px; margin: 0 0 6px; }
+
+  #picker { position: fixed; inset: 0; z-index: 50; background: var(--bg); display: none; padding: 24px var(--pad); overflow: auto; }
+  #picker.show { display: block; }
+  #picker .brand { text-align: center; margin: 8vh 0 26px; }
+  #picker .brand .logo { font-size: 46px; }
+  #picker .brand h1 { font-size: 28px; font-weight: 800; margin: 8px 0 2px; }
+  #picker .brand p { color: var(--ink-faint); margin: 0; font-size: 14px; }
+  .van-opt {
+    width: 100%; max-width: 420px; margin: 0 auto 12px; display: flex; align-items: center; gap: 14px;
+    background: var(--panel); border: 2px solid var(--line); border-radius: var(--radius);
+    padding: 16px 18px; cursor: pointer; font-family: inherit; color: var(--ink); font-size: 17px; font-weight: 800;
+  }
+  .van-opt .swatch { width: 34px; height: 34px; border-radius: 10px; flex: none; }
+  .van-opt small { display: block; font-weight: 600; color: var(--ink-faint); font-size: 12px; }
+  .van-opt.sel { border-color: var(--accent); }
+  #keyRow { max-width: 420px; margin: 18px auto 0; display: none; }
+  #keyRow.show { display: block; }
+  #keyRow label { font-size: 13px; color: var(--ink-dim); font-weight: 700; }
+  #keyInput {
+    width: 100%; margin-top: 6px; background: var(--panel-2); border: 1px solid var(--line);
+    color: var(--ink); border-radius: 12px; padding: 14px; font-size: 17px; font-family: ui-monospace, monospace;
+  }
+  #keyGo { width: 100%; margin-top: 12px; }
+  #keyErr { color: var(--bad); font-size: 13px; margin-top: 8px; font-weight: 700; display: none; }
+
+  dialog {
+    background: var(--panel); color: var(--ink); border: 1px solid var(--line);
+    border-radius: 20px; padding: 20px; max-width: min(92vw, 420px); width: 100%;
+  }
+  dialog::backdrop { background: rgba(4, 8, 12, 0.72); backdrop-filter: blur(3px); }
+  dialog h3 { margin: 0 0 8px; font-size: 20px; }
+  dialog p { color: var(--ink-dim); font-size: 14px; margin: 0 0 14px; }
+  dialog ul { color: var(--ink-dim); font-size: 14px; margin: 0 0 14px; padding-left: 20px; }
+  dialog .actions { margin-top: 6px; }
+
+  .toast {
+    position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom, 0px) + 100px);
+    background: var(--panel-2); border: 1px solid var(--line); color: var(--ink);
+    padding: 11px 18px; border-radius: 999px; font-size: 14px; font-weight: 700;
+    z-index: 60; opacity: 0; transition: opacity .25s, transform .25s; pointer-events: none; white-space: nowrap;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(-6px); }
+</style>
+</head>
+<body>
+
+<header>
+  <button class="van-chip" id="vanChip" aria-label="Change van"><span class="dot"></span><span id="vanChipTxt">VAN</span></button>
+  <div id="routeMeta"><div class="rid" id="ridTxt">—</div><div class="sub" id="ridSub"></div></div>
+  <button class="icon-btn" id="refreshBtn" aria-label="Refresh">⟳</button>
+  <span id="syncDot" title="sync status"></span>
+</header>
+
+<div class="banner" id="devBanner">🧪 Test mode — taps are recorded for checking, customers are NOT notified.</div>
+<div class="banner" id="offBanner">📡 Offline — showing the last loaded route. Taps will send when signal returns.</div>
+<div class="banner" id="queueBanner"></div>
+
+<main id="main"></main>
+
+<div id="footer"></div>
+
+<div id="picker">
+  <div class="brand">
+    <div class="logo">🐾🚐</div>
+    <h1>Fairy Tails Drive</h1>
+    <p>Pick your van to begin. You'll only do this once on this phone.</p>
+  </div>
+  <button class="van-opt" data-van="BV"><span class="swatch" style="background:#2dd4bf"></span><span>Big Van<small>BV</small></span></button>
+  <button class="van-opt" data-van="BVX"><span class="swatch" style="background:#fbbf24"></span><span>Big Van Xray<small>BVX</small></span></button>
+  <button class="van-opt" data-van="SV"><span class="swatch" style="background:#a78bfa"></span><span>Small Van<small>SV</small></span></button>
+  <div id="keyRow">
+    <label for="keyInput">Van access code</label>
+    <input id="keyInput" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="e.g. sv1a2b3c4d">
+    <div id="keyErr">That code doesn't match this van — check with the office.</div>
+    <button class="btn start" id="keyGo">Open my route</button>
+  </div>
+</div>
+
+<dialog id="dlg"></dialog>
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  'use strict';
+  var API_BASE = 'https://auto.thefairytails.co.uk/webhook';
+  var DATA_PATH = '/van-eta-drive-data-m3p7';
+  var TAP_PATH = '/van-eta-drive-tap-r8c2';
+  var POLL_MS = 20000;
+
+  var VAN_COLOURS = { BV: ['#2dd4bf', '#04251f'], BVX: ['#fbbf24', '#2a1e02'], SV: ['#a78bfa', '#1d1140'] };
+  var VAN_NAMES = { BV: 'Big Van', BVX: 'Big Van Xray', SV: 'Small Van' };
+  var POS_WORDS = { S: 'Side', B: 'Back', T: 'Top', M: 'Middle', P: 'Passenger', D: 'Driver' };
+  var CLOSED = ['collected', 'dropped', 'skipped', 'removed'];
+
+  var state = { van: '', key: '', data: null, phonesLoaded: '', lastGood: 0, timer: null, flushing: false };
+
+  /* ── storage helpers ── */
+  function lsGet(k, fb) { try { var v = localStorage.getItem(k); return v === null ? fb : JSON.parse(v); } catch (e) { return fb; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+
+  /* ── overlay: local taps shown instantly (dev mode never moves server status) ── */
+  function overlay() { var rid = state.data && state.data.route ? state.data.route.route_id : ''; return lsGet('veta_ov_' + rid, {}); }
+  function setOverlay(seq, action) {
+    var rid = state.data && state.data.route ? state.data.route.route_id : ''; if (!rid) return;
+    var ov = lsGet('veta_ov_' + rid, {}); ov[String(seq)] = { action: action, ts: Date.now() }; lsSet('veta_ov_' + rid, ov);
+  }
+  function routeOverlay() { var rid = state.data && state.data.route ? state.data.route.route_id : ''; return lsGet('veta_rov_' + rid, {}); }
+  function setRouteOverlay(action) {
+    var rid = state.data && state.data.route ? state.data.route.route_id : ''; if (!rid) return;
+    var ov = lsGet('veta_rov_' + rid, {}); ov[action] = Date.now(); lsSet('veta_rov_' + rid, ov);
+  }
+
+  /* effective status: server closed states win; otherwise the local tap overlay */
+  function effStatus(s) {
+    var st = String(s.status || '').toLowerCase();
+    if (CLOSED.indexOf(st) >= 0) return { st: st, local: false };
+    var ov = overlay()[String(s.seq)];
+    if (ov && ov.action === 'done') return { st: s.stop_type === 'dropoff' ? 'dropped' : 'collected', local: true };
+    if (ov && ov.action === 'skip') return { st: 'skipped', local: true };
+    return { st: st || 'pending', local: false };
+  }
+  function effRouteStatus() {
+    var r = state.data && state.data.route; if (!r) return '';
+    var st = String(r.status || '').toLowerCase();
+    var ov = routeOverlay();
+    if (st === 'staged' && ov.start) return 'active';
+    if (st === 'active' && ov.end) return 'completed';
+    return st;
+  }
+
+  /* ── tap queue (persisted, flushed when online; server dedupes on tap_id) ── */
+  function q() { return lsGet('veta_tapq', []); }
+  function qPush(item) { var a = q(); a.push(item); lsSet('veta_tapq', a); updateQueueBanner(); flush(); }
+  function updateQueueBanner() {
+    var n = q().length, el = document.getElementById('queueBanner');
+    el.textContent = '📤 ' + n + (n === 1 ? ' tap' : ' taps') + ' waiting to send…';
+    el.classList.toggle('show', n > 0);
+  }
+  function flush() {
+    if (state.flushing) return;
+    var a = q(); if (!a.length) { updateQueueBanner(); return; }
+    state.flushing = true;
+    var item = a[0];
+    fetch(API_BASE + TAP_PATH, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(item)
+    }).then(function (r) { return r.json(); }).then(function (j) {
+      state.flushing = false;
+      if (j && j.ok !== undefined) {
+        var rest = q(); rest.shift(); lsSet('veta_tapq', rest); updateQueueBanner();
+        if (j.ok === false) toast('⚠️ Tap rejected: ' + (j.error || 'unknown'));
+        if (rest.length) flush();
+      }
+    }).catch(function () { state.flushing = false; updateQueueBanner(); });
+  }
+
+  function uuid() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    return 'xxxxxxxxyxxx'.replace(/[xy]/g, function () { return (Math.random() * 16 | 0).toString(16); }) + Date.now().toString(16);
+  }
+
+  function sendTap(action, seq) {
+    var r = state.data && state.data.route; if (!r) return;
+    qPush({ van: state.van, key: state.key, route_id: r.route_id, seq: seq || 0, action: action, tap_id: uuid(), ts: new Date().toISOString() });
+  }
+
+  /* ── rendering ── */
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function kennelWords(code) {
+    var c = String(code || '').trim().toUpperCase();
+    if (!/^[SB][TMB][PMD]$/.test(c)) return '';
+    return POS_WORDS[c[0]] + ' · ' + POS_WORDS[c[1]] + ' · ' + POS_WORDS[c[2]];
+  }
+  function toast(msg) {
+    var el = document.getElementById('toast');
+    el.textContent = msg; el.classList.add('show');
+    clearTimeout(el._t); el._t = setTimeout(function () { el.classList.remove('show'); }, 2400);
+  }
+
+  function stopCard(s, isNow, routeActive) {
+    var eff = effStatus(s);
+    var cls = 'stop';
+    if (eff.st === 'collected' || eff.st === 'dropped') cls += ' done';
+    else if (eff.st === 'skipped') cls += ' skip';
+    else if (isNow) cls += ' now';
+    var open = CLOSED.indexOf(eff.st) < 0;
+    var node = (eff.st === 'collected' || eff.st === 'dropped') ? '✓' : (eff.st === 'skipped' ? '✕' : String(s.seq));
+    var kw = kennelWords(s.kennel);
+    var h = '';
+    h += '<section class="' + cls + '" data-seq="' + s.seq + '"><div class="node">' + node + '</div><div class="card">';
+    h += '<div class="row1"><div class="dog">';
+    h += '<div class="typ' + (s.stop_type === 'dropoff' ? ' dropoff' : '') + '">' + (s.stop_type === 'dropoff' ? '🏡 Drop-off' : '🐶 Pick-up') + '</div>';
+    h += '<div class="name">' + esc(s.dog_name || ('Stop ' + s.seq)) + '</div>';
+    if (s.client_name) h += '<div class="owner">' + esc(s.client_name) + '</div>';
+    h += '</div><div class="eta"><div class="t num">' + esc(s.planned_eta || '—') + '</div><div class="lbl">ETA</div></div></div>';
+    var chips = '';
+    if (s.kennel) chips += '<span class="chip kennel">📦 ' + esc(s.kennel) + (kw ? ' <small>' + kw + '</small>' : '') + '</span>';
+    if (s.key_code) chips += '<span class="chip key">🔑 ' + esc(s.key_code) + '</span>';
+    if (s.window_start && s.window_end) chips += '<span class="chip num">🕐 ' + esc(s.window_start) + '–' + esc(s.window_end) + '</span>';
+    if (chips) h += '<div class="chips">' + chips + '</div>';
+    if (s.address) h += '<div class="addr">📍 ' + esc(s.address) + '</div>';
+    if (s.note) h += '<div class="note">' + esc(s.note) + '</div>';
+    if (eff.st === 'collected' || eff.st === 'dropped') h += '<div class="status-line done">✓ ' + (eff.st === 'dropped' ? 'Dropped home' : 'Collected') + (eff.local ? ' <span class="q">(from your tap)</span>' : '') + '</div>';
+    else if (eff.st === 'skipped') h += '<div class="status-line skip">✕ Skipped' + (eff.local ? ' <span class="q">(from your tap)</span>' : '') + '</div>';
+    else if (eff.st === 'arrived') h += '<div class="status-line arrived">📍 GPS says you\'re here — tap Done when the dog is aboard</div>';
+    if (open && routeActive) {
+      h += '<div class="actions">';
+      if (s.nav_url) h += '<button class="btn nav' + (s.phone ? '' : ' wide') + '" data-act="nav" data-seq="' + s.seq + '">🧭 Navigate</button>';
+      if (s.phone) h += '<button class="btn call' + (s.nav_url ? '' : ' wide') + '" data-act="call" data-seq="' + s.seq + '">📞 Call parent</button>';
+      h += '<button class="btn done" data-act="done" data-seq="' + s.seq + '">✅ Done</button>';
+      h += '<button class="btn skip" data-act="skip" data-seq="' + s.seq + '">✗ Skip</button>';
+      h += '</div>';
+    }
+    h += '</div></section>';
+    return h;
+  }
+
+  function render() {
+    var main = document.getElementById('main');
+    var footer = document.getElementById('footer');
+    var d = state.data;
+    document.getElementById('vanChipTxt').textContent = state.van || 'VAN';
+    if (!d) { main.innerHTML = '<div class="empty"><div class="art">📡</div><h2>Loading…</h2></div>'; return; }
+    document.getElementById('devBanner').classList.toggle('show', d.tap_mode === 'dev');
+    var r = d.route;
+    if (!r) {
+      document.getElementById('ridTxt').textContent = VAN_NAMES[state.van] || state.van;
+      document.getElementById('ridSub').textContent = 'No route yet today';
+      main.innerHTML = '<div class="empty"><div class="art">🐾</div><h2>No route yet</h2><p>Nothing planned for ' + esc(VAN_NAMES[state.van] || state.van) + ' so far today.<br>Pull ⟳ once the office sends the route.</p></div>';
+      footer.className = ''; footer.innerHTML = '';
+      return;
+    }
+    var rst = effRouteStatus();
+    var stops = d.stops.slice();
+    var total = stops.length;
+    var closed = stops.filter(function (s) { var e = effStatus(s).st; return CLOSED.indexOf(e) >= 0; }).length;
+    var doneN = stops.filter(function (s) { var e = effStatus(s).st; return e === 'collected' || e === 'dropped'; }).length;
+    var open = stops.filter(function (s) { return CLOSED.indexOf(effStatus(s).st) < 0; });
+    var nowSeq = (rst === 'active' && open.length) ? open[0].seq : -1;
+
+    document.getElementById('ridTxt').textContent = r.route_id;
+    document.getElementById('ridSub').textContent = (r.route_type || '') + ' run · updated ' + new Date(d.generated_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+
+    var h = '';
+    h += '<div class="progress-card"><div class="progress-top"><div class="big num">' + closed + '<small> / ' + total + ' stops</small></div>';
+    h += '<span class="pill ' + rst + '">' + (rst === 'staged' ? 'READY TO START' : rst === 'active' ? 'ON THE ROAD' : 'FINISHED') + '</span></div>';
+    h += '<div class="bar"><i style="width:' + (total ? Math.round(closed / total * 100) : 0) + '%"></i></div>';
+    if (rst === 'active' && r.drift_min) {
+      var ahead = r.drift_min < 0;
+      h += '<div class="drift">Running <b class="' + (ahead ? 'ahead' : 'behind') + '">' + Math.abs(r.drift_min) + ' min ' + (ahead ? 'ahead' : 'behind') + '</b> of plan</div>';
+    }
+    h += '</div>';
+
+    if (rst === 'completed') {
+      h += '<div class="empty" style="padding:26px 12px"><div class="art">🏁</div><h2>Route finished</h2><p>' + doneN + ' done · ' + (closed - doneN) + ' skipped' + (total - closed ? ' · <b style="color:var(--warn)">' + (total - closed) + ' never marked</b>' : '') + '</p></div>';
+    }
+
+    h += '<div class="tl">';
+    stops.forEach(function (s) { h += stopCard(s, s.seq === nowSeq, rst === 'active'); });
+    h += '</div>';
+    main.innerHTML = h;
+
+    if (rst === 'staged') {
+      footer.className = 'show';
+      footer.innerHTML = '<button class="btn start" id="startBtn">▶️ Start route</button>';
+      document.getElementById('startBtn').onclick = confirmStart;
+    } else if (rst === 'active') {
+      footer.className = 'show';
+      footer.innerHTML = '<button class="btn end" id="endBtn">🏁 End route</button>';
+      document.getElementById('endBtn').onclick = confirmEnd;
+    } else { footer.className = ''; footer.innerHTML = ''; }
+
+    main.querySelectorAll('.btn[data-act]').forEach(function (b) {
+      b.addEventListener('click', function () { onAction(b.getAttribute('data-act'), Number(b.getAttribute('data-seq'))); });
+    });
+  }
+
+  function findStop(seq) { return (state.data.stops || []).find(function (s) { return s.seq === seq; }); }
+
+  function onAction(act, seq) {
+    var s = findStop(seq); if (!s) return;
+    if (act === 'nav') { window.open(s.nav_url, '_blank'); return; }
+    if (act === 'call') { location.href = 'tel:' + s.phone.replace(/\s+/g, ''); return; }
+    if (act === 'done') {
+      dialog('✅ ' + (s.stop_type === 'dropoff' ? 'Dropped home?' : 'Collected?'),
+        '<p><b>' + esc(s.dog_name) + '</b> — stop ' + seq + '. This tells the office' + (state.data.tap_mode === 'live' ? ' and the parent' : '') + '.</p>',
+        [['Yes, done ✅', 'done', 'btn done'], ['Cancel', '', 'btn nav']],
+        function (choice) { if (choice === 'done') { setOverlay(seq, 'done'); sendTap('done', seq); render(); toast('✅ Stop ' + seq + ' marked done'); } });
+      return;
+    }
+    if (act === 'skip') {
+      dialog('✗ Skip this stop?', '<p><b>' + esc(s.dog_name) + '</b> — stop ' + seq + ' will be marked skipped (not collected).</p>',
+        [['Skip it', 'skip', 'btn skip'], ['Cancel', '', 'btn nav']],
+        function (choice) { if (choice === 'skip') { setOverlay(seq, 'skip'); sendTap('skip', seq); render(); toast('✗ Stop ' + seq + ' skipped'); } });
+    }
+  }
+
+  function confirmStart() {
+    dialog('▶️ Start the route?', '<p>The plan becomes live and stop order is locked in.</p>',
+      [['Start route ▶️', 'go', 'btn start'], ['Not yet', '', 'btn nav']],
+      function (c) { if (c === 'go') { setRouteOverlay('start'); sendTap('start', 0); render(); toast('▶️ Route started'); } });
+  }
+  function confirmEnd() {
+    var open = (state.data.stops || []).filter(function (s) { return CLOSED.indexOf(effStatus(s).st) < 0; });
+    var body = open.length
+      ? '<p style="color:var(--warn)"><b>' + open.length + ' stop' + (open.length > 1 ? 's are' : ' is') + ' not marked:</b></p><ul>' + open.map(function (s) { return '<li>' + s.seq + ' — ' + esc(s.dog_name) + '</li>'; }).join('') + '</ul><p>Mark them Done/Skip first if the dogs were handled.</p>'
+      : '<p>All stops are marked. Nice one.</p>';
+    dialog('🏁 End the route?', body,
+      [['End route 🏁', 'go', 'btn skip'], ['Back', '', 'btn nav']],
+      function (c) { if (c === 'go') { setRouteOverlay('end'); sendTap('end', 0); render(); toast('🏁 Route ended'); } });
+  }
+
+  function dialog(title, bodyHtml, buttons, cb) {
+    var dlg = document.getElementById('dlg');
+    dlg.innerHTML = '<h3>' + title + '</h3>' + bodyHtml +
+      '<div class="actions">' + buttons.map(function (b, i) { return '<button class="' + b[2] + (buttons.length === 1 ? ' wide' : '') + '" data-c="' + b[1] + '">' + b[0] + '</button>'; }).join('') + '</div>';
+    dlg.querySelectorAll('button').forEach(function (b) {
+      b.addEventListener('click', function () { dlg.close(); cb(b.getAttribute('data-c')); });
+    });
+    dlg.showModal();
+  }
+
+  /* ── data loading ── */
+  function load(withPhones) {
+    if (!state.van || !state.key) return;
+    var url = API_BASE + DATA_PATH + '?van=' + encodeURIComponent(state.van) + '&key=' + encodeURIComponent(state.key) + (withPhones ? '&phones=1' : '');
+    return fetch(url).then(function (r) { return r.json(); }).then(function (j) {
+      document.getElementById('syncDot').classList.remove('err');
+      document.getElementById('offBanner').classList.remove('show');
+      if (!j.ok) {
+        if (j.error === 'unauthorised' || j.error === 'unknown van') { showPicker(true); return; }
+        throw new Error(j.error);
+      }
+      var prevPhones = {};
+      if (state.data && state.data.route && j.route && state.data.route.route_id === j.route.route_id) {
+        (state.data.stops || []).forEach(function (s) { if (s.phone) prevPhones[s.seq] = s.phone; });
+      }
+      j.stops.forEach(function (s) { if (!s.phone && prevPhones[s.seq]) s.phone = prevPhones[s.seq]; });
+      state.data = j; state.lastGood = Date.now();
+      lsSet('veta_last_' + state.van, j);
+      if (withPhones && j.route) state.phonesLoaded = j.route.route_id;
+      render();
+      if (j.route && state.phonesLoaded !== j.route.route_id) { state.phonesLoaded = j.route.route_id; load(true); }
+    }).catch(function () {
+      document.getElementById('syncDot').classList.add('err');
+      if (state.data) { document.getElementById('offBanner').classList.add('show'); }
+      else { var cached = lsGet('veta_last_' + state.van, null); if (cached) { state.data = cached; render(); document.getElementById('offBanner').classList.add('show'); } }
+    });
+  }
+
+  /* ── van picker ── */
+  var pickedVan = '';
+  function showPicker(badKey) {
+    document.getElementById('picker').classList.add('show');
+    document.getElementById('keyErr').style.display = badKey ? 'block' : 'none';
+    if (badKey && state.van) selectVan(state.van);
+  }
+  function selectVan(v) {
+    pickedVan = v;
+    document.querySelectorAll('.van-opt').forEach(function (b) { b.classList.toggle('sel', b.getAttribute('data-van') === v); });
+    var col = VAN_COLOURS[v];
+    document.documentElement.style.setProperty('--accent', col[0]);
+    document.documentElement.style.setProperty('--accent-ink', col[1]);
+    document.getElementById('keyRow').classList.add('show');
+    document.getElementById('keyInput').focus();
+  }
+  document.querySelectorAll('.van-opt').forEach(function (b) {
+    b.addEventListener('click', function () { selectVan(b.getAttribute('data-van')); });
+  });
+  document.getElementById('keyGo').addEventListener('click', function () {
+    var k = document.getElementById('keyInput').value.trim();
+    if (!pickedVan || !k) return;
+    state.van = pickedVan; state.key = k;
+    lsSet('veta_cred', { van: state.van, key: state.key });
+    document.getElementById('picker').classList.remove('show');
+    boot();
+  });
+  document.getElementById('vanChip').addEventListener('click', function () {
+    dialog('Change van?', '<p>You\'re set up as <b>' + esc(VAN_NAMES[state.van] || state.van) + '</b> on this phone.</p>',
+      [['Change van', 'go', 'btn skip'], ['Stay', '', 'btn nav']],
+      function (c) { if (c === 'go') { localStorage.removeItem('veta_cred'); location.reload(); } });
+  });
+  document.getElementById('refreshBtn').addEventListener('click', function () { load(false); toast('⟳ Refreshing…'); });
+
+  window.addEventListener('online', function () { flush(); load(false); });
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) { flush(); load(false); } });
+
+  function applyAccent() {
+    var col = VAN_COLOURS[state.van] || VAN_COLOURS.BV;
+    document.documentElement.style.setProperty('--accent', col[0]);
+    document.documentElement.style.setProperty('--accent-ink', col[1]);
+  }
+
+  function boot() {
+    applyAccent();
+    render();
+    load(false);
+    if (state.timer) clearInterval(state.timer);
+    state.timer = setInterval(function () { if (!document.hidden) { load(false); flush(); } }, POLL_MS);
+    updateQueueBanner(); flush();
+  }
+
+  /* URL hand-off: ?van=SV&k=... saves credentials then cleans the address bar */
+  (function init() {
+    var p = new URLSearchParams(location.search);
+    if (p.get('van') && p.get('k')) {
+      state.van = p.get('van').toUpperCase(); state.key = p.get('k');
+      lsSet('veta_cred', { van: state.van, key: state.key });
+      history.replaceState(null, '', location.pathname);
+    } else {
+      var c = lsGet('veta_cred', null);
+      if (c && c.van && c.key) { state.van = c.van; state.key = c.key; }
+    }
+    if (state.van && state.key) { boot(); } else { showPicker(false); }
+  })();
+})();
+</script>
+</body>
+</html>
