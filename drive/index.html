@@ -226,6 +226,24 @@
   .btn[disabled] { opacity: 0.45; pointer-events: none; }
   .stop.now .btn.done { font-size: 18px; min-height: 58px; }
 
+  /* ── six-dot drag handle (hold & drag to reorder — DESIGN-drive-reorder.md) ── */
+  .drag-handle {
+    flex: none; align-self: stretch; width: 40px; margin: -6px -8px -6px 2px;
+    display: grid; place-items: center;
+    background: transparent; border: 0; border-left: 1px dashed var(--line);
+    color: var(--ink-faint); font-size: 20px; letter-spacing: 1px;
+    cursor: grab; touch-action: none; border-radius: 0 12px 12px 0;
+  }
+  .drag-handle:active { color: var(--accent); }
+  .stop.lifted { z-index: 40; position: relative; }
+  .stop.lifted .card {
+    border-color: var(--accent); opacity: 1;
+    box-shadow: 0 12px 34px rgba(0,0,0,0.55), 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
+    transform: scale(1.015);
+  }
+  .stop.lifted .node { border-color: var(--accent); color: var(--accent); }
+  body.dragging-stop { user-select: none; -webkit-user-select: none; }
+
   /* ── Footer action ───────────────────────────────────── */
   #footer {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
@@ -417,11 +435,29 @@
     var ov = lsGet('veta_rov_' + rid, {}); ov[action] = Date.now(); lsSet('veta_rov_' + rid, ov);
   }
 
-  /* effective status: server closed states win; otherwise the local tap overlay */
+  /* ── order overlay: a queued reorder shows instantly; server truth wins on
+     reload (entries drop as soon as the table's sequence matches). ── */
+  function ordOv() { var rid = state.data && state.data.route ? state.data.route.route_id : ''; return lsGet('veta_ord_' + rid, {}); }
+  function seqEff(s) {
+    var o = ordOv()[String(s.stop_id)];
+    return (o !== undefined && o !== null) ? Number(o) : Number(s.seq);
+  }
+  function reconcileOrd() {
+    var rid = state.data && state.data.route ? state.data.route.route_id : ''; if (!rid) return;
+    var ov = lsGet('veta_ord_' + rid, {}); var changed = false;
+    Object.keys(ov).forEach(function (sid) {
+      var stop = (state.data.stops || []).find(function (s) { return String(s.stop_id) === sid; });
+      if (!stop || Number(stop.seq) === Number(ov[sid])) { delete ov[sid]; changed = true; }
+    });
+    if (changed) { lsSet('veta_ord_' + rid, ov); }
+  }
+
+  /* effective status: server closed states win; otherwise the local tap overlay
+     (keyed by the DISPLAYED seq — applyReorder remaps the keys with the order) */
   function effStatus(s) {
     var st = String(s.status || '').toLowerCase();
     if (CLOSED.indexOf(st) >= 0) return { st: st, local: false };
-    var ov = overlay()[String(s.seq)];
+    var ov = overlay()[String(seqEff(s))];
     if (ov && ov.action === 'done') return { st: s.stop_type === 'dropoff' ? 'dropped' : 'collected', local: true };
     if (ov && ov.action === 'skip') return { st: 'skipped', local: true };
     return { st: st || 'pending', local: false };
@@ -714,7 +750,7 @@
      dropoff: dropped -> free · pending/arrived -> occupied · skipped -> STILL ABOARD */
   function occupancy() {
     var occ = {};
-    var stops = (state.data && state.data.stops || []).slice().sort(function (a, b) { return a.seq - b.seq; });
+    var stops = (state.data && state.data.stops || []).slice().sort(function (a, b) { return seqEff(a) - seqEff(b); });
     stops.forEach(function (s) {
       var st = effStatus(s).st;
       kennelAssignments(s).forEach(function (a) {
@@ -771,22 +807,26 @@
     return h;
   }
 
-  function stopCard(s, isNow, routeActive) {
+  function stopCard(s, isNow, routeActive, canMove) {
     var eff = effStatus(s);
+    var sq = seqEff(s);
+    var movable = !!canMove && (eff.st === 'pending' || eff.st === 'next');
     var cls = 'stop';
     if (eff.st === 'collected' || eff.st === 'dropped') cls += ' done';
     else if (eff.st === 'skipped') cls += ' skip';
     else if (isNow) cls += ' now';
     var open = CLOSED.indexOf(eff.st) < 0;
-    var node = (eff.st === 'collected' || eff.st === 'dropped') ? '✓' : (eff.st === 'skipped' ? '✕' : String(s.seq));
+    var node = (eff.st === 'collected' || eff.st === 'dropped') ? '✓' : (eff.st === 'skipped' ? '✕' : String(sq));
     var kw = kennelWords(s.kennel);
     var h = '';
-    h += '<section class="' + cls + '" data-seq="' + s.seq + '"><div class="node">' + node + '</div><div class="card">';
+    h += '<section class="' + cls + '" data-seq="' + sq + '" data-sid="' + esc(String(s.stop_id || '')) + '"' + (movable ? ' data-movable="1"' : '') + '><div class="node">' + node + '</div><div class="card">';
     h += '<div class="row1"><div class="dog">';
     h += '<div class="typ' + (s.stop_type === 'dropoff' ? ' dropoff' : '') + '">' + (s.stop_type === 'dropoff' ? '🏡 Drop-off' : '🐶 Pick-up') + '</div>';
-    h += '<div class="name">' + esc(s.dog_name || ('Stop ' + s.seq)) + '</div>';
+    h += '<div class="name">' + esc(s.dog_name || ('Stop ' + sq)) + '</div>';
     if (s.client_name) h += '<div class="owner">' + esc(s.client_name) + '</div>';
-    h += '</div><div class="eta"><div class="t num">' + esc(s.planned_eta || '—') + '</div><div class="lbl">ETA</div></div></div>';
+    h += '</div><div class="eta"><div class="t num">' + esc(s.planned_eta || '—') + '</div><div class="lbl">ETA</div></div>';
+    if (movable) h += '<button class="drag-handle" aria-label="Hold and drag to move this stop">⠿</button>';
+    h += '</div>';
     var chips = '';
     if (s.kennel) chips += '<span class="chip kennel">📦 ' + esc(s.kennel) + (kw ? ' <small>' + kw + '</small>' : '') + '</span>';
     if (s.key_code) chips += '<span class="chip key">🔑 ' + esc(s.key_code) + '</span>';
@@ -799,10 +839,10 @@
     else if (eff.st === 'arrived') h += '<div class="status-line arrived">📍 GPS says you\'re here — tap Done when the dog is aboard</div>';
     if (open && routeActive) {
       h += '<div class="actions">';
-      if (s.nav_url) h += '<button class="btn nav' + (s.phone ? '' : ' wide') + '" data-act="nav" data-seq="' + s.seq + '">🧭 Navigate</button>';
-      if (s.phone) h += '<button class="btn call' + (s.nav_url ? '' : ' wide') + '" data-act="call" data-seq="' + s.seq + '">📞 Call parent</button>';
-      h += '<button class="btn done" data-act="done" data-seq="' + s.seq + '">✅ Done</button>';
-      h += '<button class="btn skip" data-act="skip" data-seq="' + s.seq + '">✗ Skip</button>';
+      if (s.nav_url) h += '<button class="btn nav' + (s.phone ? '' : ' wide') + '" data-act="nav" data-seq="' + sq + '">🧭 Navigate</button>';
+      if (s.phone) h += '<button class="btn call' + (s.nav_url ? '' : ' wide') + '" data-act="call" data-seq="' + sq + '">📞 Call parent</button>';
+      h += '<button class="btn done" data-act="done" data-seq="' + sq + '">✅ Done</button>';
+      h += '<button class="btn skip" data-act="skip" data-seq="' + sq + '">✗ Skip</button>';
       h += '</div>';
     }
     h += '</div></section>';
@@ -835,12 +875,12 @@
       return;
     }
     var rst = effRouteStatus();
-    var stops = d.stops.slice();
+    var stops = d.stops.slice().sort(function (a, b) { return seqEff(a) - seqEff(b); });
     var total = stops.length;
     var closed = stops.filter(function (s) { var e = effStatus(s).st; return CLOSED.indexOf(e) >= 0; }).length;
     var doneN = stops.filter(function (s) { var e = effStatus(s).st; return e === 'collected' || e === 'dropped'; }).length;
     var open = stops.filter(function (s) { return CLOSED.indexOf(effStatus(s).st) < 0; });
-    var nowSeq = (rst === 'active' && open.length) ? open[0].seq : -1;
+    var nowSeq = (rst === 'active' && open.length) ? seqEff(open[0]) : -1;
 
     document.getElementById('ridTxt').textContent = r.route_id;
     document.getElementById('ridSub').textContent = (r.route_type || '') + ' run · updated ' + new Date(d.generated_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
@@ -862,9 +902,11 @@
     }
 
     h += '<div class="tl">';
-    stops.forEach(function (s) { h += stopCard(s, s.seq === nowSeq, rst === 'active'); });
+    var canMove = rst === 'staged' || rst === 'active';
+    stops.forEach(function (s) { h += stopCard(s, seqEff(s) === nowSeq, rst === 'active', canMove); });
     h += '</div>';
     main.innerHTML = h;
+    if (canMove) bindDrag(main, rst);
 
     if (rst === 'staged') {
       footer.className = 'show';
@@ -887,7 +929,113 @@
     });
   }
 
-  function findStop(seq) { return (state.data.stops || []).find(function (s) { return s.seq === seq; }); }
+  function findStop(seq) { return (state.data.stops || []).find(function (s) { return seqEff(s) === seq; }); }
+
+  /* ── hold-&-drag reorder (six-dot handle; DESIGN-drive-reorder.md) ──
+     Grab the ⠿ handle, drag the tile among the other movable tiles, drop.
+     Staged route: applies silently (messages only ever fire at Start).
+     Active route: asks whether to update the position-changed parents —
+     the driver IS the approval gate. Offline-safe: the reorder rides the
+     SAME tap queue (FIFO with taps, server dedupes by tap_id). */
+  function bindDrag(main, rst) {
+    var drag = null;
+    function movables() { return Array.prototype.slice.call(main.querySelectorAll('.stop[data-movable="1"]')); }
+    function onMove(ev) {
+      if (!drag || ev.pointerId !== drag.pid) return;
+      ev.preventDefault();
+      var y = ev.clientY;
+      if (y < 130) { window.scrollBy(0, -14); } else if (y > window.innerHeight - 150) { window.scrollBy(0, 14); }
+      var card = drag.card;
+      // cross the midpoint of the neighbouring movable tile -> swap DOM slots
+      var sibs = movables();
+      var i = sibs.indexOf(card);
+      var next = sibs[i + 1] || null, prev = sibs[i - 1] || null;
+      if (next) { var nr = next.getBoundingClientRect(); if (y > nr.top + nr.height / 2) { next.parentNode.insertBefore(card, next.nextSibling); if (navigator.vibrate) navigator.vibrate(8); } }
+      if (prev) { var pr = prev.getBoundingClientRect(); if (y < pr.top + pr.height / 2) { prev.parentNode.insertBefore(card, prev); if (navigator.vibrate) navigator.vibrate(8); } }
+      // keep the tile pinned under the finger relative to its current slot
+      card.style.transform = '';
+      var rect = card.getBoundingClientRect();
+      card.style.transform = 'translateY(' + (y - drag.grabOffset - rect.top) + 'px)';
+    }
+    function endDrag(commit) {
+      if (!drag) return;
+      var card = drag.card;
+      card.style.transform = '';
+      card.classList.remove('lifted');
+      document.body.classList.remove('dragging-stop');
+      var startOrder = drag.startOrder;
+      drag = null;
+      var newOrder = movables().map(function (el) { return el.getAttribute('data-sid'); });
+      if (!commit || newOrder.join('|') === startOrder.join('|')) { render(); return; }
+      if (rst === 'staged') { applyReorder(newOrder, false); return; }
+      var devNote = (state.data && state.data.tap_mode === 'dev') ? '<p>🧪 Test mode — parents will NOT actually be messaged.</p>' : '';
+      dialog('🔀 Stops reordered', '<p>Send parents the updated notification? Only the stops whose position changed are messaged.</p>' + devNote,
+        [['Yes, update parents', 'yes', 'btn start'], ['Just reorder', 'no', 'btn nav'], ['Cancel', '', 'btn skip']],
+        function (c) {
+          if (c === 'yes') { applyReorder(newOrder, true); }
+          else if (c === 'no') { applyReorder(newOrder, false); }
+          else { render(); }
+        });
+    }
+    function onUp(ev) { if (drag && ev.pointerId === drag.pid) { unhook(); endDrag(true); } }
+    function onCancel(ev) { if (drag && ev.pointerId === drag.pid) { unhook(); endDrag(false); } }
+    function unhook() {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      document.removeEventListener('pointercancel', onCancel);
+    }
+    main.querySelectorAll('.drag-handle').forEach(function (hd) {
+      hd.addEventListener('pointerdown', function (ev) {
+        if (drag) return;
+        ev.preventDefault();
+        var card = hd.closest('.stop');
+        if (!card) return;
+        var rect = card.getBoundingClientRect();
+        drag = { card: card, pid: ev.pointerId, grabOffset: ev.clientY - rect.top, startOrder: movables().map(function (el) { return el.getAttribute('data-sid'); }) };
+        card.classList.add('lifted');
+        document.body.classList.add('dragging-stop');
+        if (navigator.vibrate) navigator.vibrate(12);
+        // Deliberately NO setPointerCapture: reordering moves the card in the
+        // DOM, which implicitly revokes capture and orphans the drag —
+        // document-level listeners survive the reinserts (touch-action:none
+        // on the handle already stops native scrolling for the gesture).
+        document.addEventListener('pointermove', onMove);
+        document.addEventListener('pointerup', onUp);
+        document.addEventListener('pointercancel', onCancel);
+      });
+    });
+  }
+
+  function applyReorder(orderIds, notify) {
+    var r = state.data && state.data.route; if (!r) { render(); return; }
+    var rid = r.route_id;
+    // Same slot maths as the server: the movable stops' current effective
+    // sequence numbers, re-dealt in the new order.
+    var movable = (state.data.stops || []).filter(function (s) { return orderIds.indexOf(String(s.stop_id)) >= 0; });
+    var slots = movable.map(function (s) { return seqEff(s); }).sort(function (a, b) { return a - b; });
+    var ov = lsGet('veta_ord_' + rid, {});
+    var seqMap = {};   // old displayed seq -> new (for the tap-overlay re-key)
+    orderIds.forEach(function (sid, i) {
+      var s = movable.find(function (x) { return String(x.stop_id) === sid; });
+      if (!s) return;
+      var oldSeq = seqEff(s), newSeq = slots[i];
+      if (oldSeq === newSeq) { if (Number(s.seq) === newSeq) { delete ov[sid]; } return; }
+      seqMap[String(oldSeq)] = newSeq;
+      if (Number(s.seq) === newSeq) { delete ov[sid]; } else { ov[sid] = newSeq; }
+    });
+    lsSet('veta_ord_' + rid, ov);
+    // re-key the local tap overlay so a pre-reorder tap stays on its stop
+    var tapOv = lsGet('veta_ov_' + rid, {}); var tapOv2 = {}; var tchanged = false;
+    Object.keys(tapOv).forEach(function (k) {
+      var nk = seqMap[k] !== undefined ? String(seqMap[k]) : k;
+      if (nk !== k) tchanged = true;
+      tapOv2[nk] = tapOv[k];
+    });
+    if (tchanged) lsSet('veta_ov_' + rid, tapOv2);
+    qPush({ van: state.van, key: state.key, route_id: rid, action: 'reorder', order: orderIds, notify: !!notify, tap_id: uuid(), ts: new Date().toISOString() });
+    render();
+    toast(notify ? '🔀 Order updated — parents will be told' : '🔀 Order updated');
+  }
 
   function onAction(act, seq) {
     var s = findStop(seq); if (!s) return;
@@ -964,6 +1112,7 @@
       }
       j.stops.forEach(function (s) { if (!s.phone && prevPhones[s.seq]) s.phone = prevPhones[s.seq]; });
       state.data = j; state.lastGood = Date.now();
+      reconcileOrd();
       lsSet('veta_last_' + state.van, j);
       if (withPhones && j.route) state.phonesLoaded = j.route.route_id;
       render();
