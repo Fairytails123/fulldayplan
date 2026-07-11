@@ -243,6 +243,33 @@
   .empty .art { font-size: 52px; margin-bottom: 12px; }
   .empty h2 { color: var(--ink); font-size: 21px; margin: 0 0 6px; }
 
+  /* route picker (Reorder-tab slots + already-sent routes) */
+  #routePicker { position: fixed; inset: 0; z-index: 48; background: var(--bg); display: none; padding: 18px var(--pad) 40px; overflow: auto; }
+  #routePicker.show { display: block; }
+  #routePicker .rp-head { max-width: 460px; margin: 5vh auto 18px; text-align: center; }
+  #routePicker .rp-head .rp-art { font-size: 38px; }
+  #routePicker .rp-head h1 { font-size: 24px; font-weight: 800; margin: 6px 0 2px; }
+  #routePicker .rp-head p { color: var(--ink-faint); margin: 0; font-size: 13px; }
+  .route-opt {
+    width: 100%; max-width: 460px; margin: 0 auto 10px; display: flex; align-items: center; gap: 13px;
+    background: var(--panel); border: 2px solid var(--line); border-radius: var(--radius);
+    padding: 14px 16px; cursor: pointer; font-family: inherit; color: var(--ink); text-align: left;
+  }
+  .route-opt:active { transform: scale(0.985); }
+  .route-opt.unsent { border-style: dashed; }
+  .route-opt[disabled] { opacity: .55; pointer-events: none; }
+  .route-opt .ro-emoji { font-size: 26px; flex: none; }
+  .route-opt .ro-main { flex: 1; min-width: 0; }
+  .route-opt .ro-title { font-size: 17px; font-weight: 800; }
+  .route-opt .ro-sub { font-size: 12.5px; color: var(--ink-faint); margin-top: 1px; }
+  .route-opt .ro-side { flex: none; }
+  .rp-note { max-width: 460px; margin: 6px auto 0; font-size: 12.5px; color: var(--warn); font-weight: 600; }
+  .rp-close { display: flex; max-width: 460px; margin: 18px auto 0; width: 100%; }
+  .rp-empty { max-width: 460px; margin: 26px auto; text-align: center; color: var(--ink-dim); font-size: 14px; }
+  .rp-empty .rp-art { font-size: 40px; margin-bottom: 8px; }
+  #routeMeta { cursor: pointer; }
+  #routeMeta .rid::after { content: " ▾"; color: var(--ink-faint); font-weight: 700; }
+
   #picker { position: fixed; inset: 0; z-index: 50; background: var(--bg); display: none; padding: 24px var(--pad); overflow: auto; }
   #picker.show { display: block; }
   #picker .brand { text-align: center; margin: 8vh 0 26px; }
@@ -318,6 +345,16 @@
     <div id="keyErr">That code doesn't match this van — check with the office.</div>
     <button class="btn start" id="keyGo">Open my route</button>
   </div>
+</div>
+
+<div id="routePicker">
+  <div class="rp-head">
+    <div class="rp-art">🗂</div>
+    <h1>Choose a route</h1>
+    <p id="rpSub">Anything staged in the office Reorder tab shows here.</p>
+  </div>
+  <div id="routeList"></div>
+  <button class="btn nav rp-close" id="rpClose">Close</button>
 </div>
 
 <dialog id="dlg"></dialog>
@@ -406,6 +443,210 @@
   function sendTap(action, seq) {
     var r = state.data && state.data.route; if (!r) return;
     qPush({ van: state.van, key: state.key, route_id: r.route_id, seq: seq || 0, action: action, tap_id: uuid(), ts: new Date().toISOString() });
+  }
+
+  /* ── route picker: Reorder-tab slots + already-sent routes ──────────
+     The office stages routes in the Load Plan's "Reorder Routes" tab (Apps
+     Script store — same URL + token as route_reorder.js). Every slot for
+     this van is offered here, labelled with its day, date and run type.
+     Picking a route that is already in the VAN-ETA tables just opens it;
+     picking one that has NOT been sent yet posts the office's exact
+     "Send Final Route" payload (a faithful port of route_reorder.js
+     sendFinal() — a change THERE must be mirrored HERE) to the same
+     van-route webhook, then pins and opens the ingested route. */
+  var REORDER_URL = 'https://script.google.com/macros/s/AKfycbxUeIiIJQZZeoo3aXHDdqVZNNqFKLhWhi_WhPVb6GUIvkMlfNxTKsOXyCTGdvAEsMLC/exec';
+  var REORDER_TOKEN = 'ft-k9-board-2024-sec';
+  var SEND_URL = 'https://auto.thefairytails.co.uk/webhook/van-route';
+  var SEND_TIMEOUT_MS = 30000;
+  var RP_SECTIONS = {
+    HALF_DAY: { emoji: '☀️', title: 'Half Day' },
+    PM: { emoji: '🌆', title: 'PM run' },
+    NEXT_AM: { emoji: '📅', title: 'Next Day AM' }
+  };
+
+  function ymdLondon(offsetDays) {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London', year: 'numeric', month: '2-digit', day: '2-digit' })
+      .format(new Date(Date.now() + (offsetDays || 0) * 86400000));
+  }
+  /* 'WD DD/MM' staged day-stamp -> YYYY-MM-DD within today..+7, else '' — the
+     SAME rule W1 uses server-side, so the rid computed here matches the ingest. */
+  function stampToYmd(dt) {
+    var m = /(?:MON|TUE|WED|THU|FRI|SAT|SUN)\s+(\d{1,2})\/(\d{1,2})/i.exec(String(dt || ''));
+    if (!m) return '';
+    var dd = ('0' + m[1]).slice(-2), mm = ('0' + m[2]).slice(-2);
+    for (var k = 0; k <= 7; k++) { var c = ymdLondon(k); if (c.slice(8, 10) === dd && c.slice(5, 7) === mm) return c; }
+    return '';
+  }
+  function slotRid(slot) {
+    var ctx = slot.ctx || {};
+    var nextAm = String(ctx.p || '').toUpperCase() === 'NEXT_AM';
+    var date = stampToYmd(ctx.dt) || ymdLondon(nextAm ? 1 : 0);
+    return date + '-' + state.van + '-' + (nextAm ? 'AM' : 'PM');
+  }
+  function dayLabel(ymd) {
+    var d = new Date(ymd + 'T12:00:00');
+    var pretty = isNaN(d) ? ymd : new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', weekday: 'short', day: 'numeric', month: 'short' }).format(d);
+    if (ymd === ymdLondon(0)) return 'Today · ' + pretty;
+    if (ymd === ymdLondon(1)) return 'Tomorrow · ' + pretty;
+    return pretty;
+  }
+
+  /* pinned route: which route this phone chose (per van); a pin from a past day is stale */
+  function pinKey() { return 'veta_rid_' + state.van; }
+  function getPin() {
+    var rid = lsGet(pinKey(), '');
+    if (!rid) return '';
+    if (String(rid).slice(0, 10) < ymdLondon(0)) { lsSet(pinKey(), ''); return ''; }
+    return String(rid);
+  }
+  function setPin(rid) { lsSet(pinKey(), rid || ''); }
+
+  function fetchQueue() {
+    return fetch(REORDER_URL + '?action=loadStaged&token=' + encodeURIComponent(REORDER_TOKEN), { method: 'GET', cache: 'no-cache', redirect: 'follow' })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!j || j.ok !== true) throw new Error('queue not ok');
+        return (j.slots || []).filter(function (s) { return s && String(s.van || '').toUpperCase() === state.van; });
+      });
+  }
+
+  function normNm(s) { return String(s == null ? '' : s).toLowerCase().replace(/\s+/g, ' ').trim(); }
+  function normSet(arr) { var m = {}; (arr || []).forEach(function (n) { m[normNm(n)] = true; }); return m; }
+  /* Faithful port of route_reorder.js sendFinal()'s payload build — keep the two in step. */
+  function queuePayload(slot) {
+    var ctx = slot.ctx || {};
+    var ggS = normSet(ctx.gg || []), aaS = normSet(ctx.aa || []);
+    var dogs = [];
+    (ctx.o || []).forEach(function (stop) {
+      (stop || []).forEach(function (name) {
+        var out = String(name), k = normNm(name);
+        if (ggS[k]) out += ' G.D.';   // append G.D. then ALT — Stage 2 strips ALT then G.D.
+        if (aaS[k]) out += ' ALT';
+        dogs.push(out);
+      });
+    });
+    if (!dogs.length) return null;
+    var payload = {
+      van: ctx.v, period: ctx.p, run_type: ctx.rt || '', departure_time: ctx.t || '',
+      start_from_centre: ctx.s !== false, start_address: ctx.sa || '',
+      return_to_centre: ctx.r !== false, end_address: ctx.ea || '', return_trip: ctx.r !== false,
+      dogs: dogs, run_stamp: ctx.dt || '', positions: ctx.kp || {},
+      skip_optimisation: true, timestamp: new Date().toISOString()
+    };
+    var present = {};
+    dogs.forEach(function (nm) { present[normNm(nm)] = true; });
+    var extra = (ctx.ex || []).filter(function (e) { return e && e.lat != null && e.lng != null && present[normNm(e.d)]; })
+      .map(function (e) { return { dog: e.d, address: e.a, lat: Number(e.lat), lng: Number(e.lng) }; });
+    if (extra.length) payload.extra_stops = extra;
+    return payload;
+  }
+
+  var sendingSlot = false;
+  function sendQueueSlot(slot, entryBtn) {
+    if (sendingSlot) return;
+    var payload = queuePayload(slot);
+    if (!payload) { toast('That route is empty'); return; }
+    var rid = slotRid(slot);
+    sendingSlot = true;
+    if (entryBtn) { entryBtn.setAttribute('disabled', ''); var sub = entryBtn.querySelector('.ro-sub'); if (sub) sub.textContent = '⏳ Sending route…'; }
+    // Dodge the race where the office sent it seconds ago: check the tables first.
+    fetch(API_BASE + DATA_PATH + '?van=' + encodeURIComponent(state.van) + '&key=' + encodeURIComponent(state.key))
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        var av = (j && j.available) || [];
+        if (av.some(function (a) { return a.route_id === rid; })) return { already: true };
+        var ctrl = window.AbortController ? new AbortController() : null;
+        var killer = ctrl ? setTimeout(function () { ctrl.abort(); }, SEND_TIMEOUT_MS) : null;
+        return fetch(SEND_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload), signal: ctrl ? ctrl.signal : undefined })
+          .then(function (r) { if (killer) clearTimeout(killer); if (!r.ok) throw new Error('HTTP ' + r.status); return r.json().catch(function () { return {}; }); })
+          .then(function (body) { if (!body || body.ok !== true) throw new Error((body && body.error) || 'route not ok'); return { already: false }; });
+      })
+      .then(function (res) {
+        sendingSlot = false;
+        setPin(rid);
+        state.waitRetries = 0;
+        hideRoutePicker();
+        state.data = null; render();
+        toast(res.already ? 'Already sent by the office — opening it' : '✅ Route sent — loading it…');
+        load(false);
+      })
+      .catch(function () {
+        sendingSlot = false;
+        if (entryBtn) entryBtn.removeAttribute('disabled');
+        toast('⚠️ Could not send the route — try again');
+        openRoutePicker();
+      });
+  }
+
+  function hideRoutePicker() { document.getElementById('routePicker').classList.remove('show'); }
+  function openRoutePicker() {
+    var list = document.getElementById('routeList');
+    document.getElementById('routePicker').classList.add('show');
+    list.innerHTML = '<div class="rp-empty"><div class="rp-art">📡</div>Looking for routes…</div>';
+    var availP = fetch(API_BASE + DATA_PATH + '?van=' + encodeURIComponent(state.van) + '&key=' + encodeURIComponent(state.key))
+      .then(function (r) { return r.json(); })
+      .then(function (j) { if (!j || j.ok !== true) throw new Error('api'); return j.available || []; });
+    var queueP = fetchQueue().catch(function () { return null; });   // null = Reorder tab unreachable (still show sent routes)
+    Promise.all([availP, queueP])
+      .then(function (res) { renderRouteList(res[0], res[1]); })
+      .catch(function () { list.innerHTML = '<div class="rp-empty"><div class="rp-art">📡</div>Can\'t reach the server — check signal, close and retry.</div>'; });
+  }
+
+  function renderRouteList(avail, queue) {
+    var list = document.getElementById('routeList');
+    var entries = [], seen = {};
+    (queue || []).forEach(function (slot) {
+      var rid = slotRid(slot);
+      var sec = RP_SECTIONS[slot.section] || { emoji: '🚐', title: String(slot.section || 'Route') };
+      var stops = ((slot.ctx || {}).o || []).length;
+      var inTable = (avail || []).find(function (a) { return a.route_id === rid; }) || null;
+      seen[rid] = true;
+      entries.push({
+        rid: rid, date: rid.slice(0, 10), emoji: sec.emoji, title: sec.title,
+        sub: dayLabel(rid.slice(0, 10)) + ' · ' + stops + (stops === 1 ? ' stop' : ' stops') + ((slot.ctx || {}).t ? ' · departs ' + (slot.ctx || {}).t : ''),
+        status: inTable ? String(inTable.status || '') : '', unsent: !inTable, slot: slot
+      });
+    });
+    (avail || []).forEach(function (a) {
+      if (seen[a.route_id]) return;
+      entries.push({
+        rid: a.route_id, date: String(a.date || ''), emoji: a.route_type === 'AM' ? '🌅' : '🌆',
+        title: (a.route_type === 'AM' ? 'AM run' : 'PM run'),
+        sub: dayLabel(String(a.date || '')), status: String(a.status || ''), unsent: false, slot: null
+      });
+    });
+    entries.sort(function (x, y) { return x.date < y.date ? -1 : x.date > y.date ? 1 : (x.title < y.title ? -1 : 1); });
+    if (!entries.length) {
+      list.innerHTML = '<div class="rp-empty"><div class="rp-art">🐾</div><h2 style="color:var(--ink);font-size:19px;margin:0 0 6px">Nothing staged for ' + esc(VAN_NAMES[state.van] || state.van) + '</h2>Ask the office to stage the route in the Load Plan\'s Reorder Routes tab, then close and reopen this list.</div>' +
+        (queue === null ? '<div class="rp-note">⚠️ Couldn\'t check the Reorder tab (poor signal?) — staged-but-unsent routes may be missing from this list.</div>' : '');
+      return;
+    }
+    var h = '';
+    entries.forEach(function (e, i) {
+      var pillCls = e.status === 'active' ? 'active' : (e.status === 'completed' ? 'completed' : 'staged');
+      var pillTxt = e.unsent ? 'NOT SENT YET' : (e.status === 'active' ? 'ON THE ROAD' : (e.status === 'completed' ? 'FINISHED' : 'READY'));
+      h += '<button class="route-opt' + (e.unsent ? ' unsent' : '') + '" data-i="' + i + '">' +
+        '<span class="ro-emoji">' + e.emoji + '</span>' +
+        '<div class="ro-main"><div class="ro-title">' + esc(e.title) + '</div><div class="ro-sub">' + esc(e.sub) + '</div></div>' +
+        '<span class="ro-side"><span class="pill ' + pillCls + '">' + pillTxt + '</span></span>' +
+        '</button>';
+    });
+    if (queue === null) h += '<div class="rp-note">⚠️ Couldn\'t check the Reorder tab (poor signal?) — staged-but-unsent routes may be missing from this list.</div>';
+    list.innerHTML = h;
+    list.querySelectorAll('.route-opt').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var e = entries[Number(b.getAttribute('data-i'))];
+        if (!e) return;
+        if (!e.unsent) {
+          setPin(e.rid); hideRoutePicker();
+          state.data = null; state.waitRetries = 0; render(); load(false);
+          return;
+        }
+        dialog('📨 Send &amp; open this route?', '<p><b>' + esc(e.title) + '</b> — ' + esc(e.sub) + '.</p><p>The office hasn\'t sent it yet: picking it sends the route (the group Telegram message goes out, same as the office pressing Send Final Route) and opens it here.</p>',
+          [['Send &amp; open ▶️', 'go', 'btn start'], ['Back', '', 'btn nav']],
+          function (c) { if (c === 'go') sendQueueSlot(e.slot, b); });
+      });
+    });
   }
 
   /* ── rendering ── */
@@ -545,9 +786,19 @@
     var r = d.route;
     if (!r) {
       document.getElementById('ridTxt').textContent = VAN_NAMES[state.van] || state.van;
-      document.getElementById('ridSub').textContent = 'No route yet today';
-      main.innerHTML = '<div class="empty"><div class="art">🐾</div><h2>No route yet</h2><p>Nothing planned for ' + esc(VAN_NAMES[state.van] || state.van) + ' so far today.<br>Pull ⟳ once the office sends the route.</p></div>';
+      var waitPin = getPin();
+      if (waitPin && d.rid_found === false) {
+        document.getElementById('ridSub').textContent = 'Waiting for ' + waitPin;
+        main.innerHTML = '<div class="empty"><div class="art">📨</div><h2>Route sent — arriving…</h2><p>Waiting for <b>' + esc(waitPin) + '</b> to come through.<br>This refreshes itself every few seconds.</p><div class="actions" style="max-width:300px;margin:18px auto 0"><button class="btn nav wide" id="pickAnother">🗂 Choose a different route</button></div></div>';
+      } else {
+        document.getElementById('ridSub').textContent = 'No route loaded';
+        main.innerHTML = '<div class="empty"><div class="art">🐾</div><h2>No route loaded</h2><p>Pick one of the routes staged by the office for ' + esc(VAN_NAMES[state.van] || state.van) + '.</p><div class="actions" style="max-width:300px;margin:18px auto 0"><button class="btn start wide" id="seeRoutes">🗂 See available routes</button></div></div>';
+      }
       footer.className = ''; footer.innerHTML = '';
+      var pa = document.getElementById('pickAnother');
+      if (pa) pa.onclick = function () { setPin(''); state.waitRetries = 0; openRoutePicker(); };
+      var sr = document.getElementById('seeRoutes');
+      if (sr) sr.onclick = function () { openRoutePicker(); };
       return;
     }
     var rst = effRouteStatus();
@@ -654,7 +905,8 @@
   /* ── data loading ── */
   function load(withPhones) {
     if (!state.van || !state.key) return;
-    var url = API_BASE + DATA_PATH + '?van=' + encodeURIComponent(state.van) + '&key=' + encodeURIComponent(state.key) + (withPhones ? '&phones=1' : '');
+    var pin = getPin();
+    var url = API_BASE + DATA_PATH + '?van=' + encodeURIComponent(state.van) + '&key=' + encodeURIComponent(state.key) + (pin ? '&rid=' + encodeURIComponent(pin) : '') + (withPhones ? '&phones=1' : '');
     return fetch(url).then(function (r) { return r.json(); }).then(function (j) {
       document.getElementById('syncDot').classList.remove('err');
       document.getElementById('offBanner').classList.remove('show');
@@ -662,6 +914,15 @@
         if (j.error === 'unauthorised' || j.error === 'unknown van') { showPicker(true); return; }
         throw new Error(j.error);
       }
+      state.avail = j.available || [];
+      if (pin && j.rid_found === false) {
+        // just sent from the queue (or picked before W1 finished ingesting) — keep waiting
+        state.data = j;
+        render();
+        if ((state.waitRetries || 0) < 10) { state.waitRetries = (state.waitRetries || 0) + 1; setTimeout(function () { load(false); }, 4000); }
+        return;
+      }
+      state.waitRetries = 0;
       var prevPhones = {};
       if (state.data && state.data.route && j.route && state.data.route.route_id === j.route.route_id) {
         (state.data.stops || []).forEach(function (s) { if (s.phone) prevPhones[s.seq] = s.phone; });
@@ -671,6 +932,7 @@
       lsSet('veta_last_' + state.van, j);
       if (withPhones && j.route) state.phonesLoaded = j.route.route_id;
       render();
+      if (!pin && !j.route && !state.autoPickerShown) { state.autoPickerShown = true; openRoutePicker(); }
       if (j.route && state.phonesLoaded !== j.route.route_id) { state.phonesLoaded = j.route.route_id; load(true); }
     }).catch(function () {
       document.getElementById('syncDot').classList.add('err');
@@ -712,6 +974,21 @@
       function (c) { if (c === 'go') { localStorage.removeItem('veta_cred'); location.reload(); } });
   });
   document.getElementById('refreshBtn').addEventListener('click', function () { load(false); toast('⟳ Refreshing…'); });
+  document.getElementById('routeMeta').addEventListener('click', function () { if (state.van && state.key) openRoutePicker(); });
+  document.getElementById('rpClose').addEventListener('click', hideRoutePicker);
+
+  /* once per boot: if more routes are on offer than the one showing, say so */
+  function bootDiscovery() {
+    fetchQueue().then(function (slots) {
+      var unsent = slots.filter(function (s) {
+        var rid = slotRid(s);
+        return !(state.avail || []).some(function (a) { return a.route_id === rid; });
+      }).length;
+      var total = (state.avail || []).length + unsent;
+      var shownRid = state.data && state.data.route ? state.data.route.route_id : '';
+      if (shownRid && total > 1) toast('🗂 More routes are staged — tap the route name up top to switch');
+    }).catch(function () {});
+  }
 
   window.addEventListener('online', function () { flush(); load(false); });
   document.addEventListener('visibilitychange', function () { if (!document.hidden) { flush(); load(false); } });
@@ -729,6 +1006,7 @@
     if (state.timer) clearInterval(state.timer);
     state.timer = setInterval(function () { if (!document.hidden) { load(false); flush(); } }, POLL_MS);
     updateQueueBanner(); flush();
+    setTimeout(bootDiscovery, 3500);   // after the first load has landed
   }
 
   /* URL hand-off: ?van=SV&k=... saves credentials then cleans the address bar */
