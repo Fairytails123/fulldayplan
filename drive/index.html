@@ -267,7 +267,25 @@
   .rp-close { display: flex; max-width: 460px; margin: 18px auto 0; width: 100%; }
   .rp-empty { max-width: 460px; margin: 26px auto; text-align: center; color: var(--ink-dim); font-size: 14px; }
   .rp-empty .rp-art { font-size: 40px; margin-bottom: 8px; }
+
+  /* van switch row — big, obvious, lives at the top of the route picker */
+  .rp-vans { display: flex; gap: 8px; max-width: 460px; margin: 0 auto 6px; }
+  .rp-van {
+    flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px;
+    background: var(--panel); border: 2px solid var(--line); border-radius: 14px;
+    padding: 12px 6px 10px; cursor: pointer; font-family: inherit; color: var(--ink-dim);
+    font-size: 13.5px; font-weight: 800; letter-spacing: 0.02em; line-height: 1.15;
+  }
+  .rp-van .sw { width: 28px; height: 28px; border-radius: 9px; }
+  .rp-van small { font-weight: 700; font-size: 10.5px; color: var(--ink-faint); letter-spacing: 0.08em; }
+  .rp-van.sel { border-color: var(--accent); color: var(--ink); background: color-mix(in srgb, var(--accent) 12%, var(--panel)); }
+  .rp-van.sel small { color: var(--accent); }
+  .rp-van:active { transform: scale(0.97); }
+  .rp-vans-lbl { max-width: 460px; margin: 0 auto 8px; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-faint); font-weight: 700; }
+  .rp-routes-lbl { max-width: 460px; margin: 14px auto 8px; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-faint); font-weight: 700; }
+
   #routeMeta { cursor: pointer; }
+  .van-chip .vc-caret { font-size: 11px; opacity: 0.75; margin-left: -2px; }
   #routeMeta .rid::after { content: " ▾"; color: var(--ink-faint); font-weight: 700; }
 
   #picker { position: fixed; inset: 0; z-index: 50; background: var(--bg); display: none; padding: 24px var(--pad); overflow: auto; }
@@ -316,7 +334,7 @@
 <body>
 
 <header>
-  <button class="van-chip" id="vanChip" aria-label="Change van"><span class="dot"></span><span id="vanChipTxt">VAN</span></button>
+  <button class="van-chip" id="vanChip" aria-label="Change van"><span class="dot"></span><span id="vanChipTxt">VAN</span><span class="vc-caret">▾</span></button>
   <div id="routeMeta"><div class="rid" id="ridTxt">—</div><div class="sub" id="ridSub"></div></div>
   <button class="icon-btn" id="refreshBtn" aria-label="Refresh">⟳</button>
   <span id="syncDot" title="sync status"></span>
@@ -334,7 +352,7 @@
   <div class="brand">
     <div class="logo">🐾🚐</div>
     <h1>Fairy Tails Drive</h1>
-    <p>Pick your van to begin. You'll only do this once on this phone.</p>
+    <p>Pick the van you're driving. You can switch vans any time — tap the van badge at the top of the app.</p>
   </div>
   <button class="van-opt" data-van="BV"><span class="swatch" style="background:#2dd4bf"></span><span>Big Van<small>BV</small></span></button>
   <button class="van-opt" data-van="BVX"><span class="swatch" style="background:#fbbf24"></span><span>Big Van Xray<small>BVX</small></span></button>
@@ -353,6 +371,13 @@
     <h1>Choose a route</h1>
     <p id="rpSub">Anything staged in the office Reorder tab shows here.</p>
   </div>
+  <div class="rp-vans-lbl">Your van — tap to switch</div>
+  <div class="rp-vans" id="rpVans">
+    <button class="rp-van" data-van="BV"><span class="sw" style="background:#2dd4bf"></span>Big Van<small>BV</small></button>
+    <button class="rp-van" data-van="BVX"><span class="sw" style="background:#fbbf24"></span>Big Van X<small>BVX</small></button>
+    <button class="rp-van" data-van="SV"><span class="sw" style="background:#a78bfa"></span>Small Van<small>SV</small></button>
+  </div>
+  <div class="rp-routes-lbl">Routes for this van</div>
   <div id="routeList"></div>
   <button class="btn nav rp-close" id="rpClose">Close</button>
 </div>
@@ -581,15 +606,23 @@
   function hideRoutePicker() { document.getElementById('routePicker').classList.remove('show'); }
   function openRoutePicker() {
     var list = document.getElementById('routeList');
+    markRpVans();
     document.getElementById('routePicker').classList.add('show');
     list.innerHTML = '<div class="rp-empty"><div class="rp-art">📡</div>Looking for routes…</div>';
+    var vanAtOpen = state.van;
     var availP = fetch(API_BASE + DATA_PATH + '?van=' + encodeURIComponent(state.van) + '&key=' + encodeURIComponent(state.key))
       .then(function (r) { return r.json(); })
-      .then(function (j) { if (!j || j.ok !== true) throw new Error('api'); return j.available || []; });
+      .then(function (j) {
+        if (j && j.ok !== true && (j.error === 'unauthorised' || j.error === 'unknown van')) {
+          hideRoutePicker(); showPicker(true); throw new Error('auth');
+        }
+        if (!j || j.ok !== true) throw new Error('api');
+        return j.available || [];
+      });
     var queueP = fetchQueue().catch(function () { return null; });   // null = Reorder tab unreachable (still show sent routes)
     Promise.all([availP, queueP])
-      .then(function (res) { renderRouteList(res[0], res[1]); })
-      .catch(function () { list.innerHTML = '<div class="rp-empty"><div class="rp-art">📡</div>Can\'t reach the server — check signal, close and retry.</div>'; });
+      .then(function (res) { if (vanAtOpen !== state.van) return; renderRouteList(res[0], res[1]); })
+      .catch(function () { if (vanAtOpen !== state.van) return; list.innerHTML = '<div class="rp-empty"><div class="rp-art">📡</div>Can\'t reach the server — check signal, close and retry.</div>'; });
   }
 
   function renderRouteList(avail, queue) {
@@ -906,8 +939,10 @@
   function load(withPhones) {
     if (!state.van || !state.key) return;
     var pin = getPin();
+    var vanAtReq = state.van;   // a mid-flight van switch must not paint the old van's route
     var url = API_BASE + DATA_PATH + '?van=' + encodeURIComponent(state.van) + '&key=' + encodeURIComponent(state.key) + (pin ? '&rid=' + encodeURIComponent(pin) : '') + (withPhones ? '&phones=1' : '');
     return fetch(url).then(function (r) { return r.json(); }).then(function (j) {
+      if (vanAtReq !== state.van) return;
       document.getElementById('syncDot').classList.remove('err');
       document.getElementById('offBanner').classList.remove('show');
       if (!j.ok) {
@@ -966,12 +1001,33 @@
     state.van = pickedVan; state.key = k;
     lsSet('veta_cred', { van: state.van, key: state.key });
     document.getElementById('picker').classList.remove('show');
+    state.autoPickerShown = false;
     boot();
   });
+  /* van switching — flexi ops: any driver may take any van on any day.
+     The header van badge opens the route picker, whose van row switches
+     van in one tap (the shared access code is kept — no re-typing). */
+  function markRpVans() {
+    document.querySelectorAll('.rp-van').forEach(function (b) { b.classList.toggle('sel', b.getAttribute('data-van') === state.van); });
+  }
+  function switchVan(v) {
+    if (!v || !VAN_COLOURS[v] || v === state.van) return;
+    state.van = v;
+    lsSet('veta_cred', { van: state.van, key: state.key });
+    applyAccent();
+    state.data = null; state.avail = []; state.phonesLoaded = ''; state.prevOcc = {}; state.waitRetries = 0; state.autoPickerShown = true;
+    document.getElementById('vanChipTxt').textContent = v;
+    markRpVans();
+    render();
+    toast('🚐 Now on ' + (VAN_NAMES[v] || v));
+    openRoutePicker();
+    load(false);
+  }
+  document.querySelectorAll('.rp-van').forEach(function (b) {
+    b.addEventListener('click', function () { switchVan(b.getAttribute('data-van')); });
+  });
   document.getElementById('vanChip').addEventListener('click', function () {
-    dialog('Change van?', '<p>You\'re set up as <b>' + esc(VAN_NAMES[state.van] || state.van) + '</b> on this phone.</p>',
-      [['Change van', 'go', 'btn skip'], ['Stay', '', 'btn nav']],
-      function (c) { if (c === 'go') { localStorage.removeItem('veta_cred'); location.reload(); } });
+    if (state.van && state.key) openRoutePicker(); else showPicker(false);
   });
   document.getElementById('refreshBtn').addEventListener('click', function () { load(false); toast('⟳ Refreshing…'); });
   document.getElementById('routeMeta').addEventListener('click', function () { if (state.van && state.key) openRoutePicker(); });
