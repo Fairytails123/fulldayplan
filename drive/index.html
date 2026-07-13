@@ -531,6 +531,20 @@
   /* ── tap queue (persisted, flushed when online; server dedupes on tap_id) ── */
   function q() { return lsGet('veta_tapq', []); }
   function qPush(item) { var a = q(); a.push(item); lsSet('veta_tapq', a); updateQueueBanner(); flush(); }
+  /* Drop still-queued taps an Undo/Reset supersedes (offline case: a queued
+     "done, message the parent" must never flush AFTER the driver undid it).
+     The head is skipped while a flush is in flight — that one is already on
+     the wire and the follow-up undo/reset will noop it server-side. */
+  function qRemove(match) {
+    var a = q(); var kept = []; var removed = 0;
+    for (var i = 0; i < a.length; i++) {
+      if (i === 0 && state.flushing) { kept.push(a[i]); continue; }
+      if (match(a[i])) { removed++; continue; }
+      kept.push(a[i]);
+    }
+    if (removed) { lsSet('veta_tapq', kept); updateQueueBanner(); }
+    return removed;
+  }
   function updateQueueBanner() {
     var n = q().length, el = document.getElementById('queueBanner');
     el.textContent = '📤 ' + n + (n === 1 ? ' tap' : ' taps') + ' waiting to send…';
@@ -547,7 +561,16 @@
       state.flushing = false;
       if (j && j.ok !== undefined) {
         var rest = q(); rest.shift(); lsSet('veta_tapq', rest); updateQueueBanner();
-        if (j.ok === false) toast('⚠️ Tap rejected: ' + (j.error || 'unknown'));
+        if (j.ok === false) {
+          toast('⚠️ Tap rejected: ' + (j.error || 'unknown'));
+          // A rejected reorder never reached the table — roll the local order
+          // overlay back to server truth so later seq-addressed taps can't
+          // aim at the wrong stop (2026-07-13 review fix).
+          if (item.action === 'reorder') {
+            try { localStorage.removeItem('veta_ord_' + item.route_id); } catch (e) {}
+            if (state.data && state.data.route && state.data.route.route_id === item.route_id) { render(); }
+          }
+        }
         if (rest.length) flush();
       }
     }).catch(function () { state.flushing = false; updateQueueBanner(); });
@@ -607,6 +630,16 @@
     var ctx = slot.ctx || {};
     var nextAm = String(ctx.p || '').toUpperCase() === 'NEXT_AM';
     var date = stampToYmd(ctx.dt) || ymdLondon(nextAm ? 1 : 0);
+    // Mirror W1's midnight snap (bugs/B24): a NEXT_AM sent 00:00–03:59 London
+    // before its departure time is for THIS morning, whatever the stamp says
+    // — keep the pinned rid identical to what W1 will actually create.
+    if (nextAm && date > ymdLondon(0)) {
+      var hm = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', hourCycle: 'h23', hour: '2-digit', minute: '2-digit' }).format(new Date());
+      var nowMin = Number(hm.slice(0, 2)) * 60 + Number(hm.slice(3, 5));
+      var dep = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(String(ctx.t || ''));
+      var depMin = dep ? (Number(dep[1]) * 60 + Number(dep[2])) : null;
+      if (nowMin < 240 && (depMin === null || nowMin < depMin)) { date = ymdLondon(0); }
+    }
     return date + '-' + state.van + '-' + (nextAm ? 'AM' : 'PM');
   }
   function dayLabel(ymd) {
@@ -1220,13 +1253,16 @@
       return;
     }
     if (act === 'undo') {
+      var wasLocal = effStatus(s).local;
       dialog('↩️ Undo stop ' + seq + '?',
         '<p><b>' + esc(s.dog_name) + '</b> goes back to <b>not done</b>. Nobody is messaged by an undo.</p>',
         [['Undo it ↩️', 'go', 'btn done'], ['Back', '', 'btn nav']],
         function (choice) {
           if (choice !== 'go') return;
+          // a still-queued done/skip for this stop is superseded — drop it
+          qRemove(function (t) { return t.route_id === state.data.route.route_id && (t.action === 'done' || t.action === 'skip') && Number(t.seq) === seq; });
           clearStopOverlay(seq); sendTap('undo', seq); render();
-          toast('↩️ Stop ' + seq + ' back to not done');
+          toast(wasLocal ? ('↩️ Stop ' + seq + ' back to not done') : ('↩️ Undo sent — stop ' + seq + ' will clear shortly'));
           if (state.data.tap_mode === 'live') { reloadSoon(); }
         });
       return;
@@ -1254,21 +1290,30 @@
   }
   function confirmReset() {
     var d = state.data; if (!d || !d.route) return;
+    var rid = d.route.route_id;
     var stops = d.stops || [];
     var closed = stops.filter(function (s) { return CLOSED.indexOf(effStatus(s).st) >= 0; }).length;
+    var closedLocal = stops.filter(function (s) { var e = effStatus(s); return e.local && CLOSED.indexOf(e.st) >= 0; }).length;
+    var closedServer = closed - closedLocal;
+    // Honest scope copy (2026-07-13 review fix): in test mode only THIS
+    // phone's ticks clear — GPS/Telegram-marked stops stay until the office
+    // resets them from the dashboard.
     var scopeNote = d.tap_mode === 'dev'
-      ? '<p>🧪 Test mode — this clears the ticks stored on THIS phone; the office record is untouched.</p>'
+      ? ('<p>🧪 Test mode — this clears the ' + (closedLocal || 'any') + ' tick' + (closedLocal === 1 ? '' : 's') + ' made on THIS phone' + (closedServer ? ('; the ' + closedServer + ' stop' + (closedServer === 1 ? '' : 's') + ' marked by GPS/Telegram stay until the office resets them') : '; the office record is untouched') + '.</p>')
       : '<p>The office record is reset too — the route shows as ready to start again everywhere.</p>';
     dialog('↺ Reset the whole route?',
       '<p>' + (closed ? ('<b>' + closed + ' marked stop' + (closed === 1 ? '' : 's') + '</b> go back to not done and t') : 'T') + 'he route returns to <b>ready to start</b>. Nobody is messaged by the reset itself.</p>' + scopeNote,
       [['Reset route ↺', 'go', 'btn skip'], ['Back', '', 'btn nav']],
       function (c) {
         if (c !== 'go') return;
+        // every still-queued tap for this route is part of the run being
+        // declared void — drop them before queueing the reset
+        qRemove(function (t) { return t.route_id === rid && t.action !== 'reset'; });
         clearLocalForRoute();
         sendTap('reset', 0);
         state.prevOcc = {};
         render();
-        toast('↺ Route reset — ready to start');
+        toast('↺ Route reset');
         if (d.tap_mode === 'live') { reloadSoon(); }
       });
   }
