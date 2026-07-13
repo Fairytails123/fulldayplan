@@ -231,6 +231,9 @@
   .btn.call { background: var(--panel-2); color: var(--ink); border: 1px solid var(--line); }
   .btn.done { background: var(--good); color: #052e22; }
   .btn.skip { background: transparent; color: var(--bad); border: 1.5px solid #4c2626; }
+  .btn.undo { background: transparent; color: var(--warn); border: 1.5px solid #4a3d12; min-height: 44px; font-size: 14px; }
+  .reset-row { display: flex; justify-content: flex-end; margin-top: 10px; }
+  .btn.resetr { background: transparent; color: var(--ink-dim); border: 1px solid var(--line); min-height: 38px; font-size: 13px; padding: 7px 12px; border-radius: 10px; }
   .btn[disabled] { opacity: 0.45; pointer-events: none; }
   .stop.now .btn.done { font-size: 18px; min-height: 58px; }
 
@@ -444,10 +447,49 @@
     var rid = state.data && state.data.route ? state.data.route.route_id : ''; if (!rid) return;
     var ov = lsGet('veta_ov_' + rid, {}); ov[String(seq)] = { action: action, ts: Date.now() }; lsSet('veta_ov_' + rid, ov);
   }
+  function clearStopOverlay(seq) {
+    var rid = state.data && state.data.route ? state.data.route.route_id : ''; if (!rid) return;
+    var ov = lsGet('veta_ov_' + rid, {}); delete ov[String(seq)]; lsSet('veta_ov_' + rid, ov);
+  }
   function routeOverlay() { var rid = state.data && state.data.route ? state.data.route.route_id : ''; return lsGet('veta_rov_' + rid, {}); }
   function setRouteOverlay(action) {
     var rid = state.data && state.data.route ? state.data.route.route_id : ''; if (!rid) return;
     var ov = lsGet('veta_rov_' + rid, {}); ov[action] = Date.now(); lsSet('veta_rov_' + rid, ov);
+  }
+  function clearLocalForRoute() {
+    var rid = state.data && state.data.route ? state.data.route.route_id : ''; if (!rid) return;
+    try {
+      localStorage.removeItem('veta_ov_' + rid);
+      localStorage.removeItem('veta_rov_' + rid);
+      localStorage.removeItem('veta_ord_' + rid);
+    } catch (e) {}
+  }
+  /* Local taps are DEVICE state, not truth — a tap made hours ago must never
+     paint a later run as done (2026-07-13 SV-PM ghost-route incident: midday
+     dev taps made the real afternoon route open "already running with stops
+     ticked"). GC: past-day route keys are dropped whole; same-day tap/route
+     overlays older than 12 h are pruned. The order overlay reconciles against
+     server truth itself (reconcileOrd) so only its past-day keys are dropped. */
+  var OVERLAY_TTL_MS = 12 * 3600 * 1000;
+  function gcLocal() {
+    var today = ymdLondon(0);
+    var cut = Date.now() - OVERLAY_TTL_MS;
+    var keys = [];
+    try { for (var i = 0; i < localStorage.length; i++) { keys.push(localStorage.key(i)); } } catch (e) { return; }
+    keys.forEach(function (k) {
+      var m = /^veta_(ov|rov|ord)_(\d{4}-\d{2}-\d{2})/.exec(k || '');
+      if (!m) return;
+      try {
+        if (m[2] < today) { localStorage.removeItem(k); return; }
+        if (m[1] === 'ord') return;
+        var ov = lsGet(k, {}); var changed = false;
+        Object.keys(ov).forEach(function (kk) {
+          var ts = (ov[kk] && ov[kk].ts !== undefined) ? ov[kk].ts : ov[kk];   // rov stores bare timestamps
+          if (typeof ts === 'number' && ts < cut) { delete ov[kk]; changed = true; }
+        });
+        if (changed) { lsSet(k, ov); }
+      } catch (e) {}
+    });
   }
 
   /* ── order overlay: a queued reorder shows instantly; server truth wins on
@@ -481,8 +523,8 @@
     var r = state.data && state.data.route; if (!r) return '';
     var st = String(r.status || '').toLowerCase();
     var ov = routeOverlay();
-    if (st === 'staged' && ov.start) return 'active';
-    if (st === 'active' && ov.end) return 'completed';
+    if (st === 'staged' && ov.start) { st = 'active'; }
+    if (st === 'active' && ov.end) { st = 'completed'; }   // dev End tap now visibly finishes even while the server row is staged
     return st;
   }
 
@@ -516,9 +558,17 @@
     return 'xxxxxxxxyxxx'.replace(/[xy]/g, function () { return (Math.random() * 16 | 0).toString(16); }) + Date.now().toString(16);
   }
 
-  function sendTap(action, seq) {
+  function sendTap(action, seq, notify) {
     var r = state.data && state.data.route; if (!r) return;
-    qPush({ van: state.van, key: state.key, route_id: r.route_id, seq: seq || 0, action: action, tap_id: uuid(), ts: new Date().toISOString() });
+    var item = { van: state.van, key: state.key, route_id: r.route_id, seq: seq || 0, action: action, tap_id: uuid(), ts: new Date().toISOString() };
+    if (notify !== undefined) { item.notify = !!notify; }   // done/start carry the driver's "tell the parent?" choice
+    qPush(item);
+  }
+  /* live tap mode: server state moves 1–2 s after a tap lands — pull it in
+     so undo/reset repaint from truth without waiting for the 20 s poll */
+  function reloadSoon() {
+    setTimeout(function () { load(false); }, 2500);
+    setTimeout(function () { load(false); }, 6500);
   }
 
   /* ── route picker: Reorder-tab slots + already-sent routes ──────────
@@ -860,6 +910,14 @@
       h += '<button class="btn skip" data-act="skip" data-seq="' + sq + '">✗ Skip</button>';
       h += '</div>';
     }
+    /* Undo on any closed stop the app can actually reverse: a tap made on
+       THIS phone always can; a server-closed stop only once taps are live
+       (in test mode the server would not move — no lying buttons, B19). */
+    var undoable = (eff.st === 'collected' || eff.st === 'dropped' || eff.st === 'skipped')
+      && (eff.local || state.data.tap_mode === 'live');
+    if (undoable) {
+      h += '<div class="actions"><button class="btn undo wide" data-act="undo" data-seq="' + sq + '">↩️ Undo — not done</button></div>';
+    }
     h += '</div></section>';
     return h;
   }
@@ -908,6 +966,12 @@
       var ahead = r.drift_min < 0;
       h += '<div class="drift">Running <b class="' + (ahead ? 'ahead' : 'behind') + '">' + Math.abs(r.drift_min) + ' min ' + (ahead ? 'ahead' : 'behind') + '</b> of plan</div>';
     }
+    /* Reset lives at the top of the route (Kam 2026-07-13): clears every tick
+       and puts the route back to ready-to-start. Shown as soon as there is
+       anything to reset (started, ticked or finished). */
+    if (rst !== 'staged' || closed > 0) {
+      h += '<div class="reset-row"><button class="btn resetr" id="resetBtn">↺ Reset route</button></div>';
+    }
     h += '</div>';
 
     h += kennelBoard();
@@ -936,6 +1000,8 @@
     main.querySelectorAll('.btn[data-act]').forEach(function (b) {
       b.addEventListener('click', function () { onAction(b.getAttribute('data-act'), Number(b.getAttribute('data-seq'))); });
     });
+    var rb = document.getElementById('resetBtn');
+    if (rb) rb.addEventListener('click', confirmReset);
     var kbHead = document.getElementById('kbHead');
     if (kbHead) kbHead.addEventListener('click', function () {
       var el = document.getElementById('kboard');
@@ -1139,10 +1205,30 @@
     if (act === 'nav') { window.open(s.nav_url, '_blank'); return; }
     if (act === 'call') { location.href = 'tel:' + s.phone.replace(/\s+/g, ''); return; }
     if (act === 'done') {
-      dialog('✅ ' + (s.stop_type === 'dropoff' ? 'Dropped home?' : 'Collected?'),
-        '<p><b>' + esc(s.dog_name) + '</b> — stop ' + seq + '. This tells the office' + (state.data.tap_mode === 'live' ? ' and the parent' : '') + '.</p>',
-        [['Yes, done ✅', 'done', 'btn done'], ['Cancel', '', 'btn nav']],
-        function (choice) { if (choice === 'done') { setOverlay(seq, 'done'); sendTap('done', seq); render(); toast('✅ Stop ' + seq + ' marked done'); } });
+      /* Done ALWAYS completes the stop (Kam 2026-07-13) — the choice is only
+         whether the parent is messaged. Mistakes are reversed with Undo. */
+      var doneWord = s.stop_type === 'dropoff' ? 'dropped home' : 'collected';
+      var devNote = state.data.tap_mode === 'dev' ? '<p>🧪 Test mode — no parent is actually messaged either way.</p>' : '';
+      dialog('✅ ' + esc(s.dog_name) + ' ' + doneWord,
+        '<p>Stop ' + seq + ' will be marked done. Message the parent?</p>' + devNote,
+        [['Yes — message the parent', 'yes', 'btn done'], ['No — don\'t message', 'no', 'btn nav']],
+        function (choice) {
+          var notify = choice === 'yes';
+          setOverlay(seq, 'done'); sendTap('done', seq, notify); render();
+          toast(notify ? '✅ Stop ' + seq + ' done — parent will be told' : '✅ Stop ' + seq + ' done, no message');
+        });
+      return;
+    }
+    if (act === 'undo') {
+      dialog('↩️ Undo stop ' + seq + '?',
+        '<p><b>' + esc(s.dog_name) + '</b> goes back to <b>not done</b>. Nobody is messaged by an undo.</p>',
+        [['Undo it ↩️', 'go', 'btn done'], ['Back', '', 'btn nav']],
+        function (choice) {
+          if (choice !== 'go') return;
+          clearStopOverlay(seq); sendTap('undo', seq); render();
+          toast('↩️ Stop ' + seq + ' back to not done');
+          if (state.data.tap_mode === 'live') { reloadSoon(); }
+        });
       return;
     }
     if (act === 'skip') {
@@ -1153,9 +1239,38 @@
   }
 
   function confirmStart() {
-    dialog('▶️ Start the route?', '<p>The plan becomes live and stop order is locked in.</p>',
-      [['Start route ▶️', 'go', 'btn start'], ['Not yet', '', 'btn nav']],
-      function (c) { if (c === 'go') { setRouteOverlay('start'); sendTap('start', 0); render(); toast('▶️ Route started'); } });
+    /* Start offers the parent-notification choice (Kam 2026-07-13): a reset
+       route being restarted must not force duplicate day-plan messages. */
+    var devNote = state.data.tap_mode === 'dev' ? '<p>🧪 Test mode — parents are not actually messaged either way.</p>' : '';
+    dialog('▶️ Start the route?',
+      '<p>The plan becomes live and the stop order is locked in. Send parents their day-plan message?</p>' + devNote,
+      [['Start &amp; message parents ▶️', 'yes', 'btn start'], ['Start silently', 'no', 'btn nav'], ['Not yet', '', 'btn skip']],
+      function (c) {
+        if (!c) return;
+        var notify = c === 'yes';
+        setRouteOverlay('start'); sendTap('start', 0, notify); render();
+        toast(notify ? '▶️ Route started — parents messaged' : '▶️ Route started, no messages');
+      });
+  }
+  function confirmReset() {
+    var d = state.data; if (!d || !d.route) return;
+    var stops = d.stops || [];
+    var closed = stops.filter(function (s) { return CLOSED.indexOf(effStatus(s).st) >= 0; }).length;
+    var scopeNote = d.tap_mode === 'dev'
+      ? '<p>🧪 Test mode — this clears the ticks stored on THIS phone; the office record is untouched.</p>'
+      : '<p>The office record is reset too — the route shows as ready to start again everywhere.</p>';
+    dialog('↺ Reset the whole route?',
+      '<p>' + (closed ? ('<b>' + closed + ' marked stop' + (closed === 1 ? '' : 's') + '</b> go back to not done and t') : 'T') + 'he route returns to <b>ready to start</b>. Nobody is messaged by the reset itself.</p>' + scopeNote,
+      [['Reset route ↺', 'go', 'btn skip'], ['Back', '', 'btn nav']],
+      function (c) {
+        if (c !== 'go') return;
+        clearLocalForRoute();
+        sendTap('reset', 0);
+        state.prevOcc = {};
+        render();
+        toast('↺ Route reset — ready to start');
+        if (d.tap_mode === 'live') { reloadSoon(); }
+      });
   }
   function confirmEnd() {
     var open = (state.data.stops || []).filter(function (s) { return CLOSED.indexOf(effStatus(s).st) < 0; });
@@ -1293,7 +1408,7 @@
   }
 
   window.addEventListener('online', function () { flush(); load(false); });
-  document.addEventListener('visibilitychange', function () { if (!document.hidden) { flush(); load(false); } });
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) { gcLocal(); flush(); load(false); } });
 
   function applyAccent() {
     var col = VAN_COLOURS[state.van] || VAN_COLOURS.BV;
@@ -1303,6 +1418,7 @@
 
   function boot() {
     applyAccent();
+    gcLocal();
     render();
     load(false);
     if (state.timer) clearInterval(state.timer);
