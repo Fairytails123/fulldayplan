@@ -629,6 +629,10 @@
   function slotRid(slot) {
     var ctx = slot.ctx || {};
     var nextAm = String(ctx.p || '').toUpperCase() === 'NEXT_AM';
+    /* Half-Day runs get their OWN route-id type (2026-07-14): they used to
+       share `<date>-VAN-PM` with the PM run, so picking Half Day opened the
+       already-ingested PM route. W1 mints -HD from run_type; mirror it. */
+    var halfDay = !nextAm && (String(slot.section || '').toUpperCase() === 'HALF_DAY' || String(ctx.rt || '').toUpperCase() === 'HD');
     var date = stampToYmd(ctx.dt) || ymdLondon(nextAm ? 1 : 0);
     // Mirror W1's midnight snap (bugs/B24): a NEXT_AM sent 00:00–03:59 London
     // before its departure time is for THIS morning, whatever the stamp says
@@ -640,7 +644,7 @@
       var depMin = dep ? (Number(dep[1]) * 60 + Number(dep[2])) : null;
       if (nowMin < 240 && (depMin === null || nowMin < depMin)) { date = ymdLondon(0); }
     }
-    return date + '-' + state.van + '-' + (nextAm ? 'AM' : 'PM');
+    return date + '-' + state.van + '-' + (nextAm ? 'AM' : (halfDay ? 'HD' : 'PM'));
   }
   function dayLabel(ymd) {
     var d = new Date(ymd + 'T12:00:00');
@@ -777,8 +781,8 @@
     (avail || []).forEach(function (a) {
       if (seen[a.route_id]) return;
       entries.push({
-        rid: a.route_id, date: String(a.date || ''), emoji: a.route_type === 'AM' ? '🌅' : '🌆',
-        title: (a.route_type === 'AM' ? 'AM run' : 'PM run'),
+        rid: a.route_id, date: String(a.date || ''), emoji: a.route_type === 'AM' ? '🌅' : (a.route_type === 'HD' ? '☀️' : '🌆'),
+        title: (a.route_type === 'AM' ? 'AM run' : (a.route_type === 'HD' ? 'Half Day' : 'PM run')),
         sub: dayLabel(String(a.date || '')), status: String(a.status || ''), unsent: false, slot: null
       });
     });
@@ -989,7 +993,8 @@
     var nowSeq = (rst === 'active' && open.length) ? seqEff(open[0]) : -1;
 
     document.getElementById('ridTxt').textContent = r.route_id;
-    document.getElementById('ridSub').textContent = (r.route_type || '') + ' run · updated ' + new Date(d.generated_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    var rtLabel = r.route_type === 'HD' ? 'Half Day' : (r.route_type || '');
+    document.getElementById('ridSub').textContent = rtLabel + ' run · updated ' + new Date(d.generated_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 
     var h = '';
     h += '<div class="progress-card"><div class="progress-top"><div class="big num">' + closed + '<small> / ' + total + ' stops</small></div>';
