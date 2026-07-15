@@ -79,6 +79,11 @@
   .icon-btn:active { transform: scale(0.94); }
   #syncDot { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 8px); right: 8px; width: 7px; height: 7px; border-radius: 50%; background: var(--good); transition: background .3s; }
   #syncDot.err { background: var(--bad); }
+  /* S3 GPS status chip — only shown inside the native GPS shell (v0.2+); hidden everywhere else */
+  .gps-chip { display: none; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; letter-spacing: .02em; border-radius: 999px; padding: 4px 9px; flex: none; white-space: nowrap; border: 1px solid var(--line); background: var(--panel-2); color: var(--ink-faint); }
+  .gps-chip.live { color: #04251f; background: var(--good); border-color: transparent; }
+  .gps-chip.wait { color: #2a1e02; background: #fbbf24; border-color: transparent; }
+  .gps-chip.off { color: var(--ink-faint); background: var(--panel-2); }
 
   /* ── Banners ─────────────────────────────────────────── */
   .banner {
@@ -594,6 +599,154 @@
     setTimeout(function () { load(false); }, 6500);
   }
 
+  /* ═══════════════════ S3 GPS bridge (Capacitor background-geolocation) ═══════════════════
+     Feeds the van phone's OWN GPS to W3 (van-eta-w3-loc-k7p2, src:'app'), replacing
+     Telegram Live Location on the app. DORMANT unless the native plugin is present, so
+     plain browsers, the iOS Home-Screen app, and the v0.1 shell (Capacitor core but no
+     GPS plugin) never start it — this page stays byte-safe for today's drivers and only
+     comes alive inside the v0.2 GPS APK. Server contract added 2026-07-15:
+       { src:'app', van, key, lat, lng, acc, heading, speed, ts, ping_id, device_id }.
+     The watcher runs only while a route is effectively ACTIVE on THIS phone; pings queue
+     offline (mirror of the tap queue) and flush oldest-first, carrying their ORIGINAL
+     capture time so W3's staleness gate ignores stale replays without geofence misfires. */
+  var GPS = (function () {
+    var W3_PATH = '/van-eta-w3-loc-k7p2';
+    var QUEUE_KEY = 'veta_pingq';
+    var MOVE_MS = 4000;         // ≥1 ping / 4 s while moving
+    var HEARTBEAT_MS = 30000;   // keep van_live fresh (and W6 stale-alert quiet) when parked mid-route
+    var ACC_MAX = 50;           // drop fixes coarser than 50 m (matches the engine accuracy gate)
+    var QUEUE_CAP = 500;        // ≈35 min of pings; older ones only matter as breadcrumbs
+    var FRESH_MS = 45000;       // chip shows "live" if a ping was accepted within 45 s
+    var watcherId = null, boundRid = '', flushing = false;
+    var lastSentMs = 0, lastLat = null, lastLng = null, lastFix = null, lastOkMs = 0;
+    var chip = null;
+
+    function core() { return window.Capacitor || null; }
+    function installed() { var c = core(); return !!(c && c.Plugins && c.Plugins.BackgroundGeolocation); }
+    function plugin() {
+      var c = core(); if (!c || !installed()) return null;
+      // registerPlugin returns the officially-correct proxy (handles the addWatcher callback bridge);
+      // fall back to the Plugins map if an older core lacks it.
+      return (typeof c.registerPlugin === 'function') ? c.registerPlugin('BackgroundGeolocation') : c.Plugins.BackgroundGeolocation;
+    }
+    function deviceId() {
+      var d = lsGet('veta_device_id', '');
+      if (!d) { d = 'd-' + uuid().slice(0, 8); lsSet('veta_device_id', d); }
+      return d;
+    }
+    function hav(aLat, aLng, bLat, bLng) {
+      var R = 6371000, r = Math.PI / 180;
+      var dLat = (bLat - aLat) * r, dLng = (bLng - aLng) * r;
+      var s1 = Math.sin(dLat / 2), s2 = Math.sin(dLng / 2);
+      var a = s1 * s1 + Math.cos(aLat * r) * Math.cos(bLat * r) * s2 * s2;
+      return 2 * R * Math.asin(Math.min(1, Math.sqrt(a)));
+    }
+
+    /* offline ping queue (mirror of the tap queue; server has no dupe cost — newest-ts wins) */
+    function pq() { return lsGet(QUEUE_KEY, []); }
+    function pqSet(a) { lsSet(QUEUE_KEY, a); }
+    function enqueue(p) { var a = pq(); a.push(p); if (a.length > QUEUE_CAP) a = a.slice(a.length - QUEUE_CAP); pqSet(a); }
+    function flushPings() {
+      if (flushing) return;
+      if (!navigator.onLine) return;
+      var a = pq(); if (!a.length) return;
+      flushing = true;
+      // age_ms is computed HERE (at send), from the same phone clock that stamped ts, so it is
+      // immune to phone↔server clock offset AND reflects how old a queued ping is when it finally
+      // flushes — W3 gates app-ping staleness on this, not on the raw phone ts (2026-07-15 review).
+      var item = Object.assign({}, a[0], { age_ms: Math.max(0, Date.now() - (Number(a[0].ts) || Date.now())) });
+      fetch(API_BASE + W3_PATH, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(item), keepalive: true })
+        .then(function (r) { return r.ok; })
+        .then(function (ok) {
+          flushing = false;
+          if (ok) { var rest = pq(); rest.shift(); pqSet(rest); lastOkMs = Date.now(); paint(); if (rest.length) flushPings(); }
+        })
+        .catch(function () { flushing = false; });   // stay queued; retried on the ticker / online event
+    }
+    function post(lat, lng, acc, heading, speed, ts) {
+      var van = state.van, key = state.key;
+      if (!van || !key) return;
+      enqueue({ src: 'app', van: van, key: key, lat: lat, lng: lng, acc: acc, heading: heading, speed: speed,
+                ts: ts, ping_id: van + '-' + ts + '-' + uuid().slice(0, 4), device_id: deviceId() });
+      lastSentMs = Date.now();
+      flushPings();
+    }
+    function onFix(loc) {
+      if (!loc) return;
+      var lat = Number(loc.latitude), lng = Number(loc.longitude);
+      if (!isFinite(lat) || !isFinite(lng)) return;
+      var acc = (loc.accuracy == null) ? null : Number(loc.accuracy);
+      if (acc !== null && isFinite(acc) && acc > ACC_MAX) { paint(); return; }   // too coarse — drop
+      var heading = (loc.bearing == null) ? null : Number(loc.bearing);
+      var speedKmh = (loc.speed == null) ? null : Math.round(Number(loc.speed) * 3.6 * 10) / 10;   // plugin m/s → km/h
+      var ts = Number(loc.time) || Date.now();   // ORIGINAL capture time → correct stale-replay handling
+      var moved = (lastLat === null) ? 9999 : hav(lastLat, lastLng, lat, lng);
+      var due = (moved > 20) ? ((Date.now() - lastSentMs) >= MOVE_MS) : ((Date.now() - lastSentMs) >= HEARTBEAT_MS);
+      lastFix = { lat: lat, lng: lng, acc: acc, heading: heading, speed: speedKmh };
+      if (!due) return;
+      lastLat = lat; lastLng = lng;
+      post(lat, lng, acc, heading, speedKmh, ts);
+    }
+    function start(rid) {
+      var pl = plugin(); if (!pl) return;
+      if (watcherId && boundRid === rid) return;
+      if (watcherId) stopWatch();
+      boundRid = rid;
+      pl.addWatcher({
+        backgroundMessage: 'Sharing your location with Fairy Tails while a route is in progress.',
+        backgroundTitle: 'Fairy Tails — route in progress',
+        requestPermissions: true, stale: false, distanceFilter: 12
+      }, function (location, error) { if (error) { paint(); return; } onFix(location); })
+        .then(function (id) { watcherId = id; paint(); })
+        .catch(function () { watcherId = null; boundRid = ''; paint(); });
+      paint();
+    }
+    function stopWatch() {
+      var pl = plugin();
+      if (pl && watcherId) { try { pl.removeWatcher({ id: watcherId }); } catch (e) {} }
+      watcherId = null; boundRid = ''; lastSentMs = 0; lastLat = null; lastLng = null; lastFix = null;
+      paint();
+    }
+    /* keep the watcher matched to route state — called from render() on every change */
+    function sync() {
+      if (!installed()) { if (chip) chip.style.display = 'none'; return; }
+      var r = state.data && state.data.route;
+      var rid = r ? r.route_id : '';
+      var open = !!rid && effRouteStatus() === 'active';
+      if (open) start(rid); else if (watcherId) stopWatch();
+      paint();
+    }
+    function ensureChip() {
+      if (chip && chip.isConnected) return chip;
+      var hdr = document.querySelector('header'); if (!hdr) return null;
+      chip = document.getElementById('gpsChip');
+      if (!chip) { chip = document.createElement('span'); chip.id = 'gpsChip'; chip.className = 'gps-chip';
+        hdr.insertBefore(chip, document.getElementById('refreshBtn')); }
+      return chip;
+    }
+    function paint() {
+      if (!installed()) { if (chip) chip.style.display = 'none'; return; }
+      var c = ensureChip(); if (!c) return;
+      c.style.display = 'inline-flex';
+      var pend = pq().length;
+      if (!watcherId) { c.textContent = '📍 GPS off'; c.className = 'gps-chip off'; return; }
+      if (lastOkMs && (Date.now() - lastOkMs) < FRESH_MS) { c.textContent = '📍 GPS live' + (pend ? ' ·' + pend : ''); c.className = 'gps-chip live'; }
+      else { c.textContent = '📍 GPS…' + (pend ? ' ·' + pend : ''); c.className = 'gps-chip wait'; }
+    }
+    /* ticker: reflush stragglers, emit a parked heartbeat, keep the chip honest */
+    setInterval(function () {
+      if (!installed()) return;
+      flushPings();
+      if (watcherId && lastFix && (Date.now() - lastSentMs) >= HEARTBEAT_MS) {
+        post(lastFix.lat, lastFix.lng, lastFix.acc, lastFix.heading, 0, Date.now());   // "still here" — fresh ts, speed 0
+      }
+      paint();
+    }, 10000);
+    window.addEventListener('online', function () { if (installed()) flushPings(); });
+
+    return { sync: sync, installed: installed };
+  })();
+
   /* ── route picker: Reorder-tab slots + already-sent routes ──────────
      The office stages routes in the Load Plan's "Reorder Routes" tab (Apps
      Script store — same URL + token as route_reorder.js). Every slot for
@@ -963,6 +1116,7 @@
     var main = document.getElementById('main');
     var footer = document.getElementById('footer');
     var d = state.data;
+    GPS.sync();   // S3: keep phone GPS matched to route state on EVERY render path (incl. the early returns below); no-op unless the native plugin is present
     document.getElementById('vanChipTxt').textContent = state.van || 'VAN';
     if (!d) { main.innerHTML = '<div class="empty"><div class="art">📡</div><h2>Loading…</h2></div>'; return; }
     document.getElementById('devBanner').classList.toggle('show', d.tap_mode === 'dev');
