@@ -823,18 +823,36 @@
         max-width: 100vw;
       }
       
-      .plan-nav { 
-        padding: 8px 12px 0; 
-        gap: 6px; 
+      /* Mobile nav fix (2026-07-16): the tabs used to keep their full
+         desktop width (flex-shrink:0) and the nav scrolled sideways.
+         Now all four fit the screen width: the three plan tabs flex to
+         share the row (wider labels get more room), the long-form words
+         (" Plan" / " Routes", wrapped in .tab-extra) are hidden, and the
+         🚐 Drive link stays compact on the right. overflow-x:auto is
+         kept only as a safety net for extreme cases. */
+      .plan-nav {
+        padding: 8px 8px 0;
+        gap: 4px;
         overflow-x: auto;
         -webkit-overflow-scrolling: touch;
       }
-      
-      .nav-tab { 
-        padding: 12px 18px; 
-        font-size: 14px; 
-        flex-shrink: 0;
+
+      .nav-tab {
+        flex: 1 1 auto;
+        min-width: 0;
+        padding: 11px 4px;
+        font-size: 13px;
+        text-align: center;
+        white-space: nowrap;
       }
+
+      .nav-tab-drive {
+        flex: 0 0 auto;
+        padding: 11px 8px;
+        font-size: 13px;
+      }
+
+      .tab-extra { display: none; }
       
       .page { 
         padding: 10px; 
@@ -985,8 +1003,9 @@
     
     /* Responsive - Small phones */
     @media (max-width: 400px) {
-      .plan-nav { padding: 6px 8px 0; }
-      .nav-tab { padding: 10px 14px; font-size: 13px; }
+      .plan-nav { padding: 6px 6px 0; gap: 3px; }
+      .nav-tab { padding: 10px 2px; font-size: 12px; }
+      .nav-tab-drive { padding: 10px 6px; font-size: 12px; }
       .page { padding: 8px; }
       .topbar, .layout-card { padding: 10px; }
       
@@ -1251,9 +1270,9 @@
   <div class="toast-container" id="toastContainer"></div>
   
   <div class="plan-nav">
-    <div class="nav-tab active" data-plan="PM">🌆 PM Plan</div>
+    <div class="nav-tab active" data-plan="PM">🌆 PM<span class="tab-extra"> Plan</span></div>
     <div class="nav-tab" data-plan="NEXT_AM">📅 Next Day AM</div>
-    <div class="nav-tab" data-plan="REORDER">🔄 Reorder Routes</div>
+    <div class="nav-tab" data-plan="REORDER">🔄 Reorder<span class="tab-extra"> Routes</span></div>
     <a class="nav-tab-drive" href="drive/" target="_blank" rel="noopener">🚐 Drive</a>
   </div>
   
