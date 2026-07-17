@@ -1606,6 +1606,13 @@
   <!-- Reorder Routes — staging tab (added 2026-06-26). JS (route_reorder.js) builds the sections/cards. -->
   <div id="reorderView" hidden></div>
 
+  <!-- FT-SHARED modules (P4 + P5a, 2026-07-17): kennel-layout source of truth
+       + the shared van-route payload builder. Loaded before route_sender.js so
+       window.FT_PAYLOAD is ready when a Stage Route payload is built. Both are
+       OPTIONAL — every consumer keeps a full inline fallback if they fail to
+       load. -->
+  <script src="shared/ft-kennels.js"></script>
+  <script src="shared/ft-payload.js"></script>
   <!-- Stage 1 — Van Route Automation: loaded before the main IIFE so window.RouteSender is ready. -->
   <script src="route_sender.js"></script>
   <!-- Reorder Routes module — loaded after route_sender so window.RouteReorder is ready before the tab switcher binds. -->
@@ -2952,6 +2959,65 @@
           setStopValue: function (boxId, type, value) { setStopValue(boxId, type, value); },
           hydrate: function () { hydrate(); }
         });
+      }
+    })();
+  </script>
+  <!-- P4 (2026-07-17): FT_KENNELS boot-time grid assert — additive, read-only.
+       Compares each van's static kennel grid (data-pos codes, DOM order)
+       against the shared FT_KENNELS layouts. Any mismatch → console.error +
+       a small dismissible red banner. FT_KENNELS absent → silent (the static
+       grids ARE canonical until the module loads). Never rewrites the grids. -->
+  <script id="ftKennelsGridAssert">
+    (function () {
+      'use strict';
+      try {
+        var K = (typeof window !== 'undefined' && window.FT_KENNELS) ? window.FT_KENNELS : null;
+        if (!K) return;   // module absent → the static grids are canonical
+        var problems = [];
+        Object.keys(K).forEach(function (van) {
+          var layout = K[van] || {};
+          var expected = [];
+          ['side', 'back'].forEach(function (grid) {
+            (layout[grid] || []).forEach(function (row) {
+              (row || []).forEach(function (code) { expected.push(code); });
+            });
+          });
+          var actual = [];
+          var boxes = document.querySelectorAll('.box[data-box^="' + van.toLowerCase() + '-"]');
+          Array.prototype.forEach.call(boxes, function (el) {
+            var pos = el.getAttribute('data-pos');
+            if (pos) actual.push(pos);
+          });
+          if (expected.join(',') !== actual.join(',')) {
+            problems.push({ van: van, expected: expected.join(' '), actual: actual.join(' ') });
+          }
+        });
+        if (!problems.length) return;   // grids match the module → stay silent
+        problems.forEach(function (p) {
+          console.error('[FT_KENNELS drift] ' + p.van + ' — expected: ' + p.expected + ' — actual: ' + p.actual);
+        });
+        var banner = document.createElement('div');
+        banner.id = 'ftKennelsDriftBanner';
+        banner.setAttribute('style', 'position:fixed;bottom:12px;left:12px;right:12px;z-index:99999;' +
+          'background:#b91c1c;color:#fff;font:13px/1.4 system-ui,sans-serif;border-radius:8px;' +
+          'padding:10px 40px 10px 14px;box-shadow:0 4px 14px rgba(0,0,0,.35);');
+        var text = document.createElement('span');
+        text.textContent = '⚠️ FT_KENNELS drift — ' + problems.map(function (p) {
+          return p.van + ': expected [' + p.expected + '] but the page grid has [' + p.actual + ']';
+        }).join(' · ');
+        var close = document.createElement('button');
+        close.textContent = '✕';
+        close.setAttribute('aria-label', 'Dismiss kennel drift warning');
+        close.setAttribute('style', 'position:absolute;top:6px;right:8px;background:none;border:none;' +
+          'color:#fff;font-size:16px;cursor:pointer;padding:4px;');
+        close.addEventListener('click', function () {
+          if (banner.parentNode) { banner.parentNode.removeChild(banner); }
+        });
+        banner.appendChild(text);
+        banner.appendChild(close);
+        document.body.appendChild(banner);
+      } catch (e) {
+        try { console.error('[FT_KENNELS drift] assert failed to run:', e); } catch (ignore) {}
       }
     })();
   </script>
