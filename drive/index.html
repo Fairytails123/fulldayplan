@@ -427,6 +427,10 @@
 <div class="toast" id="toast"></div>
 
 <script src="kennels.js"></script>
+<!-- FT-SHARED (P3a, 2026-07-17): shared route-id rules. OPTIONAL — slotRid()
+     in the app script below keeps its full inline body as the fallback when
+     this module fails to load. -->
+<script src="../shared/ft-routeid.js"></script>
 <script>
 (function () {
   'use strict';
@@ -720,6 +724,13 @@
     return '';
   }
   function slotRid(slot) {
+    /* P3a (2026-07-17): delegate to the shared FT_ROUTEID module when it has
+       loaded (../shared/ft-routeid.js) — one route-id rule, one source. The
+       original body below is kept VERBATIM as the fallback so the app still
+       works if the module fails to load. */
+    if (typeof window !== 'undefined' && window.FT_ROUTEID && window.FT_ROUTEID.slotRid) {
+      return window.FT_ROUTEID.slotRid(slot.ctx || {}, slot.section, state.van);
+    }
     var ctx = slot.ctx || {};
     var nextAm = String(ctx.p || '').toUpperCase() === 'NEXT_AM';
     /* Half-Day runs get their OWN route-id type (2026-07-14): they used to
