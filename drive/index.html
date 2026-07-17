@@ -431,6 +431,10 @@
      in the app script below keeps its full inline body as the fallback when
      this module fails to load. -->
 <script src="../shared/ft-routeid.js"></script>
+<!-- FT-SHARED (P5b, 2026-07-17): shared van-route payload builders. OPTIONAL —
+     queuePayload() in the app script below keeps its full inline body as the
+     fallback when this module fails to load. -->
+<script src="../shared/ft-payload.js"></script>
 <script>
 (function () {
   'use strict';
@@ -781,6 +785,15 @@
   function normSet(arr) { var m = {}; (arr || []).forEach(function (n) { m[normNm(n)] = true; }); return m; }
   /* Faithful port of route_reorder.js sendFinal()'s payload build — keep the two in step. */
   function queuePayload(slot) {
+    /* P5b (2026-07-17): delegate to the shared FT_PAYLOAD module when it has
+       loaded (../shared/ft-payload.js) — one payload rule, one source. The
+       original body below is kept VERBATIM as the fallback so the app still
+       works if the module fails to load. Same contract either way: the build
+       reads only slot.ctx and returns the payload object, or null when the
+       flattened route is empty (buildFinal mirrors that null). */
+    if (typeof window !== 'undefined' && window.FT_PAYLOAD && FT_PAYLOAD.buildFinal) {
+      return FT_PAYLOAD.buildFinal(slot.ctx || {}, { nowIso: new Date().toISOString() });
+    }
     var ctx = slot.ctx || {};
     var ggS = normSet(ctx.gg || []), aaS = normSet(ctx.aa || []);
     var dogs = [];
