@@ -1308,6 +1308,10 @@
     else { btn.disabled = false; lbl.textContent = '📍 Send Final Route'; }
   }
 
+  // ⚠️ MIRROR RULE (2026-07-11): the VAN-ETA driver app (fulldayplan repo,
+  // drive/index.html, queuePayload()) carries a faithful PORT of this payload
+  // build so drivers can send-and-open a staged route themselves. Any change to
+  // the payload contract below must be applied there too.
   function sendFinal(slotKey) {
     var st = slots[slotKey];
     if (!st) return;
@@ -1319,6 +1323,22 @@
     var dogs = flattenWithMarkers(o, ctx.gg || [], ctx.aa || []);
     if (!dogs.length) { toast('Nothing to send', 'error'); return; }
 
+    // P5c (2026-07-17): delegate the payload-object CONSTRUCTION to the shared
+    // FT_PAYLOAD module when it has loaded (shared/ft-payload.js) — one payload
+    // rule, one source. Only the object build is delegated; the surrounding
+    // flow (button state, currentOrderIds read, postN8n, toasts, card marking)
+    // is untouched. The staged ctx.o is overridden with the CURRENT drag order
+    // o read from the DOM above — the send must reflect what staff see, not
+    // the staged order. The original construction below is kept VERBATIM as
+    // the fallback and runs whenever the module is missing or built nothing.
+    var payload = null;
+    if (typeof window !== 'undefined' && window.FT_PAYLOAD && FT_PAYLOAD.buildFinal) {
+      var dctx = {};
+      Object.keys(ctx).forEach(function (k) { dctx[k] = ctx[k]; });
+      dctx.o = o;
+      payload = FT_PAYLOAD.buildFinal(dctx, { nowIso: new Date().toISOString() });
+    }
+    if (!payload) {
     // EXACTLY the normal first-send payload + skip_optimisation:true so RouteXL
     // returns the staff order WITH ETAs and Format Route renders the byte-identical
     // "🚐 … route ready" message. NO is_reorder / is_update / stage_only.
@@ -1357,6 +1377,7 @@
       return { dog: e.d, address: e.a, lat: Number(e.lat), lng: Number(e.lng) };
     });
     if (extra.length) payload.extra_stops = extra;
+    } // P5c: end of the verbatim fallback construction (a module-built payload skips it)
 
     setBtn(btn, 'sending');
     postN8n(payload).then(function (res) {
