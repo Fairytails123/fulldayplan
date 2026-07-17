@@ -145,6 +145,28 @@
   //     endAddress:      string // used only when returnToCentre === false
   //   }
   function buildPayload(van, opts) {
+    // P5-consumer-1 (2026-07-17): delegate to the shared FT_PAYLOAD module
+    // when it has loaded (shared/ft-payload.js) — ONE payload source for the
+    // STAGE / FINAL / DRIVE builders. The spec is assembled from the SAME
+    // state readers the original body uses. The original body below is kept
+    // VERBATIM as the fallback so staging still works if the module fails to
+    // load.
+    if (window.FT_PAYLOAD && window.FT_PAYLOAD.buildStage) {
+      var specOpts = (typeof opts === 'boolean' || opts == null)
+        ? { returnToCentre: opts !== false } : opts;
+      return window.FT_PAYLOAD.buildStage({
+        van: van,
+        period: getCurrentPeriod(),
+        departure_time: getDepartureTime(van),
+        run_type: getRunType(van),
+        dogs: getDogsForVan(van),
+        positions: getPositionsForVan(van),
+        start_from_centre: specOpts.startFromCentre,
+        start_address: specOpts.startAddress,
+        return_to_centre: specOpts.returnToCentre,
+        end_address: specOpts.endAddress
+      }, new Date().toISOString());
+    }
     if (typeof opts === 'boolean' || opts == null) {
       opts = { returnToCentre: opts !== false };
     }
