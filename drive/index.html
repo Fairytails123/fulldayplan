@@ -213,6 +213,9 @@
   .chip.key { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 17px; letter-spacing: 0.14em; color: var(--warn); border-color: #4a3d12; background: #201a08; }
   .chip.kennel { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
   .chip.kennel small { color: var(--ink-faint); font-weight: 600; letter-spacing: 0.02em; }
+  /* FT-GROOMING (2026-07-17): grooming leg badge — H2S home→salon · S2H salon→home ·
+     D2S daycare→shop · S2D shop→daycare (values whitelisted server-side by W1). */
+  .chip.groom { color: #e88cd0; border-color: #5c2a4e; background: #26101f; font-weight: 800; letter-spacing: 0.08em; }
   .addr { margin-top: 9px; font-size: 14px; color: var(--ink-dim); overflow-wrap: anywhere; }
   .note {
     margin-top: 9px; font-size: 14px; background: #241d0d; color: #fde68a;
@@ -1049,6 +1052,10 @@
     var chips = '';
     if (s.kennel) chips += '<span class="chip kennel">📦 ' + esc(s.kennel) + (kw ? ' <small>' + kw + '</small>' : '') + '</span>';
     if (s.key_code) chips += '<span class="chip key">🔑 ' + esc(s.key_code) + '</span>';
+    // FT-GROOMING leg badge (W15 fields, additive 2026-07-17): H2S/S2H/D2S/S2D
+    // say which salon leg this stop is; a grooming stop with no code still gets ✂️.
+    if (s.leg_code) chips += '<span class="chip groom">✂️ ' + esc(s.leg_code) + '</span>';
+    else if (String(s.is_grooming) === 'Y') chips += '<span class="chip groom">✂️ grooming</span>';
     if (s.window_start && s.window_end) chips += '<span class="chip num">🕐 ' + esc(s.window_start) + '–' + esc(s.window_end) + '</span>';
     if (chips) h += '<div class="chips">' + chips + '</div>';
     if (s.address) h += '<div class="addr">📍 ' + esc(s.address) + '</div>';
