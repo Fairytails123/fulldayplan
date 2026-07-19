@@ -2109,22 +2109,56 @@
         }
       }
 
+      // FIXED 2026-07-20 — two silent-failure gaps that made Share look "dead":
+      //   1. No timeout. If the Apps Script call hung (it is the slowest hop in
+      //      the app), the button sat on "☁️ Sharing..." DISABLED for ever, with
+      //      no error and no way back short of a page reload — indistinguishable
+      //      from a broken button. Now aborted at 30s, matching route_sender.js.
+      //   2. Any response counted as success. savePlan answers with a plain
+      //      timestamp, but a backend fault answers 'Error: …' or {"error":"…"}
+      //      with HTTP 200 — so a plan that never saved still toasted "Plan
+      //      shared to cloud!" and staff on the other device silently got stale
+      //      data. The response is now validated before we claim success.
+      const SHARE_TIMEOUT_MS = 30000;
+
       async function cloudShare() {
         shareBtn.disabled = true;
         shareBtn.textContent = "☁️ Sharing...";
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), SHARE_TIMEOUT_MS);
         try {
           const res = await fetch(SCRIPT_URL, {
             method: 'POST',
             body: JSON.stringify({ action: 'savePlan', state: state, planId: currentPlan }),
-            redirect: 'follow'
+            redirect: 'follow',
+            signal: controller.signal
           });
-          const time = await res.text();
+          if (!res.ok) throw new Error(`Server responded ${res.status}`);
+          const time = (await res.text() || '').trim();
+          // savePlan returns the saved timestamp; anything error-shaped is a
+          // failure even though it arrived with HTTP 200.
+          let backendError = '';
+          if (!time) {
+            backendError = 'empty response';
+          } else if (/^Error\b/i.test(time)) {
+            backendError = time;
+          } else if (time.charAt(0) === '{') {
+            try {
+              const parsed = JSON.parse(time);
+              if (parsed && parsed.error) backendError = parsed.error;
+            } catch (ignore) {}
+          }
+          if (backendError) throw new Error(backendError);
           syncTimeEl.textContent = `Cloud: ${time}`;
-          showToast('Plan shared to cloud!', 'success');
-        } catch(e) { 
+          showToast(`${currentPlan.replace('_', ' ')} plan shared to cloud!`, 'success');
+        } catch(e) {
           console.error("Share Error:", e);
-          showToast('Share failed. Check permissions.', 'error');
+          const reason = e && e.name === 'AbortError'
+            ? 'timed out after 30s'
+            : (e && e.message ? e.message : 'unknown error');
+          showToast(`Share FAILED (${reason}) — the plan was NOT saved to the cloud. Try again.`, 'error');
         } finally {
+          clearTimeout(timer);
           shareBtn.disabled = false;
           shareBtn.textContent = "☁️ Share";
         }
