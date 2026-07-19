@@ -760,6 +760,14 @@
       animation: slideIn 0.3s ease, fadeOut 0.3s ease 2.7s forwards;
       max-width: 320px;
     }
+
+    /* Long-hold variant (2026-07-19): warnings carrying name lists (the
+       staging-tray nudge) fade at 7.7s instead of 2.7s and get more width —
+       route_reorder.js toast() adds this class and keeps the DOM node for 8s. */
+    .toast.toast-hold {
+      animation: slideIn 0.3s ease, fadeOut 0.3s ease 7.7s forwards;
+      max-width: 480px;
+    }
     
     .toast-success { background: var(--success); }
     .toast-error { background: var(--danger); }
@@ -1935,7 +1943,29 @@
         
         return dogs;
       }
-      
+
+      // ADDED 2026-07-19: dogs that will NOT ride the transmit — still in the
+      // staging tray (a tile with no kennel placement; XV priority pickups land
+      // there by design), or placed in a box with no stop number. Surfaced in
+      // the transmit confirm so nobody is silently left behind.
+      function collectLeftBehindDogs() {
+        const placed = new Set();
+        Object.values(state.placements).forEach(ids => (ids || []).forEach(id => placed.add(id)));
+        const tray = Object.keys(state.tiles)
+          .filter(id => !placed.has(id))
+          .map(id => state.tiles[id].text);
+        const noStop = [];
+        Object.entries(state.placements).forEach(([boxId, tileIds]) => {
+          const stopObj = getStopObj(boxId);
+          if (stopObj.primary && stopObj.primary.trim() !== '') return;
+          (tileIds || []).forEach(id => {
+            const tile = state.tiles[id];
+            if (tile) noStop.push(tile.text);
+          });
+        });
+        return { tray, noStop };
+      }
+
       async function transmitPlan() {
         if (transmitComplete) {
           showToast('Plan already transmitted. Clear and redo to transmit again.', 'warning');
@@ -1964,8 +1994,13 @@
         };
         
         const planLabel = currentPlan === 'NEXT_AM' ? 'Next Day AM' : 'PM';
-        const confirmMsg = `Send ${validDogs.length} dogs (${planLabel}) to Telegram for review?` + 
+        // ADDED 2026-07-19: staging-tray nudge — dogs in the tray or without a
+        // stop number silently never transmit; say so before committing.
+        const leftBehind = collectLeftBehindDogs();
+        const confirmMsg = `Send ${validDogs.length} dogs (${planLabel}) to Telegram for review?` +
           (invalidDogs.length > 0 ? `\n\n⚠️ ${invalidDogs.length} dogs will be skipped (not in list):\n${invalidDogs.map(d => d.inputName).join(', ')}` : '') +
+          (leftBehind.tray.length > 0 ? `\n\n🔴 ${leftBehind.tray.length} dog${leftBehind.tray.length === 1 ? '' : 's'} still in the STAGING TRAY — not going on any route:\n${leftBehind.tray.join(', ')}` : '') +
+          (leftBehind.noStop.length > 0 ? `\n\n⚠️ ${leftBehind.noStop.length} dog${leftBehind.noStop.length === 1 ? '' : 's'} placed but with NO stop number — not transmitted:\n${leftBehind.noStop.join(', ')}` : '') +
           `\n\nAfter reviewing in Telegram, type /send to submit to JotForm.`;
         
         if (!confirm(confirmMsg)) return;
