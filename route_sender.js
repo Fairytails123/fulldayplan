@@ -435,28 +435,50 @@
 
     setButtonState(btn, 'sending');
     postToN8n(payload).then(function (res) {
-      setButtonState(btn, 'success');
-      // Reorder Routes (2026-06-26): nudge staff to the staging tab.
-      try {
-        if (window.RouteReorder && window.RouteReorder.toast) {
-          window.RouteReorder.toast('Staged in Reorder Routes — drag to reorder, then Send Final', 'info');
+      // FIXED 2026-07-20 — honour the webhook's OWN success flag. Previously any
+      // HTTP 200 flipped the button straight to "✅ Staged", but n8n answers 200
+      // with {ok:false} whenever the staging pipeline itself failed (dog not
+      // found, ambiguous name, RouteXL down, every dog skipped). A route that
+      // was never staged therefore looked identical to one that was, and staff
+      // only discovered it when the Reorder Routes tab came up empty. Parse the
+      // body FIRST, then decide which state the button lands in.
+      var parseBody = (res && typeof res.json === 'function')
+        ? res.json().catch(function () { return null; })
+        : Promise.resolve(null);
+      return parseBody.then(function (body) {
+        // An unparseable/absent body keeps the pre-2026-07-20 benefit of the
+        // doubt, so a future response-shape change can never block a real send.
+        if (body && body.ok === false) {
+          throw new Error('n8n reported the route was NOT staged (ok:false)');
         }
-      } catch (e) {}
-      setTimeout(function () { setButtonState(btn, 'idle'); }, SUCCESS_HOLD_MS);
-      console.log('[RouteSender] Sent ' + van + ' route to N8N:', payload);
-      // Additive: drop the optimised stop numbers n8n returns into the kennels.
-      // Runs independently of the success state above — any parse/match issue
-      // is logged, never surfaced to the button.
-      if (res && typeof res.json === 'function') {
-        res.json().then(function (body) {
+        setButtonState(btn, 'success');
+        // Reorder Routes (2026-06-26): nudge staff to the staging tab.
+        try {
+          if (window.RouteReorder && window.RouteReorder.toast) {
+            window.RouteReorder.toast('Staged in Reorder Routes — drag to reorder, then Send Final', 'info');
+          }
+        } catch (e) {}
+        setTimeout(function () { setButtonState(btn, 'idle'); }, SUCCESS_HOLD_MS);
+        console.log('[RouteSender] Sent ' + van + ' route to N8N:', payload);
+        // Additive: drop the optimised stop numbers n8n returns into the kennels.
+        // Any match issue is logged, never surfaced to the button.
+        try {
           if (body && Array.isArray(body.stops) && body.stops.length) {
             applyReturnedStops(van, body.stops, sentPeriod);
           }
-        }).catch(function (e) {
-          console.warn('[RouteSender] No stop numbers in response (' + van + '):', e);
-        });
-      }
+        } catch (e) {
+          console.warn('[RouteSender] Could not apply stop numbers (' + van + '):', e);
+        }
+      });
     }).catch(function (err) {
+      // Make a failed stage loud — the button alone is easy to miss.
+      try {
+        if (window.RouteReorder && window.RouteReorder.toast) {
+          window.RouteReorder.toast(
+            van + ' was NOT staged — ' + (err && err.message ? err.message : 'send failed') +
+            '. Check the dog names against the master sheet, then try again.', 'warning');
+        }
+      } catch (e) {}
       console.error('[RouteSender] Send failed for ' + van + ':', err);
       setButtonState(btn, 'failed');
       setTimeout(function () { setButtonState(btn, 'idle'); }, FAILURE_HOLD_MS);
