@@ -430,6 +430,9 @@
     // different plan if the user switches tabs before the response arrives.
     var sentPeriod = payload.period;
 
+    // Staging-tray nudge (2026-07-19) — non-blocking, never stops the send.
+    warnTrayDogs();
+
     setButtonState(btn, 'sending');
     postToN8n(payload).then(function (res) {
       setButtonState(btn, 'success');
@@ -458,6 +461,62 @@
       setButtonState(btn, 'failed');
       setTimeout(function () { setButtonState(btn, 'idle'); }, FAILURE_HOLD_MS);
     });
+  }
+
+  // ------------------------------------------------------------------
+  // Staging-tray nudge (added 2026-07-19). Dogs left in the tray (a tile
+  // with no kennel placement — XV priority pickups land there by design
+  // since the whiteboard transfer stopped auto-vanning them) ride NO
+  // route. Non-blocking warning every time a route is staged while the
+  // tray still holds dogs, so nobody is silently left behind.
+  // ------------------------------------------------------------------
+  function getTrayDogs() {
+    var st = safeState();
+    if (!st || !st.tiles) return [];
+    var placed = {};
+    Object.keys(st.placements || {}).forEach(function (boxId) {
+      (st.placements[boxId] || []).forEach(function (id) { placed[id] = true; });
+    });
+    return Object.keys(st.tiles)
+      .filter(function (id) { return !placed[id]; })
+      .map(function (id) { return String((st.tiles[id] && st.tiles[id].text) || '').trim(); })
+      .filter(Boolean);
+  }
+
+  function warnTrayDogs() {
+    try {
+      var tray = getTrayDogs();
+      if (!tray.length) return;
+      var msg = '🔴 ' + tray.length + ' dog' + (tray.length === 1 ? '' : 's') +
+        ' still in the staging tray (on no route): ' + tray.join(', ');
+      if (window.RouteReorder && window.RouteReorder.toast) {
+        window.RouteReorder.toast(msg, 'warning');
+      } else {
+        console.warn('[RouteSender] ' + msg);
+      }
+    } catch (e) { /* nudge only — never block a send */ }
+  }
+
+  // Tray check for a SPECIFIC plan, read from the page's saved localStorage
+  // snapshot (van_v5_<planId>) rather than the live state — the Reorder tab's
+  // Send Final Route may commit a slot belonging to a plan that is NOT the one
+  // currently loaded in the page. The page localSaves on every mutation, so
+  // the snapshot is current. Used by route_reorder.js sendFinal (2026-07-19).
+  function getTrayDogsForPlan(planId) {
+    try {
+      var raw = localStorage.getItem('van_v5_' + String(planId || ''));
+      if (!raw) return [];
+      var st = JSON.parse(raw);
+      if (!st || !st.tiles) return [];
+      var placed = {};
+      Object.keys(st.placements || {}).forEach(function (boxId) {
+        (st.placements[boxId] || []).forEach(function (id) { placed[id] = true; });
+      });
+      return Object.keys(st.tiles)
+        .filter(function (id) { return !placed[id]; })
+        .map(function (id) { return String((st.tiles[id] && st.tiles[id].text) || '').trim(); })
+        .filter(Boolean);
+    } catch (e) { return []; }
   }
 
   function bindButtons(root) {
@@ -524,6 +583,10 @@
     // Stop-number write-back (added 2026-05-30). Call from DevTools to test:
     //   RouteSender.applyReturnedStops('BV', [{name:'Arlo',stop:1}])
     applyReturnedStops: applyReturnedStops,
+    // Staging-tray nudge helpers (2026-07-19) — getTrayDogsForPlan is read by
+    // route_reorder.js sendFinal (plan-matched left-behind guard).
+    getTrayDogs: getTrayDogs,
+    getTrayDogsForPlan: getTrayDogsForPlan,
     // For Stage 2+ when you want to wire the URL in code rather than
     // editing this file.
     setWebhookUrl: function (url) { N8N_WEBHOOK_URL = String(url || ''); }
