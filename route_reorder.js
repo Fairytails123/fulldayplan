@@ -169,9 +169,14 @@
     if (!c) { c = document.createElement('div'); c.className = 'toast-container'; document.body.appendChild(c); }
     var t = document.createElement('div');
     t.className = 'toast toast-' + (type || 'info');
+    // Warnings hold ~8 s (2026-07-19): they carry name lists (staging-tray
+    // nudge) that can't be read inside the default 3 s / 2.7 s CSS fade.
+    // .toast-hold overrides the baked-in fadeOut (CSS in index_v6.html).
+    var hold = (type === 'warning') ? 8000 : 3000;
+    if (hold > 3000) t.className += ' toast-hold';
     t.textContent = msg;
     c.appendChild(t);
-    setTimeout(function () { if (t.parentNode) t.parentNode.removeChild(t); }, 3000);
+    setTimeout(function () { if (t.parentNode) t.parentNode.removeChild(t); }, hold);
   }
 
   // ---- network (preflight-free idiom, mirrors the page's Share/Fetch) -----
@@ -1322,6 +1327,25 @@
     var o = currentOrderIds(ol).map(function (id) { return st.stopsById[id]; });
     var dogs = flattenWithMarkers(o, ctx.gg || [], ctx.aa || []);
     if (!dogs.length) { toast('Nothing to send', 'error'); return; }
+
+    // Staging-tray guard (2026-07-19): dogs left in the Load Plan's staging
+    // tray ride NO route, and the tray is hidden (display:none) while this
+    // tab is open — so ask before committing the send. Plan-matched via the
+    // slot's period (NEXT_AM slots → the Next Day AM plan; PM + Half-Day
+    // slots → the PM plan), read from the page's saved plan snapshot so the
+    // currently-loaded plan tab doesn't matter. Errors never block the send.
+    try {
+      if (window.RouteSender && window.RouteSender.getTrayDogsForPlan) {
+        var trayPlan = (String(ctx.p || '').toUpperCase() === 'NEXT_AM') ? 'NEXT_AM' : 'PM';
+        var trayDogs = window.RouteSender.getTrayDogsForPlan(trayPlan);
+        if (trayDogs.length) {
+          var trayMsg = '🔴 ' + trayDogs.length + ' dog' + (trayDogs.length === 1 ? '' : 's') +
+            ' still in the Load Plan staging tray (on no route):\n' + trayDogs.join(', ') +
+            '\n\nSend this route anyway?';
+          if (!window.confirm(trayMsg)) return;
+        }
+      }
+    } catch (e) { /* nudge only — never block a send on error */ }
 
     // P5c (2026-07-17): delegate the payload-object CONSTRUCTION to the shared
     // FT_PAYLOAD module when it has loaded (shared/ft-payload.js) — one payload
