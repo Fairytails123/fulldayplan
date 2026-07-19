@@ -311,7 +311,26 @@
       '.reorder-arrow{background:transparent;border:0;}' +
       '.reorder-arrow i{display:block;width:0;height:0;border-left:6px solid #0284c7;' +
         'border-top:4.5px solid transparent;border-bottom:4.5px solid transparent;' +
-        'filter:drop-shadow(0 0 1px #fff) drop-shadow(0 0 1px #fff);}';
+        'filter:drop-shadow(0 0 1px #fff) drop-shadow(0 0 1px #fff);}' +
+      // ---- per-tile address line + Map Check button (2026-07-19) ----
+      // The name+address column takes the flex slot .reorder-name held alone;
+      // .reorder-name keeps its base ellipsis styling but stops flexing itself.
+      '.reorder-tile .reorder-main{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px;}' +
+      '.reorder-tile .reorder-main .reorder-name{flex:none;}' +
+      '.reorder-tile .reorder-addr{font-size:12px;color:#475569;overflow:hidden;text-overflow:ellipsis;' +
+        'white-space:nowrap;max-width:100%;}' +
+      '.reorder-tile .reorder-mapcheck{flex:0 0 auto;border:1px solid #bae6fd;background:#f0f9ff;color:#075985;' +
+        'font-size:12px;font-weight:700;padding:5px 9px;border-radius:8px;cursor:pointer;min-height:30px;' +
+        'line-height:1.1;white-space:nowrap;}' +
+      '.reorder-tile .reorder-mapcheck:hover{background:#e0f2fe;}' +
+      // Phones (review 2026-07-19): the full label starves the name/address
+      // column at 320-390px — collapse the button to the 🗺 icon (the title/
+      // aria-label keep it discoverable) and tighten the tile gap.
+      '@media (max-width:600px){' +
+        '.reorder-tile{gap:6px;}' +
+        '.reorder-tile .reorder-mapcheck-label{display:none;}' +
+        '.reorder-tile .reorder-mapcheck{padding:5px 8px;}' +
+      '}';
     var el = document.createElement('style');
     el.id = 'reorder-extra-styles';
     el.textContent = css;
@@ -604,6 +623,34 @@
     return null;
   }
 
+  // { <normKey(dog)>: address } — the ROUTED address per member (ctx.ad, staged
+  // by Format Route since 2026-07-19; twin of ctx.c). An added dog's ctx.ex
+  // address wins, mirroring coordIndexFor's ex-over-c precedence. Routes staged
+  // BEFORE the ctx.ad rollout simply have no entries — those tiles show no
+  // address line until the route is re-staged (same as the ctx.c precedent).
+  function addrIndexFor(ctx) {
+    var idx = {};
+    var ad = (ctx && ctx.ad && typeof ctx.ad === 'object' && !Array.isArray(ctx.ad)) ? ctx.ad : {};
+    Object.keys(ad).forEach(function (k) {
+      var a = String(ad[k] || '').trim();
+      if (a) idx[normKey(k)] = a;
+    });
+    ((ctx && ctx.ex) || []).forEach(function (e) {
+      if (!e) return;
+      var k = normKey(e.d);
+      var a = String((e && e.a) || '').trim();
+      if (k && a) idx[k] = a;
+    });
+    return idx;
+  }
+  function stopAddr(members, idx) {
+    for (var i = 0; i < (members || []).length; i++) {
+      var a = idx[normKey(members[i])];
+      if (a) return a;
+    }
+    return '';
+  }
+
   function ctxPointOr(p, fallback) {
     if (Array.isArray(p) && p.length >= 2 && isFinite(Number(p[0])) && isFinite(Number(p[1]))) {
       return [Number(p[0]), Number(p[1])];
@@ -828,10 +875,15 @@
         L.marker(plot.start, { icon: pinIcon(L, '🏠', 'reorder-pin--start'), zIndexOffset: -100 })
           .bindPopup('<div class="reorder-pop"><b>Start</b></div>').addTo(st.mapLayer);
       }
+      // Marker references keyed by member-set so Map Check (2026-07-19) can open
+      // a stop's popup even when its pin was fanned out away from the true point.
+      // Rebuilt on every sync — stale references must never survive clearLayers.
+      st.markersByMembers = {};
       plot.stops.forEach(function (s, i) {
         // EARLIER stops paint on top: if anything still overlaps, you want to see stop 1.
-        L.marker(placed[i].pin, { icon: pinIcon(L, String(s.n)), zIndexOffset: 1000 - s.n })
+        var mk = L.marker(placed[i].pin, { icon: pinIcon(L, String(s.n)), zIndexOffset: 1000 - s.n })
           .bindPopup(popupHtml(s.n, s.members, s.pt)).addTo(st.mapLayer);
+        st.markersByMembers[s.members.join('+')] = mk;
       });
       if (plot.end) {
         // A return-to-Centre route ends where it started; don't stack a 2nd pin there.
@@ -904,7 +956,15 @@
       setTimeout(function () {
         if (!st.map || !st.mapOpen) return;
         st.map.invalidateSize();
-        fitMap(st);
+        // Map Check (2026-07-19): a queued single-stop focus replaces the
+        // fit-all, so the requested pin is front and centre on first paint.
+        if (st.pendingFocus) {
+          var pf = st.pendingFocus;
+          st.pendingFocus = null;
+          focusStop(st, pf.members, pf.pt);
+        } else {
+          fitMap(st);
+        }
       }, 0);
     }).catch(function () {
       toast('Could not load the map — check the connection and try again', 'error');
@@ -914,6 +974,7 @@
   function closeMap(st) {
     exitFullscreenFor(st);           // never leave a full-screen overlay on a hidden map
     st.mapOpen = false;
+    st.pendingFocus = null;          // a queued Map Check focus dies with the map
     var wrap = st.card && st.card.querySelector('.reorder-mapwrap');
     var btn = st.card && st.card.querySelector('.reorder-mapbtn');
     if (wrap) wrap.hidden = true;
@@ -924,6 +985,41 @@
     var st = slots[slotKey];
     if (!st || !st.card) return;
     if (st.mapOpen) closeMap(st); else openMap(st);
+  }
+
+  // Centre the map on one stop's TRUE point and open its popup. animate:false —
+  // the zoom applies synchronously, its zoomend syncMap rebuild runs NOW, and
+  // the marker looked up below is the fresh post-rebuild one. Guarded like
+  // syncMap: a map error must never break the tab.
+  function focusStop(st, members, pt) {
+    try {
+      if (!st.map || !st.mapOpen) return;
+      st.map.invalidateSize();
+      st.map.setView(pt, Math.max(st.map.getZoom() || 0, 16), { animate: false });
+      var mk = st.markersByMembers && st.markersByMembers[members.join('+')];
+      if (mk && mk.openPopup) mk.openPopup();
+    } catch (e) { /* never let the map break the tab */ }
+  }
+
+  // "🗺 Map Check" (2026-07-19): show ONE stop's exact routed location. Opens the
+  // card's map if it isn't open, then centres on the stop and opens its popup
+  // (name + "Open in Google Maps"). Coordinates resolve exactly like the pins
+  // themselves (coordIndexFor — ctx.ex wins over ctx.c), so an ALT dog's pin is
+  // its routed SECOND address. When the map has to open first, the focus is
+  // QUEUED (st.pendingFocus) and consumed by openMap's ready callback in place
+  // of the fit-all — deterministic, no race with fitMap.
+  function mapCheckStop(st, stopId) {
+    var members = (st && st.stopsById && st.stopsById[stopId]) || [];
+    var ctx = (st && st.record && st.record.ctx) || {};
+    var pt = stopCoord(members, coordIndexFor(ctx));
+    if (!pt) {
+      toast('No map location for ' + (members.join(' & ') || 'this dog') +
+        ' — re-stage this route from the Load Plan', 'info');
+      return;
+    }
+    if (st.mapOpen && st.map) { focusStop(st, members, pt); return; }
+    st.pendingFocus = { members: members, pt: pt };
+    openMap(st);
   }
 
   function destroyMap(st) {
@@ -1063,6 +1159,9 @@
     var gg = normSet(ctx.gg || []);
     var aa = normSet(ctx.aa || []);
     var solo = o.length < 2;
+    // Per-tile address line + Map Check (2026-07-19): the routed address per
+    // member (ctx.ad, ex wins). Empty for routes staged before the rollout.
+    var addrIdx = addrIndexFor(ctx);
     st.stopsById = {};
     o.forEach(function (members, i) {
       members = members || [];
@@ -1077,18 +1176,37 @@
       li.innerHTML =
         '<span class="reorder-pos">' + (i + 1) + '</span>' +
         (solo ? '' : '<span class="reorder-grip" aria-hidden="true">⠿</span>') +
-        '<span class="reorder-name"></span>' +
+        '<span class="reorder-main"><span class="reorder-name"></span>' +
+          '<span class="reorder-addr" hidden></span></span>' +
         '<span class="reorder-marks">' + marks + '</span>' +
+        '<button type="button" class="reorder-mapcheck" title="Show this address on the map"' +
+          ' aria-label="Map Check">🗺<span class="reorder-mapcheck-label"> Map Check</span></button>' +
         '<button type="button" class="reorder-del" title="Remove from route" aria-label="Remove from route">✕</button>';
       var nameEl = li.querySelector('.reorder-name');
       nameEl.textContent = members.join(' & ') || '—';
       nameEl.title = members.join(' & ');
+      // Address in small text under the name (textContent — address strings are
+      // free text and must never be interpolated into innerHTML). Hidden when
+      // this stop has no staged address (pre-rollout stage) — never "undefined".
+      var addrEl = li.querySelector('.reorder-addr');
+      var addrText = stopAddr(members, addrIdx);
+      if (addrEl && addrText) {
+        addrEl.textContent = addrText;
+        addrEl.title = addrText;
+        addrEl.hidden = false;
+      }
       // ✕ removes this stop. Drag only ever starts on the .reorder-grip handle, so a
       // plain click here can't begin a drag (no pointerdown on the tile body).
       var delBtn = li.querySelector('.reorder-del');
       if (delBtn) delBtn.addEventListener('click', function (ev) {
         ev.preventDefault(); ev.stopPropagation();
         removeStop(st, id);
+      });
+      // 🗺 Map Check — same click pattern as the ✕ (grip-only drag keeps it safe).
+      var mcBtn = li.querySelector('.reorder-mapcheck');
+      if (mcBtn) mcBtn.addEventListener('click', function (ev) {
+        ev.preventDefault(); ev.stopPropagation();
+        mapCheckStop(st, id);
       });
       ol.appendChild(li);
       if (!solo) wireGrip(st, li.querySelector('.reorder-grip'));
