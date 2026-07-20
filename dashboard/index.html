@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="robots" content="noindex, nofollow" />
+<title>Fairy Tails — Van Tracker</title>
+<link rel="stylesheet" href="leaflet.css" />
+<style>
+  :root{
+    --bg:#eef2f6; --panel:#ffffff; --ink:#0f172a; --muted:#64748b; --line:#e2e8f0;
+    --bv:#0ea5a4; --bvx:#f59e0b; --sv:#7c3aed; --stale:#94a3b8;
+    --late:#ef4444; --ontime:#16a34a; --accent:#2563eb;
+    --shadow:0 1px 2px rgba(15,23,42,.06),0 8px 24px rgba(15,23,42,.08);
+    --radius:14px;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased;
+    display:flex;flex-direction:column;overflow:hidden;
+  }
+  header{
+    display:flex;align-items:center;gap:14px;padding:12px 18px;background:var(--panel);
+    border-bottom:1px solid var(--line);box-shadow:var(--shadow);z-index:1000;flex:0 0 auto;
+  }
+  .logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:1.05rem;letter-spacing:-.01em}
+  .logo .paw{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,#0ea5a4,#2563eb);
+    display:grid;place-items:center;color:#fff;font-size:1rem}
+  .spacer{flex:1}
+  .meta{display:flex;align-items:center;gap:14px;font-size:.82rem;color:var(--muted)}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--ontime);display:inline-block;margin-right:6px;vertical-align:middle}
+  .dot.bad{background:var(--late)} .dot.warn{background:var(--bvx)}
+  .safe{padding:3px 9px;border-radius:999px;font-size:.72rem;font-weight:600;background:#ecfdf5;color:#047857;border:1px solid #a7f3d0}
+  .safe.off{background:#fef2f2;color:#b91c1c;border-color:#fecaca}
+  main{flex:1;display:flex;min-height:0}
+  #map{flex:1;min-width:0;background:#dfe6ee}
+  aside{
+    width:340px;max-width:42vw;background:var(--panel);border-left:1px solid var(--line);
+    overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:12px;flex:0 0 auto;
+  }
+  .aside-title{font-size:.74rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700;margin:2px 2px 0}
+  .card{border:1px solid var(--line);border-radius:var(--radius);padding:13px 14px;box-shadow:var(--shadow);position:relative;overflow:hidden}
+  .card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--c,#ccc)}
+  .card.stale{opacity:.72}
+  .card-top{display:flex;align-items:center;gap:9px;margin-bottom:8px}
+  .badge{font-weight:800;color:#fff;background:var(--c,#888);border-radius:8px;padding:3px 9px;font-size:.82rem;letter-spacing:.02em}
+  .rt{font-size:.78rem;color:var(--muted);font-weight:600}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto}
+  .chip{font-size:.68rem;font-weight:700;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--muted);background:#f8fafc}
+  .chip.stale{background:#f1f5f9;color:#475569;border-color:#cbd5e1}
+  .chip.arr{background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe}
+  .chip.late{background:#fef2f2;color:#b91c1c;border-color:#fecaca}
+  .chip.ontime{background:#f0fdf4;color:#15803d;border-color:#bbf7d0}
+  .stop{font-size:.94rem;font-weight:600;margin:2px 0 3px}
+  .stop small{color:var(--muted);font-weight:500}
+  .none{font-size:.86rem;color:var(--muted)}
+  .prog{height:8px;border-radius:999px;background:#eef2f6;overflow:hidden;margin:9px 0 6px}
+  .prog > i{display:block;height:100%;background:var(--c,#888);border-radius:999px;transition:width .5s ease}
+  .stat-row{display:flex;justify-content:space-between;font-size:.78rem;color:var(--muted)}
+  .stat-row b{color:var(--ink);font-weight:700}
+  .card-foot{display:flex;justify-content:flex-end;margin-top:10px;padding-top:9px;border-top:1px dashed var(--line)}
+  .reset-btn{font-size:.74rem;font-weight:700;padding:5px 11px;border-radius:9px;border:1px solid var(--line);
+    background:#f8fafc;color:#475569;cursor:pointer;transition:background .15s,color .15s}
+  .reset-btn:hover{background:#fef2f2;color:#b91c1c;border-color:#fecaca}
+  .reset-btn:disabled{opacity:.6;cursor:default}
+  .reset-btn.done{background:#f0fdf4;color:#15803d;border-color:#bbf7d0}
+  .empty{margin:auto;text-align:center;color:var(--muted);padding:30px 16px}
+  .empty .big{font-size:2.4rem;margin-bottom:6px}
+  /* map markers */
+  .van-marker{position:relative;display:grid;place-items:center;transform:translate(-50%,-50%)}
+  .van-pin{font-weight:800;color:#fff;background:var(--c);border:2.5px solid #fff;border-radius:11px;
+    padding:3px 8px;font-size:.8rem;box-shadow:0 3px 10px rgba(15,23,42,.35);white-space:nowrap}
+  .van-marker.stale .van-pin{background:var(--stale)}
+  .van-arrow{position:absolute;top:-13px;left:50%;width:0;height:0;border-left:6px solid transparent;
+    border-right:6px solid transparent;border-bottom:12px solid var(--c);transform-origin:50% 26px}
+  .van-marker.stale .van-arrow{border-bottom-color:var(--stale)}
+  .leaflet-popup-content{margin:11px 13px;font-size:.85rem;line-height:1.45}
+  .pop-h{font-weight:800;font-size:.95rem;margin-bottom:4px;display:flex;align-items:center;gap:7px}
+  .pop-sw{width:12px;height:12px;border-radius:4px;background:var(--c)}
+  .pop-row{color:#334155}
+  .pop-row span{color:var(--muted)}
+  /* banner */
+  #banner{position:fixed;left:50%;top:64px;transform:translateX(-50%);z-index:1200;
+    background:#7f1d1d;color:#fff;padding:9px 16px;border-radius:999px;font-size:.84rem;font-weight:600;
+    box-shadow:var(--shadow);display:none;align-items:center;gap:9px}
+  #banner.show{display:flex}
+  #banner .pulse{width:8px;height:8px;border-radius:50%;background:#fca5a5;animation:pulse 1.2s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+  /* key gate */
+  #gate{position:fixed;inset:0;background:rgba(15,23,42,.55);backdrop-filter:blur(3px);z-index:2000;
+    display:none;place-items:center;padding:20px}
+  #gate.show{display:grid}
+  .gate-box{background:#fff;border-radius:18px;padding:26px 24px;width:min(380px,92vw);box-shadow:var(--shadow);text-align:center}
+  .gate-box h2{margin:6px 0 4px;font-size:1.15rem}
+  .gate-box p{margin:0 0 16px;color:var(--muted);font-size:.88rem}
+  .gate-box input{width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:11px;font-size:1rem;margin-bottom:12px}
+  .gate-box button{width:100%;padding:11px;border:0;border-radius:11px;background:var(--accent);color:#fff;font-size:.95rem;font-weight:700;cursor:pointer}
+  .gate-box .err{color:var(--late);font-size:.82rem;min-height:1.1em;margin-bottom:8px}
+  @media (max-width:720px){
+    main{flex-direction:column}
+    aside{width:100%;max-width:none;max-height:44vh;border-left:0;border-top:1px solid var(--line)}
+    #map{min-height:0}
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo"><span class="paw">🐾</span><span>Fairy&nbsp;Tails · Van&nbsp;Tracker</span></div>
+  <div class="spacer"></div>
+  <div class="meta">
+    <span id="safe" class="safe">SAFE MODE</span>
+    <span id="conn"><span class="dot" id="conndot"></span><span id="connlbl">Connecting…</span></span>
+    <span id="updated">—</span>
+  </div>
+</header>
+
+<div id="banner"><span class="pulse"></span><span id="bannertext">Can’t reach the tracking server</span></div>
+
+<main>
+  <div id="map"></div>
+  <aside>
+    <div class="aside-title">Vans on route</div>
+    <div id="cards"></div>
+  </aside>
+</main>
+
+<div id="gate">
+  <div class="gate-box">
+    <div style="font-size:2rem">🔒</div>
+    <h2>Van Tracker</h2>
+    <p>Enter the access key to view live van positions.</p>
+    <div class="err" id="gateerr"></div>
+    <input id="gatekey" type="password" placeholder="Access key" autocomplete="off" />
+    <button id="gatego">View map</button>
+  </div>
+</div>
+
+<script src="leaflet.js"></script>
+<script>
+(function(){
+  "use strict";
+  // ---- config ----
+  var API = "https://auto.thefairytails.co.uk/webhook/van-eta-dash-r7k2";
+  var RESET_API = "https://auto.thefairytails.co.uk/webhook/van-eta-route-reset-k9r2";
+  var POLL_MS = 15000;
+  var HASTINGS = [50.856, 0.573];
+  var VAN_COLOURS = { BV:"#0ea5a4", BVX:"#f59e0b", SV:"#7c3aed" };
+  var LS_KEY = "vaneta_dash_key";
+  var FIRST_FIT_REFIT_MS = 4000;   // re-apply the initial fitBounds if the layout resizes within this window
+
+  var el = function(id){ return document.getElementById(id); };
+
+  // localStorage can throw (blocked site data, some private modes) — never let that kill the page
+  function lsGet(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
+  function lsSet(k,v){ try{ localStorage.setItem(k,v); }catch(e){} }
+  function lsRemove(k){ try{ localStorage.removeItem(k); }catch(e){} }
+
+  // ---- access key ----
+  function urlKey(){ try{ return new URLSearchParams(location.search).get("key"); }catch(e){ return null; } }
+  var accessKey = urlKey() || lsGet(LS_KEY) || "";
+  if (urlKey()){ lsSet(LS_KEY, urlKey()); // stash then clean the URL so the key isn't shoulder-surfed
+    try{ history.replaceState(null,"",location.pathname); }catch(e){} }
+
+  // ---- map ----
+  var map = L.map("map",{zoomControl:true,attributionControl:true}).setView(HASTINGS, 12);
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{
+    maxZoom:19, attribution:'&copy; OpenStreetMap contributors'
+  }).addTo(map);
+  var markers = {};   // van -> L.marker
+  var firstFit = true;
+  var firstFitBounds = null, firstFitAt = 0;
+
+  // Leaflet measures its container at init; if the flex layout settles a moment later
+  // the map can render smaller than its box. Re-measure on any container size change,
+  // and if the initial fitBounds ran just before the correction, redo it for the new size.
+  function fixSize(){
+    try{
+      map.invalidateSize(false);
+      if(firstFitBounds && (Date.now()-firstFitAt) < FIRST_FIT_REFIT_MS){ map.fitBounds(firstFitBounds,{maxZoom:15}); }
+    }catch(e){ if(window.console && console.warn) console.warn("Map resize failed", e); }
+  }
+  if (window.ResizeObserver){
+    new ResizeObserver(fixSize).observe(el("map"));   // fires on observe and on every container size change
+  } else {
+    // No ResizeObserver (old WebViews): watch the container dimensions instead, so a
+    // layout that settles late still gets corrected. Window resizes are already
+    // handled by Leaflet's own trackResize.
+    window.addEventListener("load", fixSize);
+    var mapW = 0, mapH = 0;
+    setInterval(function(){
+      var m = el("map");
+      if(m && (m.clientWidth !== mapW || m.clientHeight !== mapH)){ mapW = m.clientWidth; mapH = m.clientHeight; fixSize(); }
+    }, 1000);
+  }
+
+  // ---- elements ----
+  var cardsEl = el("cards"), bannerEl = el("banner"), gateEl = el("gate");
+
+  function heading(v){ return (v.heading===null||v.heading===undefined||isNaN(v.heading))?null:Number(v.heading); }
+  function fmtAge(s){ if(s===null||s===undefined) return "no signal"; s=Math.max(0,s|0);
+    if(s<60) return s+"s ago"; if(s<3600) return Math.round(s/60)+" min ago"; return Math.round(s/3600)+" h ago"; }
+  function driftLabel(d){ d=Math.round(d||0);
+    if(d<=-1) return {t:(-d)+" min early",c:"ontime"};
+    if(d<=5) return {t:"on time",c:"ontime"};
+    return {t:d+" min late",c:"late"}; }
+
+  function vanMarkerIcon(v){
+    var col = VAN_COLOURS[v.van] || "#475569";
+    var hd = heading(v);
+    var arrow = hd===null ? "" :
+      '<div class="van-arrow" style="transform:translateX(-50%) rotate('+hd+'deg)"></div>';
+    var html = '<div class="van-marker '+(v.stale?"stale":"")+'" style="--c:'+col+'">'+
+               arrow+'<div class="van-pin">'+esc(v.van)+'</div></div>';
+    return L.divIcon({className:"", html:html, iconSize:[1,1], iconAnchor:[0,0]});
+  }
+  function popupHtml(v){
+    var col = VAN_COLOURS[v.van] || "#475569";
+    var cs = v.current_stop;
+    var d = driftLabel(v.drift_min);
+    var rows = "";
+    rows += '<div class="pop-row"><span>Route:</span> '+esc(v.route_id||"—")+'</div>';
+    if(cs) rows += '<div class="pop-row"><span>'+(v.arrived?"At stop:":"Next stop:")+'</span> '+esc(cs.seq)+'. '+esc(cs.dog_name||"")+' <span>('+esc(cs.postcode||"")+')</span></div>';
+    rows += '<div class="pop-row"><span>Progress:</span> '+esc(v.done)+' of '+esc(v.total)+' done</div>';
+    rows += '<div class="pop-row"><span>Timing:</span> '+d.t+'</div>';
+    if(v.speed!==null&&v.speed!==undefined) rows += '<div class="pop-row"><span>Speed:</span> '+Math.round(v.speed)+' km/h</div>';
+    rows += '<div class="pop-row"><span>Updated:</span> '+fmtAge(v.age_s)+(v.stale?' · stale':'')+'</div>';
+    return '<div style="--c:'+col+'"><div class="pop-h"><span class="pop-sw"></span>'+esc(v.van)+' — '+esc(v.route_type||"")+'</div>'+rows+'</div>';
+  }
+  function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,function(c){
+    return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
+
+  function renderCards(vans){
+    if(!vans.length){
+      cardsEl.innerHTML = '<div class="empty"><div class="big">🚐</div>No vans are currently on a route.<br><small>Positions appear here once a driver starts a route and shares live location.</small></div>';
+      return;
+    }
+    cardsEl.innerHTML = vans.map(function(v){
+      var col = VAN_COLOURS[v.van] || "#475569";
+      var cs = v.current_stop, d = driftLabel(v.drift_min);
+      var pct = v.total>0 ? Math.round((v.done/v.total)*100) : 0;
+      var chips = "";
+      if(v.stale) chips += '<span class="chip stale">stale · '+fmtAge(v.age_s)+'</span>';
+      else if(v.arrived) chips += '<span class="chip arr">at stop</span>';
+      chips += '<span class="chip '+d.c+'">'+d.t+'</span>';
+      var stopHtml = cs
+        ? '<div class="stop">'+(v.arrived?'📍 ':'')+esc(cs.seq)+'. '+esc(cs.dog_name||"")+' <small>'+esc(cs.postcode||"")+'</small></div>'
+        : '<div class="none">Route finished or not started.</div>';
+      return '<div class="card '+(v.stale?"stale":"")+'" style="--c:'+col+'" data-van="'+esc(v.van)+'">'+
+        '<div class="card-top"><span class="badge" style="--c:'+col+'">'+esc(v.van)+'</span>'+
+        '<span class="rt">'+esc(v.route_type||"")+'</span><div class="chips">'+chips+'</div></div>'+
+        stopHtml+
+        '<div class="prog"><i style="--c:'+col+';width:'+pct+'%"></i></div>'+
+        '<div class="stat-row"><span><b>'+esc(v.done)+'</b> done · <b>'+esc(v.remaining)+'</b> to go</span>'+
+        '<span>'+fmtAge(v.age_s)+'</span></div>'+
+        '<div class="card-foot"><button class="reset-btn" data-route="'+esc(v.route_id||"")+'" data-van="'+esc(v.van)+'">↺&nbsp;Reset route</button></div>'+
+      '</div>';
+    }).join("");
+    // click a card -> focus its van on the map
+    Array.prototype.forEach.call(cardsEl.querySelectorAll(".card"), function(c){
+      c.addEventListener("click", function(){
+        var m = markers[c.getAttribute("data-van")];
+        if(m){ map.panTo(m.getLatLng()); m.openPopup(); }
+      });
+    });
+    // reset button -> un-start a wrongly-started route (don't bubble to the card focus)
+    Array.prototype.forEach.call(cardsEl.querySelectorAll(".reset-btn"), function(b){
+      b.addEventListener("click", function(ev){
+        ev.stopPropagation();
+        resetRoute(b.getAttribute("data-van"), b.getAttribute("data-route"), b);
+      });
+    });
+  }
+
+  // ---- reset a route (mis-pressed Start) ----
+  function resetRoute(van, rid, btn){
+    if(!rid){ alert("No route id for this van yet — try again in a moment."); return; }
+    if(!confirm("Reset "+van+" — route "+rid+"?\n\nThis un-starts the route and clears its progress so anyone can press Start route again. Use this if Start was pressed by mistake.")) return;
+    btn.disabled = true; var orig = btn.innerHTML; btn.textContent = "Resetting…";
+    fetch(RESET_API, { method:"POST", body: JSON.stringify({ route_id: rid, key: accessKey }) })
+      .then(function(r){ return r.json(); })
+      .then(function(res){
+        if(res && res.ok){ btn.classList.add("done"); btn.textContent = "✓ Reset"; setTimeout(poll, 700); }
+        else { btn.disabled = false; btn.innerHTML = orig; alert("Reset failed: "+((res && res.error) || "not accepted")); }
+      })
+      .catch(function(){ btn.disabled = false; btn.innerHTML = orig; alert("Couldn't reach the tracking server — please try again."); });
+  }
+
+  function updateMarkers(vans){
+    var seen = {};
+    vans.forEach(function(v){
+      if(v.lat===null||v.lng===null) return;   // no usable location yet
+      seen[v.van]=1;
+      var ll=[v.lat,v.lng];
+      if(markers[v.van]){
+        markers[v.van].setLatLng(ll).setIcon(vanMarkerIcon(v));
+        markers[v.van].getPopup().setContent(popupHtml(v));
+      } else {
+        markers[v.van]=L.marker(ll,{icon:vanMarkerIcon(v)}).addTo(map).bindPopup(popupHtml(v));
+      }
+    });
+    Object.keys(markers).forEach(function(k){ if(!seen[k]){ map.removeLayer(markers[k]); delete markers[k]; } });
+    var pts = Object.keys(markers).map(function(k){ return markers[k].getLatLng(); });
+    if(firstFit && pts.length){
+      firstFit = false;
+      firstFitBounds = L.latLngBounds(pts).pad(0.3);
+      firstFitAt = Date.now();
+      try{ map.invalidateSize(false); }catch(e){}   // the cards render just resized the layout — measure before fitting
+      map.fitBounds(firstFitBounds,{maxZoom:15});
+    }
+  }
+
+  // ---- connection state ----
+  function setConn(state, label){
+    var dot=el("conndot"), lbl=el("connlbl");
+    dot.className = "dot" + (state==="bad"?" bad":state==="warn"?" warn":"");
+    lbl.textContent = label;
+  }
+  function showBanner(msg){ el("bannertext").textContent=msg; bannerEl.classList.add("show"); }
+  function hideBanner(){ bannerEl.classList.remove("show"); }
+  function showGate(err){ el("gateerr").textContent=err||""; gateEl.classList.add("show"); el("gatekey").focus(); }
+  function hideGate(){ gateEl.classList.remove("show"); }
+
+  // ---- polling ----
+  var timer=null, inFlight=false, inFlightAt=0;
+  var FETCH_TIMEOUT_MS = 12000;    // abort a hung poll well before the next tick
+  var INFLIGHT_STALE_MS = 45000;   // never let the in-flight latch wedge polling (no-AbortController fallback)
+
+  function poll(){
+    if(!accessKey) return;   // signed out — the gate is already up; ticks must not touch it
+    if(inFlight && (Date.now()-inFlightAt) < INFLIGHT_STALE_MS) return;
+    inFlight=true; inFlightAt=Date.now();
+    var ctrl = window.AbortController ? new AbortController() : null;
+    var killer = ctrl ? setTimeout(function(){ ctrl.abort(); }, FETCH_TIMEOUT_MS) : null;
+    fetch(API+"?key="+encodeURIComponent(accessKey),{cache:"no-store",signal:ctrl?ctrl.signal:undefined})
+      .then(function(r){
+        if(!r.ok) throw new Error("HTTP "+r.status);   // n8n down/deactivated is a fault, NOT "no vans"
+        return r.json();
+      })
+      .then(function(data){
+        inFlight=false; if(killer) clearTimeout(killer);
+        if(data && data.ok===false){
+          setConn("warn","Access denied");
+          accessKey=""; lsRemove(LS_KEY);
+          showGate("That key was not accepted. Please try again.");
+          return;
+        }
+        if(!data || data.ok!==true || !Array.isArray(data.vans)) throw new Error("bad payload");
+        hideBanner(); hideGate();
+        var count = Number(data.van_count); if(!isFinite(count)) count = data.vans.length;
+        setConn("ok", count+(count===1?" van live":" vans live"));
+        var when = new Date(data.generated_at);
+        if(!isNaN(when)) el("updated").textContent = "Updated "+when.toLocaleTimeString("en-GB");
+        el("safe").className = "safe"+(data.safe_mode?"":" off");
+        el("safe").textContent = data.safe_mode ? "SAFE MODE" : "LIVE MESSAGES";
+        var vans = data.vans;
+        // vans that are stale or have any signal still show a card; markers need a location
+        renderCards(vans);
+        updateMarkers(vans);
+        if(vans.length && vans.every(function(v){return v.stale;})) setConn("warn","All vans stale");
+      })
+      .catch(function(err){
+        inFlight=false; if(killer) clearTimeout(killer);
+        setConn("bad","Offline");
+        showBanner(err && err.message==="bad payload"
+          ? "Tracking feed problem — retrying…"
+          : "Can’t reach the tracking server — retrying…");
+      });
+  }
+  function startPolling(){ poll(); if(timer) clearInterval(timer); timer=setInterval(poll, POLL_MS); }
+  function stopPolling(){ if(timer){ clearInterval(timer); timer=null; } }
+
+  // pause when the tab is hidden; resume + refresh immediately when visible
+  document.addEventListener("visibilitychange", function(){
+    if(document.hidden){ stopPolling(); }
+    else { startPolling(); }
+  });
+
+  // ---- gate handlers ----
+  function submitKey(){
+    var v=el("gatekey").value.trim();
+    if(!v){ el("gateerr").textContent="Please enter the key."; return; }
+    accessKey=v; lsSet(LS_KEY,v); el("gatekey").value="";
+    hideGate(); setConn("warn","Checking…"); poll();
+  }
+  el("gatego").addEventListener("click", submitKey);
+  el("gatekey").addEventListener("keydown", function(e){ if(e.key==="Enter") submitKey(); });
+
+  // ---- go ----
+  if(!accessKey){ showGate(); }
+  setConn("warn","Connecting…");
+  startPolling();
+})();
+</script>
+</body>
+</html>
