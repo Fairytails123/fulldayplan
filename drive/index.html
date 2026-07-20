@@ -216,6 +216,16 @@
   /* FT-GROOMING (2026-07-17): grooming leg badge — H2S home→salon · S2H salon→home ·
      D2S daycare→shop · S2D shop→daycare (values whitelisted server-side by W1). */
   .chip.groom { color: #e88cd0; border-color: #5c2a4e; background: #26101f; font-weight: 800; letter-spacing: 0.08em; }
+  /* The spelled-out leg sits inside the badge, matching .chip.kennel small. */
+  .chip.groom small { color: #d9a8cb; font-weight: 600; letter-spacing: 0.02em; text-transform: none; }
+  /* FT-GROOMING key (2026-07-20): shown under the kennel board ONLY when this
+     route has grooming legs, so a normal route stays uncluttered. Reuses
+     .kb-legend's type scale. */
+  .kb-legend.groom-key { gap: 10px 16px; border-top: 1px solid var(--line); padding-top: 9px; }
+  .kb-legend.groom-key .gk-title { color: #e88cd0; font-weight: 700; width: 100%; }
+  .kb-legend.groom-key .gk-item b {
+    color: #e88cd0; font-weight: 800; letter-spacing: 0.08em; margin-right: 5px;
+  }
   .addr { margin-top: 9px; font-size: 14px; color: var(--ink-dim); overflow-wrap: anywhere; }
   .note {
     margin-top: 9px; font-size: 14px; background: #241d0d; color: #fde68a;
@@ -947,6 +957,46 @@
     if (!/^[SB][TMB][PMD]$/.test(c)) return '';
     return POS_WORDS[c[0]] + ' · ' + POS_WORDS[c[1]] + ' · ' + POS_WORDS[c[2]];
   }
+
+  /* FT-GROOMING leg codes (2026-07-20). The codes come from the grooming feed
+     (grooming-feature/feed_core.js gfRunPlan) and used to reach the driver as a
+     bare "✂️ S2H" chip, which tells a driver nothing. One source of truth for
+     BOTH the stop chip and the key below. Whitelist lookup: an unrecognised code
+     yields '' and degrades to the bare chip rather than injecting anything.
+     "Salon" is the Grooming Salon stop (15 Mount Pleasant Rd); "day care" is the
+     barn. NOTE: the office digest words D2S/S2D as "daycare➜shop" — same legs,
+     different word for the same place. */
+  var LEG_WORDS = {
+    H2S: 'home ➜ salon',
+    S2H: 'salon ➜ home',
+    D2S: 'day care ➜ salon',
+    S2D: 'salon ➜ day care'
+  };
+  var LEG_HELP = {
+    H2S: 'Collect from home, drop at the salon',
+    S2H: 'Collect at the salon, drop home',
+    D2S: 'Load at the barn, drop at the salon',
+    S2D: 'Collect at the salon, back to the barn'
+  };
+  function legWords(code) { return LEG_WORDS[String(code || '').trim().toUpperCase()] || ''; }
+
+  /* The key only appears when this route actually has grooming legs, so a normal
+     route is not cluttered. Lists just the codes present on THIS route. */
+  function groomKey() {
+    var stops = (state.data && state.data.stops) || [];
+    var seen = {}, order = [];
+    stops.forEach(function (s) {
+      var c = String(s && s.leg_code || '').trim().toUpperCase();
+      if (!c || !LEG_WORDS[c] || seen[c]) return;
+      seen[c] = true; order.push(c);
+    });
+    if (!order.length) return '';
+    return '<div class="kb-legend groom-key">' +
+      '<span class="gk-title">✂️ Grooming legs on this route:</span>' +
+      order.map(function (c) {
+        return '<span class="gk-item"><b>' + esc(c) + '</b> ' + esc(LEG_HELP[c]) + '</span>';
+      }).join('') + '</div>';
+  }
   function toast(msg) {
     var el = document.getElementById('toast');
     el.textContent = msg; el.classList.add('show');
@@ -1054,7 +1104,12 @@
     if (s.key_code) chips += '<span class="chip key">🔑 ' + esc(s.key_code) + '</span>';
     // FT-GROOMING leg badge (W15 fields, additive 2026-07-17): H2S/S2H/D2S/S2D
     // say which salon leg this stop is; a grooming stop with no code still gets ✂️.
-    if (s.leg_code) chips += '<span class="chip groom">✂️ ' + esc(s.leg_code) + '</span>';
+    // 2026-07-20: spell the leg out. The bare code alone meant nothing to a
+    // driver — same treatment as the kennel chip's <small> words above.
+    if (s.leg_code) {
+      var lw = legWords(s.leg_code);
+      chips += '<span class="chip groom">✂️ ' + esc(s.leg_code) + (lw ? ' <small>' + lw + '</small>' : '') + '</span>';
+    }
     else if (String(s.is_grooming) === 'Y') chips += '<span class="chip groom">✂️ grooming</span>';
     if (s.window_start && s.window_end) chips += '<span class="chip num">🕐 ' + esc(s.window_start) + '–' + esc(s.window_end) + '</span>';
     if (chips) h += '<div class="chips">' + chips + '</div>';
@@ -1138,6 +1193,7 @@
     h += '</div>';
 
     h += kennelBoard();
+    h += groomKey();   // FT-GROOMING: what H2S/S2H/D2S/S2D mean (only when present)
 
     if (rst === 'completed') {
       h += '<div class="empty" style="padding:26px 12px"><div class="art">🏁</div><h2>Route finished</h2><p>' + doneN + ' done · ' + (closed - doneN) + ' skipped' + (total - closed ? ' · <b style="color:var(--warn)">' + (total - closed) + ' never marked</b>' : '') + '</p></div>';
@@ -1451,7 +1507,15 @@
     var open = (state.data.stops || []).filter(function (s) { return CLOSED.indexOf(effStatus(s).st) < 0; });
     var aboard = occupiedList();
     var body = '';
-    if (open.length) body += '<p style="color:var(--warn)"><b>' + open.length + ' stop' + (open.length > 1 ? 's are' : ' is') + ' not marked:</b></p><ul>' + open.map(function (s) { return '<li>' + s.seq + ' — ' + esc(s.dog_name) + '</li>'; }).join('') + '</ul>';
+    // 2026-07-20: flag the grooming leg on any unmarked stop — an unfinished
+    // grooming leg is the one that strands a dog at the salon, so it must not
+    // read like an ordinary missed stop.
+    if (open.length) body += '<p style="color:var(--warn)"><b>' + open.length + ' stop' + (open.length > 1 ? 's are' : ' is') + ' not marked:</b></p><ul>' + open.map(function (s) {
+      var lw = legWords(s.leg_code);
+      var g = s.leg_code ? ('✂️ ' + esc(s.leg_code) + (lw ? ' ' + lw : ''))
+                         : (String(s.is_grooming) === 'Y' ? '✂️ grooming' : '');
+      return '<li>' + s.seq + ' — ' + esc(s.dog_name) + (g ? ' <span class="chip groom">' + g + '</span>' : '') + '</li>';
+    }).join('') + '</ul>';
     if (aboard.length) body += '<p style="color:var(--bad)"><b>🚨 Kennels still occupied:</b></p><ul>' + aboard.map(function (k) { return '<li><b>' + esc(k.code) + '</b> — ' + esc(k.dog) + '</li>'; }).join('') + '</ul><p>Check the van before you finish.</p>';
     if (!body) body = '<p>All stops marked and every kennel is empty. Nice one.</p>';
     else if (open.length && !aboard.length) body += '<p>Mark them Done/Skip first if the dogs were handled.</p>';
