@@ -223,6 +223,8 @@
      .kb-legend's type scale. */
   .kb-legend.groom-key { gap: 10px 16px; border-top: 1px solid var(--line); padding-top: 9px; }
   .kb-legend.groom-key .gk-title { color: #e88cd0; font-weight: 700; width: 100%; }
+  .kb-legend.groom-key .gk-warn { color: var(--warn); }
+  .kb-legend.groom-key .gk-warn b { color: var(--warn); }
   .kb-legend.groom-key .gk-item b {
     color: #e88cd0; font-weight: 800; letter-spacing: 0.08em; margin-right: 5px;
   }
@@ -984,18 +986,23 @@
      route is not cluttered. Lists just the codes present on THIS route. */
   function groomKey() {
     var stops = (state.data && state.data.stops) || [];
-    var seen = {}, order = [];
+    var seen = {}, order = [], unbooked = 0;
     stops.forEach(function (s) {
       var c = String(s && s.leg_code || '').trim().toUpperCase();
-      if (!c || !LEG_WORDS[c] || seen[c]) return;
-      seen[c] = true; order.push(c);
+      if (c && LEG_WORDS[c]) { if (!seen[c]) { seen[c] = true; order.push(c); } return; }
+      // Flagged grooming but no leg: not booked on the grooming form for this run.
+      if (String(s && s.is_grooming) === 'Y') unbooked++;
     });
-    if (!order.length) return '';
+    if (!order.length && !unbooked) return '';
     return '<div class="kb-legend groom-key">' +
       '<span class="gk-title">✂️ Grooming legs on this route:</span>' +
       order.map(function (c) {
         return '<span class="gk-item"><b>' + esc(c) + '</b> ' + esc(LEG_HELP[c]) + '</span>';
-      }).join('') + '</div>';
+      }).join('') +
+      (unbooked ? '<span class="gk-item gk-warn"><b>leg not booked</b> ' + unbooked +
+        (unbooked === 1 ? ' grooming dog is' : ' grooming dogs are') +
+        ' not on the grooming form for this run — ask the office which way it goes</span>' : '') +
+      '</div>';
   }
   function toast(msg) {
     var el = document.getElementById('toast');
@@ -1110,7 +1117,10 @@
       var lw = legWords(s.leg_code);
       chips += '<span class="chip groom">✂️ ' + esc(s.leg_code) + (lw ? ' <small>' + lw + '</small>' : '') + '</span>';
     }
-    else if (String(s.is_grooming) === 'Y') chips += '<span class="chip groom">✂️ grooming</span>';
+    // 2026-07-20: no leg code means nobody booked this dog on the grooming form
+    // for this run, so the direction genuinely is not known. Say that, rather
+    // than a bare "grooming" that reads like a label.
+    else if (String(s.is_grooming) === 'Y') chips += '<span class="chip groom">✂️ grooming <small>leg not booked</small></span>';
     if (s.window_start && s.window_end) chips += '<span class="chip num">🕐 ' + esc(s.window_start) + '–' + esc(s.window_end) + '</span>';
     if (chips) h += '<div class="chips">' + chips + '</div>';
     if (s.address) h += '<div class="addr">📍 ' + esc(s.address) + '</div>';
@@ -1513,7 +1523,7 @@
     if (open.length) body += '<p style="color:var(--warn)"><b>' + open.length + ' stop' + (open.length > 1 ? 's are' : ' is') + ' not marked:</b></p><ul>' + open.map(function (s) {
       var lw = legWords(s.leg_code);
       var g = s.leg_code ? ('✂️ ' + esc(s.leg_code) + (lw ? ' ' + lw : ''))
-                         : (String(s.is_grooming) === 'Y' ? '✂️ grooming' : '');
+                         : (String(s.is_grooming) === 'Y' ? '✂️ grooming · leg not booked' : '');
       return '<li>' + s.seq + ' — ' + esc(s.dog_name) + (g ? ' <span class="chip groom">' + g + '</span>' : '') + '</li>';
     }).join('') + '</ul>';
     if (aboard.length) body += '<p style="color:var(--bad)"><b>🚨 Kennels still occupied:</b></p><ul>' + aboard.map(function (k) { return '<li><b>' + esc(k.code) + '</b> — ' + esc(k.dog) + '</li>'; }).join('') + '</ul><p>Check the van before you finish.</p>';
