@@ -999,9 +999,9 @@
       order.map(function (c) {
         return '<span class="gk-item"><b>' + esc(c) + '</b> ' + esc(LEG_HELP[c]) + '</span>';
       }).join('') +
-      (unbooked ? '<span class="gk-item gk-warn"><b>leg not booked</b> ' + unbooked +
-        (unbooked === 1 ? ' grooming dog is' : ' grooming dogs are') +
-        ' not on the grooming form for this run — ask the office which way it goes</span>' : '') +
+      (unbooked ? '<span class="gk-item gk-warn"><b>no salon stop</b> ' + unbooked +
+        (unbooked === 1 ? ' grooming dog has' : ' grooming dogs have') +
+        ' no salon leg on this route — check with the office</span>' : '') +
       '</div>';
   }
   function toast(msg) {
@@ -1117,10 +1117,10 @@
       var lw = legWords(s.leg_code);
       chips += '<span class="chip groom">✂️ ' + esc(s.leg_code) + (lw ? ' <small>' + lw + '</small>' : '') + '</span>';
     }
-    // 2026-07-20: no leg code means nobody booked this dog on the grooming form
-    // for this run, so the direction genuinely is not known. Say that, rather
-    // than a bare "grooming" that reads like a label.
-    else if (String(s.is_grooming) === 'Y') chips += '<span class="chip groom">✂️ grooming <small>leg not booked</small></span>';
+    // 2026-07-20: stage4 supplies the leg from the booking, or derives it from
+    // the dog's position relative to the salon stop. So a missing code means
+    // this route has NO salon stop — there is no salon leg to name.
+    else if (String(s.is_grooming) === 'Y') chips += '<span class="chip groom">✂️ grooming <small>no salon stop</small></span>';
     if (s.window_start && s.window_end) chips += '<span class="chip num">🕐 ' + esc(s.window_start) + '–' + esc(s.window_end) + '</span>';
     if (chips) h += '<div class="chips">' + chips + '</div>';
     if (s.address) h += '<div class="addr">📍 ' + esc(s.address) + '</div>';
@@ -1523,7 +1523,7 @@
     if (open.length) body += '<p style="color:var(--warn)"><b>' + open.length + ' stop' + (open.length > 1 ? 's are' : ' is') + ' not marked:</b></p><ul>' + open.map(function (s) {
       var lw = legWords(s.leg_code);
       var g = s.leg_code ? ('✂️ ' + esc(s.leg_code) + (lw ? ' ' + lw : ''))
-                         : (String(s.is_grooming) === 'Y' ? '✂️ grooming · leg not booked' : '');
+                         : (String(s.is_grooming) === 'Y' ? '✂️ grooming · no salon stop' : '');
       return '<li>' + s.seq + ' — ' + esc(s.dog_name) + (g ? ' <span class="chip groom">' + g + '</span>' : '') + '</li>';
     }).join('') + '</ul>';
     if (aboard.length) body += '<p style="color:var(--bad)"><b>🚨 Kennels still occupied:</b></p><ul>' + aboard.map(function (k) { return '<li><b>' + esc(k.code) + '</b> — ' + esc(k.dog) + '</li>'; }).join('') + '</ul><p>Check the van before you finish.</p>';
