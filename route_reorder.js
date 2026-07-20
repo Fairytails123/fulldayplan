@@ -315,6 +315,15 @@
       // ---- per-tile address line + Map Check button (2026-07-19) ----
       // The name+address column takes the flex slot .reorder-name held alone;
       // .reorder-name keeps its base ellipsis styling but stops flexing itself.
+      // Cross-van move (2026-07-20): while a tile is dragged, every OTHER run in
+      // the same section is a live drop target. A same-section card lights up
+      // green under the pointer; a different-section card is refused (red, plus
+      // a "not allowed" cursor) because a move there would change the dog's
+      // departure time/day.
+      '.reorder-slot.is-drop-target{outline:2px dashed #16a34a;outline-offset:2px;background:#f0fdf4;}' +
+      '.reorder-slot.is-drop-blocked{outline:2px dashed #dc2626;outline-offset:2px;background:#fef2f2;' +
+        'cursor:not-allowed;}' +
+      '.reorder-slot.is-drop-source{opacity:0.97;}' +
       '.reorder-tile .reorder-main{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px;}' +
       '.reorder-tile .reorder-main .reorder-name{flex:none;}' +
       '.reorder-tile .reorder-addr{font-size:12px;color:#475569;overflow:hidden;text-overflow:ellipsis;' +
@@ -1158,6 +1167,11 @@
     var o = ctx.o || [];
     var gg = normSet(ctx.gg || []);
     var aa = normSet(ctx.aa || []);
+    // A one-stop run used to render NO grip (there was nothing to reorder within
+    // it). Since 2026-07-20 a tile can also be dragged to another van's run in
+    // the same section, so the grip is always rendered — otherwise a lone dog
+    // would be the one dog you could never move. Dragging a solo tile within its
+    // own list is still a harmless no-op.
     var solo = o.length < 2;
     // Per-tile address line + Map Check (2026-07-19): the routed address per
     // member (ctx.ad, ex wins). Empty for routes staged before the rollout.
@@ -1175,7 +1189,7 @@
       li.setAttribute('data-stop-id', id);
       li.innerHTML =
         '<span class="reorder-pos">' + (i + 1) + '</span>' +
-        (solo ? '' : '<span class="reorder-grip" aria-hidden="true">⠿</span>') +
+        '<span class="reorder-grip" aria-hidden="true">⠿</span>' +
         '<span class="reorder-main"><span class="reorder-name"></span>' +
           '<span class="reorder-addr" hidden></span></span>' +
         '<span class="reorder-marks">' + marks + '</span>' +
@@ -1209,7 +1223,11 @@
         mapCheckStop(st, id);
       });
       ol.appendChild(li);
-      if (!solo) wireGrip(st, li.querySelector('.reorder-grip'));
+      // The Grooming Salon is derived state, not a dog: it belongs to whichever
+      // runs carry grooming dogs, so it must not be dragged between vans (the
+      // server refuses it too). It stays reorderable WITHIN its own run — where
+      // it sits in the route is exactly what staff need to adjust.
+      wireGrip(st, li.querySelector('.reorder-grip'), members.every(isSalonName));
     });
     // Tiles were rebuilt (fresh stage, a remote reorder, or a failed-save rollback)
     // — an open map must follow. No-op when the map is closed.
@@ -1229,9 +1247,17 @@
   }
 
   // ---- vertical grip-drag engine (pointer events) ---------------
-  function wireGrip(st, grip) {
+  // The Grooming Salon calling point — must stay byte-identical to
+  // grooming-feature/feed_core.js GF.SALON.label and the Apps Script's
+  // REORDER_SALON.label.
+  var SALON_LABEL = 'Grooming Salon';
+  function isSalonName(n) { return normKey(n) === normKey(SALON_LABEL); }
+
+  // ownRunOnly: the tile may be reordered inside its own list but never dropped
+  // onto another van's run.
+  function wireGrip(st, grip, ownRunOnly) {
     if (!grip) return;
-    grip.addEventListener('pointerdown', function (e) { startDrag(st, grip, e); });
+    grip.addEventListener('pointerdown', function (e) { startDrag(st, grip, e, ownRunOnly); });
   }
 
   function tileAfterPointer(ol, y) {
@@ -1248,7 +1274,29 @@
     else if (y > window.innerHeight - edge) window.scrollBy(0, 14);
   }
 
-  function startDrag(st, grip, e) {
+  // The card (slot) whose box contains the pointer, or null. Cards never nest, so
+  // the first hit is the answer. A card mid-removal is not a drop target.
+  function slotUnderPointer(x, y) {
+    var hit = null;
+    Object.keys(slots).forEach(function (k) {
+      var s = slots[k];
+      if (hit || !s || !s.card || !s.record || s.staleRemove) return;
+      if (s.card.hidden || !s.card.offsetParent) return;
+      var r = s.card.getBoundingClientRect();
+      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) hit = s;
+    });
+    return hit;
+  }
+
+  function clearDropMarks() {
+    [].slice.call(document.querySelectorAll(
+      '.reorder-slot.is-drop-target, .reorder-slot.is-drop-blocked, .reorder-slot.is-drop-source'
+    )).forEach(function (el) {
+      el.classList.remove('is-drop-target', 'is-drop-blocked', 'is-drop-source');
+    });
+  }
+
+  function startDrag(st, grip, e, ownRunOnly) {
     if (drag) return;
     if (e.button != null && e.button !== 0) return;
     e.preventDefault();
@@ -1276,12 +1324,51 @@
     ol.removeChild(li);
 
     drag = {
-      st: st, ol: ol, li: li, clone: clone, placeholder: placeholder,
+      st: st,                 // source slot
+      srcOl: ol,              // source list
+      ol: ol,                 // list currently holding the placeholder
+      targetSt: st,           // slot the placeholder currently sits in
+      // Member names identify the stop across the wire — tile ids are positional
+      // ('s0','s1',…) and are regenerated on every render.
+      members: (st.stopsById && st.stopsById[li.getAttribute('data-stop-id')]) || [],
+      section: st.record && st.record.section,
+      ownRunOnly: !!ownRunOnly,
+      li: li, clone: clone, placeholder: placeholder,
       offsetX: e.clientX - rect.left, offsetY: e.clientY - rect.top
     };
+    st.card.classList.add('is-drop-source');
     document.addEventListener('pointermove', onDragMove, true);
     document.addEventListener('pointerup', onDragEnd, true);
-    document.addEventListener('pointercancel', onDragEnd, true);
+    // pointercancel is an ABORT, not a drop. Before cross-van moves both went to
+    // onDragEnd harmlessly (the tile could only land back in its own list); now
+    // a cancel would COMMIT a move the user never completed — iOS fires
+    // pointercancel on a scroll/gesture takeover, and exit() calls the same
+    // teardown when the tab is switched mid-drag.
+    document.addEventListener('pointercancel', onDragCancel, true);
+  }
+
+  function unbindDrag() {
+    document.removeEventListener('pointermove', onDragMove, true);
+    document.removeEventListener('pointerup', onDragEnd, true);
+    document.removeEventListener('pointercancel', onDragCancel, true);
+  }
+
+  // Abort: put the tile back where it came from and send NOTHING.
+  function onDragCancel() {
+    if (!drag) return;
+    unbindDrag();
+    var d = drag; drag = null;
+    clearDropMarks();
+    if (d.placeholder.parentNode) d.placeholder.parentNode.removeChild(d.placeholder);
+    if (d.clone.parentNode) d.clone.parentNode.removeChild(d.clone);
+    if (d.li.parentNode) d.li.parentNode.removeChild(d.li);
+    var src = d.st, dst = d.targetSt || d.st;
+    src.dragging = false;
+    if (dst !== src) dst.dragging = false;
+    // Re-render from the last known-good records, so both cards are exactly as
+    // they were before the drag started.
+    if (!src.staleRemove && src.record) renderTiles(src, src.record);
+    if (dst !== src && !dst.staleRemove && dst.record) renderTiles(dst, dst.record);
   }
 
   function onDragMove(e) {
@@ -1289,30 +1376,224 @@
     e.preventDefault();
     drag.clone.style.left = (e.clientX - drag.offsetX) + 'px';
     drag.clone.style.top = (e.clientY - drag.offsetY) + 'px';
-    var ref = tileAfterPointer(drag.ol, e.clientY);
-    drag.ol.insertBefore(drag.placeholder, ref);
+
+    // Cross-van move (2026-07-20): the placeholder follows the pointer INTO
+    // another run's list when that run is in the same section. Over a
+    // different-section card the placeholder stays where it is and the card is
+    // marked refused, so releasing there is a no-op rather than a surprise move.
+    var over = slotUnderPointer(e.clientX, e.clientY);
+    var dest = drag.targetSt;
+    var blocked = null;
+    if (over && over !== drag.st) {
+      // ownRunOnly (the salon stop) can be reordered in place but never dropped
+      // on another van — every foreign card reads as refused.
+      if (drag.ownRunOnly) blocked = over;
+      else if (over.record.section === drag.section) dest = over;
+      else blocked = over;
+    } else if (over === drag.st) {
+      dest = drag.st;
+    }
+
+    var destOl = dest.card.querySelector('.reorder-list');
+    if (destOl) {
+      if (destOl !== drag.ol) {
+        // Leaving one list for another. The slot holding the placeholder MUST be
+        // marked dragging: reconcile refreshes any slot that is not
+        // (`!st.dragging && !st.pendingSave`), and renderTiles wipes the list —
+        // which would delete the placeholder from under the drag and leave the
+        // tile planted in the wrong card on drop. The source keeps its flag for
+        // the whole drag; a card merely passed over must NOT be left frozen.
+        var leftOl = drag.ol;
+        var leftSt = drag.targetSt;
+        if (leftSt && leftSt !== drag.st) leftSt.dragging = false;
+        if (dest !== drag.st) dest.dragging = true;
+        drag.ol = destOl;
+        drag.targetSt = dest;
+        if (leftOl && leftOl.contains(drag.placeholder)) leftOl.removeChild(drag.placeholder);
+        renumber(leftOl);
+      }
+      var ref = tileAfterPointer(destOl, e.clientY);
+      destOl.insertBefore(drag.placeholder, ref);
+    }
+
+    clearDropMarks();
+    drag.st.card.classList.add('is-drop-source');
+    // Releasing over a refused card must CANCEL, not fall back to whichever run
+    // the pointer happened to cross on the way there — cards sit side by side, so
+    // a drag aimed at another section always passes over a valid one first, and
+    // that silently moved the dog to the wrong van (caught in testing 2026-07-20).
+    drag.blocked = !!blocked;
+    if (blocked) blocked.card.classList.add('is-drop-blocked');
+    else if (drag.targetSt !== drag.st) drag.targetSt.card.classList.add('is-drop-target');
     autoScroll(e.clientY);
   }
 
   function onDragEnd() {
     if (!drag) return;
-    document.removeEventListener('pointermove', onDragMove, true);
-    document.removeEventListener('pointerup', onDragEnd, true);
-    document.removeEventListener('pointercancel', onDragEnd, true);
+    unbindDrag();
     var d = drag; drag = null;
+    clearDropMarks();
+
+    // A card can be cleared/re-staged elsewhere mid-drag. The tile must NOT be
+    // planted into a list belonging to a card that is going away (or that the
+    // drag no longer owns) — it would sit there aliasing an unrelated stop's
+    // positional id until the next render, and a save or Send Final in that
+    // window would duplicate one dog and drop another.
+    var staleEnd = d.st.staleRemove || (d.targetSt !== d.st && d.targetSt.staleRemove);
+    if (staleEnd || d.placeholder.parentNode !== d.ol) {
+      if (d.placeholder.parentNode) d.placeholder.parentNode.removeChild(d.placeholder);
+      if (d.clone.parentNode) d.clone.parentNode.removeChild(d.clone);
+      if (d.li.parentNode) d.li.parentNode.removeChild(d.li);
+      d.st.dragging = false;
+      if (d.targetSt !== d.st) d.targetSt.dragging = false;
+      if (d.st.staleRemove) { removeCard(d.st); toast('That route was cleared elsewhere', 'info'); }
+      else if (d.st.record) renderTiles(d.st, d.st.record);
+      if (d.targetSt !== d.st) {
+        if (d.targetSt.staleRemove) removeCard(d.targetSt);
+        else if (d.targetSt.record) renderTiles(d.targetSt, d.targetSt.record);
+      }
+      return;
+    }
+
     d.ol.insertBefore(d.li, d.placeholder);
     if (d.placeholder.parentNode) d.placeholder.parentNode.removeChild(d.placeholder);
     if (d.clone.parentNode) d.clone.parentNode.removeChild(d.clone);
     renumber(d.ol);
-    var st = d.st;
-    st.dragging = false;
-    if (st.staleRemove) {
-      removeCard(st);
-      toast('That route was cleared elsewhere', 'info');
+    if (d.srcOl !== d.ol) renumber(d.srcOl);
+
+    var src = d.st;
+    var dst = d.targetSt || src;
+    src.dragging = false;
+    if (dst !== src) dst.dragging = false;
+
+    // Released over a different-section run — cancel outright. Both cards are
+    // re-rendered from their last known-good records, so the tile snaps back to
+    // exactly where it started and nothing is sent to the server.
+    if (d.blocked) {
+      renderTiles(src, src.record);
+      if (dst !== src) renderTiles(dst, dst.record);
+      toast(d.ownRunOnly
+        ? 'The 🏪 Grooming Salon stop follows the grooming dogs — move a dog and the salon comes with it'
+        : 'A dog can only move between vans in the same run — not to another section', 'warning');
       return;
     }
-    syncMap(st);            // map follows the dropped order immediately
-    scheduleSave(st);
+
+    if (dst === src) {
+      syncMap(src);           // map follows the dropped order immediately
+      scheduleSave(src);
+      return;
+    }
+    // Dropped onto another van's run in the same section.
+    commitMove(src, dst, d.members, d.li);
+  }
+
+  // ---- cross-van move (2026-07-20) ------------------------------------------
+  // The DOM already shows the move (the tile is sitting in the target list). Both
+  // runs are persisted in ONE server call so the dog can never end up on both
+  // runs or on neither — see moveStop_ in the Apps Script. On any failure both
+  // cards are re-rendered from their last known-good records, which puts the tile
+  // straight back where it came from.
+  function commitMove(src, dst, members, movedLi) {
+    var srcOl = src.card && src.card.querySelector('.reorder-list');
+    var dstOl = dst.card && dst.card.querySelector('.reorder-list');
+    if (!srcOl || !dstOl) { rollback(src); rollback(dst); return; }
+
+    // A debounced save on either card would race this write with a now-stale
+    // order — the move payload carries both full orders, so drop them.
+    [src, dst].forEach(function (s) {
+      if (s.saveTimer) { clearTimeout(s.saveTimer); s.saveTimer = null; }
+      s.pendingSave = true;
+      var sf = s.card && s.card.querySelector('.reorder-sent-flag');
+      if (sf) sf.hidden = true;   // both routes changed since their last send
+    });
+
+    // Build both resulting orders from what the user is actually looking at.
+    // Tiles are matched by ELEMENT, never by data-stop-id: ids are positional
+    // ('s0','s1',…) and scoped to their own card, so the tile that just arrived
+    // carries the SOURCE run's id and would collide with an unrelated stop of
+    // the same index in the target (that collision duplicated one dog and
+    // dropped another — caught in browser testing 2026-07-20).
+    var tilesOf = function (ol) { return [].slice.call(ol.querySelectorAll('.reorder-tile')); };
+    var fromO = tilesOf(srcOl).map(function (li) {
+      return src.stopsById[li.getAttribute('data-stop-id')];
+    });
+    var toO = tilesOf(dstOl).map(function (li) {
+      if (li === movedLi) return members;      // the tile that just arrived
+      return dst.stopsById[li.getAttribute('data-stop-id')];
+    });
+
+    // A hole here would silently drop a dog from a route, so refuse to send.
+    if (fromO.some(function (m) { return !m; }) || toO.some(function (m) { return !m; })) {
+      src.pendingSave = false; dst.pendingSave = false;
+      rollback(src); rollback(dst);
+      toast('Could not move — route out of sync, reverted', 'error');
+      return;
+    }
+
+    // The destination's DOM now holds a tile whose positional id belongs to the
+    // SOURCE card, so dst.stopsById disagrees with the DOM until renderTiles
+    // runs after the POST resolves. Re-stamp both now so anything reading the
+    // card mid-flight (a save, Send Final, a map redraw) sees a consistent map.
+    dst.stopsById = {};
+    tilesOf(dstOl).forEach(function (li, i) {
+      var id = 's' + i;
+      li.setAttribute('data-stop-id', id);
+      dst.stopsById[id] = toO[i];
+    });
+    src.stopsById = {};
+    tilesOf(srcOl).forEach(function (li, i) {
+      var id = 's' + i;
+      li.setAttribute('data-stop-id', id);
+      src.stopsById[id] = fromO[i];
+    });
+
+    syncMap(src);
+    syncMap(dst);
+
+    postStore({
+      action: 'moveStop', token: TOKEN,
+      from_slot_key: src.record.slot_key, to_slot_key: dst.record.slot_key,
+      from_rev: src.record.rev, to_rev: dst.record.rev,
+      members: members, from_o: fromO, to_o: toO,
+      last_reordered_by: deviceId()
+    }).then(function (r) {
+      src.pendingSave = false; dst.pendingSave = false;
+      if (!r || !r.ok) {
+        rollback(src); rollback(dst);
+        toast((r && r.error) ? ('Could not move — ' + r.error) : 'Could not move — reverted', 'error');
+        return;
+      }
+      // Adopt the orders the SERVER actually stored — it may have added or
+      // removed the Grooming Salon calling point, so the client's optimistic
+      // order is not the last word.
+      // Adopt the server's STORED context wholesale. The move migrated per-dog
+      // data this client has never held (the moved dog's coords/address, and the
+      // salon's), so taking only the order would leave the tile with no address
+      // and the map with no point for it until some later poll happened to
+      // re-render. r.to_ctx makes the response self-sufficient; the order-only
+      // fallback keeps an older server working.
+      if (r.to_ctx) dst.record.ctx = r.to_ctx;
+      else dst.record.ctx.o = Array.isArray(r.to_o) ? r.to_o : toO;
+      if (r.to_rev != null) { dst.record.rev = r.to_rev; dst.renderedRev = r.to_rev; }
+      renderTiles(dst, dst.record);
+      if (r.from_cleared) {
+        // The dog was the source run's last stop, so that run is gone.
+        removeCard(src);
+      } else {
+        if (r.from_ctx) src.record.ctx = r.from_ctx;
+        else src.record.ctx.o = Array.isArray(r.from_o) ? r.from_o : fromO;
+        if (r.from_rev != null) { src.record.rev = r.from_rev; src.renderedRev = r.from_rev; }
+        renderTiles(src, src.record);
+      }
+
+      var msg = (members.join(' & ') || 'Stop') + ' moved to ' + dst.record.van;
+      if (r.salon_added) msg += ' · 🏪 Grooming Salon added to ' + dst.record.van + ' — check its position';
+      toast(msg, r.salon_added ? 'warning' : 'success');
+    }).catch(function () {
+      src.pendingSave = false; dst.pendingSave = false;
+      rollback(src); rollback(dst);
+      toast('Could not move — reverted', 'error');
+    });
   }
 
   // ---- save (debounced, optimistic, rollback) -------------------
@@ -1327,12 +1608,23 @@
     var ol = st.card.querySelector('.reorder-list');
     var ids = currentOrderIds(ol);
     var o = ids.map(function (id) { return st.stopsById[id]; });
-    postStore({ action: 'saveOrder', token: TOKEN, slot_key: st.record.slot_key, o: o, last_reordered_by: deviceId() })
+    // `rev` added 2026-07-20: the server now refuses a save whose rev is stale
+    // or whose membership differs from the stored route, so a plain reorder can
+    // no longer silently undo a cross-van move made on another device.
+    postStore({ action: 'saveOrder', token: TOKEN, slot_key: st.record.slot_key, o: o,
+                rev: st.record.rev, last_reordered_by: deviceId() })
       .then(function (r) {
         st.pendingSave = false;
         if (r && r.ok) {
           st.record.ctx.o = o;
-          if (r.rev != null) st.renderedRev = r.rev;
+          // record.rev is the optimistic-concurrency token a later move sends.
+          // Leaving it stale here made the NEXT cross-van move fail as
+          // "changed elsewhere" after any ordinary reorder.
+          if (r.rev != null) { st.record.rev = r.rev; st.renderedRev = r.rev; }
+        } else if (r && r.stale) {
+          rollback(st);
+          toast('That route changed on another device — reloaded', 'warning');
+          poll();
         } else {
           rollback(st);
           toast('Could not save order — reverted', 'error');
