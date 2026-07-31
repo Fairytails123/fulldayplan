@@ -31,8 +31,17 @@
  *   GET  ?action=loadStaged&token=…        -> { ok, slots:[ {slot_key, section,
  *        van, ctx:{v,p,t,rt,r,s,sa,ea,d,o,aa,gg,c,sc,ec,ex}, skipped, staged_at, rev, …} ] }
  *   POST { action:'saveOrder', token, slot_key, o, last_reordered_by }
+ *   POST { action:'savePositions', token, slot_key, kp, rev, last_reordered_by }
  *   POST { action:'clearSlot', token, slot_key }
  * Final send goes to the EXISTING n8n webhook, not the Apps Script.
+ *
+ * Kennel dropdowns + live van mockup (added 2026-07-31): every dog tile
+ * carries one dropdown per dog, defaulting to the kennel position staged from
+ * the Load Plan grid (ROUTE_CTX.kp); a per-van mockup above the stops re-draws
+ * on every change and IS the final word — Send Final Route forwards ctx.kp as
+ * `positions` (unchanged plumbing), so the codes confirmed in the mockup are
+ * exactly what the Telegram message renders after each ETA. Staff-only display
+ * (C10) — kennel codes never reach customer output.
  * ================================================================== */
 
 (function () {
@@ -660,6 +669,277 @@
     return '';
   }
 
+  // ---- kennel positions (per-dog dropdowns + live van mockup, 2026-07-31) --
+  // ctx.kp = { <normKey(dog)>: <CODE> }, written by Format Route at stage time
+  // from the Load Plan grid and EDITABLE here. Layouts come from
+  // shared/ft-kennels.js (window.FT_KENNELS, loaded by index_v6.html: BV/BVX 15
+  // kennels, SV 10 with wheel-arch back-bottom boxes). Module absent or van
+  // unknown ⇒ the whole feature degrades silently (no dropdowns, no mockup) —
+  // the same fail-safe posture as the /drive kennel board.
+  var KENNEL_CODE_RE = /^[SB][TMB][PMD]$/;   // byte-sync: savePositions_ (Apps Script) + /drive kennelAssignments
+  var KB_COLLAPSE_LS = 'reorder_kb_collapsed';
+
+  function escapeAttr(s) {
+    return escapeHtml(s).replace(/"/g, '&quot;');
+  }
+  function firstNameOf(n) {
+    return String(n == null ? '' : n).trim().split(/\s+/)[0] || '';
+  }
+  function kennelLayoutFor(van) {
+    var K = (typeof window !== 'undefined' && window.FT_KENNELS) || null;
+    return (K && K[String(van || '').toUpperCase()]) || null;
+  }
+  function kennelCodesFor(layout) {
+    if (!layout) return [];
+    var out = [];
+    (layout.side || []).concat(layout.back || []).forEach(function (row) {
+      (row || []).forEach(function (c) { out.push(c); });
+    });
+    return out;
+  }
+  // "STP" → "side · top · passenger" (option tooltips). Positional maps — the
+  // letters are ambiguous otherwise (B = Back grid AND Bottom row, M = Middle
+  // row AND Middle column).
+  function kennelWords(code) {
+    if (!KENNEL_CODE_RE.test(code)) return '';
+    var ROW = { T: 'top', M: 'middle', B: 'bottom' };
+    var COL = { P: 'passenger', M: 'middle', D: 'driver' };
+    return (code.charAt(0) === 'S' ? 'side' : 'back') + ' · ' + ROW[code.charAt(1)] + ' · ' + COL[code.charAt(2)];
+  }
+  // { <normKey(dog)>: CODE } from ctx.kp — grammar-filtered, keys re-normalised
+  // (idempotent), mirroring coordIndexFor's defensive shape checks.
+  function kennelIndexFor(ctx) {
+    var idx = {};
+    var kp = (ctx && ctx.kp && typeof ctx.kp === 'object' && !Array.isArray(ctx.kp)) ? ctx.kp : {};
+    Object.keys(kp).forEach(function (k) {
+      var code = String(kp[k] || '').toUpperCase().trim();
+      var nk = normKey(k);
+      if (nk && KENNEL_CODE_RE.test(code)) idx[nk] = code;
+    });
+    return idx;
+  }
+  // Present (non-salon) dogs in CURRENT tile order → { layout, dogs:[{name,
+  // key, stop, code|''}] }. code '' also when the staged code isn't a kennel
+  // of THIS van (those dogs count as unassigned). null ⇒ feature off.
+  function kennelRoster(st) {
+    var ctx = (st && st.record && st.record.ctx) || {};
+    var layout = kennelLayoutFor(ctx.v);
+    if (!layout) return null;
+    var valid = {};
+    kennelCodesFor(layout).forEach(function (c) { valid[c] = true; });
+    var idx = kennelIndexFor(ctx);
+    var dogs = [];
+    var ol = st.card && st.card.querySelector('.reorder-list');
+    if (ol) {
+      currentOrderIds(ol).forEach(function (id, i) {
+        (st.stopsById[id] || []).forEach(function (m) {
+          if (isSalonName(m)) return;          // the salon is a stop, not a dog in a kennel
+          var key = normKey(m);
+          var code = idx[key] || '';
+          dogs.push({ name: m, key: key, stop: i + 1, code: valid[code] ? code : '' });
+        });
+      });
+    }
+    return { layout: layout, dogs: dogs };
+  }
+
+  // Re-derive every piece of kennel UI on a card (selects + mockup) from the
+  // current DOM order + ctx.kp. Cheap (≤15 codes × ≤a dozen selects), so it
+  // simply rebuilds rather than diffing.
+  function refreshKennelUi(st) {
+    if (!st || !st.card) return;
+    var board = st.card.querySelector('.reorder-kboard');
+    var ol = st.card.querySelector('.reorder-list');
+    var r = kennelRoster(st);
+    if (!r) {
+      if (board) { board.hidden = true; board.innerHTML = ''; }
+      if (ol) [].slice.call(ol.querySelectorAll('.reorder-kennels')).forEach(function (s) { s.innerHTML = ''; });
+      return;
+    }
+    var occ = {};                              // code -> [{name, key, stop, code}]
+    r.dogs.forEach(function (d) { if (d.code) (occ[d.code] = occ[d.code] || []).push(d); });
+    renderKennelSelects(st, r, occ);
+    renderKennelBoard(st, r, occ);
+  }
+
+  function renderKennelSelects(st, r, occ) {
+    var ol = st.card.querySelector('.reorder-list');
+    if (!ol) return;
+    var byKey = {};
+    r.dogs.forEach(function (d) { if (!byKey[d.key]) byKey[d.key] = d; });
+    var codes = kennelCodesFor(r.layout);
+    [].slice.call(ol.querySelectorAll('.reorder-tile')).forEach(function (li) {
+      var span = li.querySelector('.reorder-kennels');
+      if (!span) return;
+      span.innerHTML = '';
+      var members = st.stopsById[li.getAttribute('data-stop-id')] || [];
+      var dogMembers = members.filter(function (m) { return !isSalonName(m); });
+      dogMembers.forEach(function (m) {
+        var d = byKey[normKey(m)];
+        if (!d) return;
+        if (dogMembers.length > 1) {
+          var who = document.createElement('span');
+          who.className = 'reorder-kennel-who';
+          who.textContent = firstNameOf(m);
+          span.appendChild(who);
+        }
+        var sel = document.createElement('select');
+        sel.className = 'reorder-kennel' + (d.code ? '' : ' is-un');
+        sel.title = 'Kennel position for ' + m;
+        var opt0 = document.createElement('option');
+        opt0.value = '';
+        opt0.textContent = '—';
+        sel.appendChild(opt0);
+        codes.forEach(function (code) {
+          var others = (occ[code] || []).filter(function (x) { return x.key !== d.key; });
+          var opt = document.createElement('option');
+          opt.value = code;
+          opt.title = kennelWords(code);
+          if (others.length >= 2) { opt.disabled = true; opt.textContent = code + ' (full)'; }
+          else if (others.length === 1) { opt.textContent = code + ' · ' + firstNameOf(others[0].name); }
+          else { opt.textContent = code; }
+          sel.appendChild(opt);
+        });
+        sel.value = d.code || '';
+        sel.addEventListener('change', function () { onKennelChange(st, m, sel); });
+        span.appendChild(sel);
+      });
+    });
+  }
+
+  function kbGrid(rows, label, layout, occ) {
+    var html = '<div class="reorder-kb-grid"><div class="reorder-kb-doorlbl">' + escapeHtml(label) + '</div>';
+    (rows || []).forEach(function (row) {
+      html += '<div class="reorder-kb-row" style="grid-template-columns:repeat(' + row.length + ',1fr)">';
+      row.forEach(function (code) {
+        var dogs = occ[code] || [];
+        var arch = (layout.arches || []).indexOf(code) !== -1;
+        html += '<div class="reorder-kb-box' + (dogs.length ? ' is-occ' : '') + (arch ? ' has-arch' : '') +
+          '" data-code="' + code + '"><span class="reorder-kb-pos">' + code + '</span>';
+        dogs.forEach(function (d) {
+          html += '<span class="reorder-kb-dog" title="' + escapeAttr(d.name + ' — stop ' + d.stop) + '">' +
+            escapeHtml(firstNameOf(d.name)) + '<em>' + d.stop + '</em></span>';
+        });
+        html += '</div>';
+      });
+      html += '</div>';
+    });
+    return html + '</div>';
+  }
+
+  function renderKennelBoard(st, r, occ) {
+    var board = st.card.querySelector('.reorder-kboard');
+    if (!board) return;
+    var collapsed = false;
+    try { collapsed = localStorage.getItem(KB_COLLAPSE_LS) === '1'; } catch (e) {}
+    var un = r.dogs.filter(function (d) { return !d.code; });
+    board.innerHTML =
+      '<div class="reorder-kb-head" role="button" tabindex="0" title="Show/hide the van kennel layout">' +
+        '<span class="reorder-kb-title">🚐 Van kennels</span>' +
+        '<span class="reorder-kb-count">' + r.dogs.length + ' dog' + (r.dogs.length === 1 ? '' : 's') +
+          ' · ' + kennelCodesFor(r.layout).length + ' kennels</span>' +
+        (un.length ? '<span class="reorder-kb-un" title="' +
+          escapeAttr(un.map(function (d) { return d.name; }).join(', ')) + '">' +
+          un.length + ' unassigned</span>' : '') +
+        '<span class="reorder-kb-caret">▾</span>' +
+      '</div>' +
+      '<div class="reorder-kb-body">' +
+        kbGrid(r.layout.side, 'Side door', r.layout, occ) +
+        kbGrid(r.layout.back, 'Back door', r.layout, occ) +
+      '</div>';
+    board.hidden = false;
+    board.classList.toggle('collapsed', collapsed);
+    var head = board.querySelector('.reorder-kb-head');
+    if (head) head.addEventListener('click', function () {
+      var c = board.classList.toggle('collapsed');
+      try { localStorage.setItem(KB_COLLAPSE_LS, c ? '1' : '0'); } catch (e) {}
+    });
+  }
+
+  function onKennelChange(st, member, sel) {
+    var code = sel.value;
+    var ctx = (st.record && st.record.ctx) || {};
+    var key = normKey(member);
+    if (code) {
+      // Belt-and-braces: options render disabled when full, but the roster may
+      // have moved under a slow tap — the Load Plan's "max 2 dogs" rule holds.
+      var r = kennelRoster(st);
+      var others = 0;
+      ((r && r.dogs) || []).forEach(function (d) { if (d.code === code && d.key !== key) others++; });
+      if (others >= 2) {
+        toast('Box is full (max 2 dogs) — ' + code, 'error');
+        refreshKennelUi(st);
+        return;
+      }
+    }
+    if (!ctx.kp || typeof ctx.kp !== 'object' || Array.isArray(ctx.kp)) ctx.kp = {};
+    if (code) ctx.kp[key] = code; else delete ctx.kp[key];
+    st.record.ctx = ctx;
+    refreshKennelUi(st);        // mockup + every select's occupant hints follow immediately
+    scheduleKpSave(st);
+    // One-way write-back to the Load Plan grid (owner request 2026-07-31):
+    // the seed grid follows the final word. Assignments only — never trays a
+    // tile (a trayed dog silently drops off the route at the next re-stage).
+    // Silent no-op when the other plan is loaded, the dog has no tile
+    // (Add-Dog), or the grid box is full. Cosmetic courtesy; never surfaces.
+    try {
+      if (code && window.RouteSender && RouteSender.applyKennelFromReorder) {
+        var wbPlan = (String(ctx.p || '').toUpperCase() === 'NEXT_AM') ? 'NEXT_AM' : 'PM';
+        RouteSender.applyKennelFromReorder(wbPlan, ctx.v, member, code);
+      }
+    } catch (eWb) { /* cosmetic only — never break a kennel edit on it */ }
+  }
+
+  // Debounced persist of ctx.kp via the new savePositions action — the same
+  // optimistic + rollback discipline as scheduleSave/doSave, kept SEPARATE so
+  // a kennel edit can never rewrite ctx.o (and vice versa). Ordering: a kennel
+  // save defers to any order save fully (schedule OR flight); an order save
+  // defers only to a kennel POST actually in flight — one-way priority, so the
+  // two can never mutually defer forever.
+  function scheduleKpSave(st) {
+    st.pendingKpSave = true;
+    var sf = st.card && st.card.querySelector('.reorder-sent-flag');
+    if (sf) sf.hidden = true;              // positions changed since the last send
+    if (st.kpSaveTimer) clearTimeout(st.kpSaveTimer);
+    st.kpSaveTimer = setTimeout(function () { doKpSave(st); }, SAVE_DEBOUNCE_MS);
+  }
+  function doKpSave(st) {
+    if (st.pendingSave) {                  // an order save is queued/in flight — let it land first
+      if (st.kpSaveTimer) clearTimeout(st.kpSaveTimer);
+      st.kpSaveTimer = setTimeout(function () { doKpSave(st); }, 400);
+      return;
+    }
+    var r = kennelRoster(st);
+    if (!r) { st.pendingKpSave = false; return; }
+    var kp = {};
+    r.dogs.forEach(function (d) { if (d.code) kp[d.key] = d.code; });
+    st.kpInFlight = true;
+    postStore({ action: 'savePositions', token: TOKEN, slot_key: st.record.slot_key, kp: kp,
+                rev: st.record.rev, last_reordered_by: deviceId() })
+      .then(function (res) {
+        st.kpInFlight = false;
+        st.pendingKpSave = false;
+        if (res && res.ok) {
+          if (res.rev != null) { st.record.rev = res.rev; st.renderedRev = res.rev; }
+        } else if (res && res.stale) {
+          st.renderedRev = null;           // force the next poll to re-render from server truth
+          toast('That route changed on another device — reloaded', 'warning');
+          poll();
+        } else {
+          st.renderedRev = null;
+          toast('Could not save kennel positions — reloaded', 'error');
+          poll();
+        }
+      })
+      .catch(function () {
+        st.kpInFlight = false;
+        st.pendingKpSave = false;
+        st.renderedRev = null;
+        toast('Could not save kennel positions — reloaded', 'error');
+        poll();
+      });
+  }
+
   function ctxPointOr(p, fallback) {
     if (Array.isArray(p) && p.length >= 2 && isFinite(Number(p[0])) && isFinite(Number(p[1]))) {
       return [Number(p[0]), Number(p[1])];
@@ -1055,6 +1335,7 @@
     tiles.reverse().forEach(function (li) { ol.appendChild(li); });
     renumber(ol);
     syncMap(st);            // map follows the reversed order immediately
+    refreshKennelUi(st);    // mockup stop numbers follow too
     scheduleSave(st);
     toast('Route reversed', 'info');
   }
@@ -1097,6 +1378,7 @@
         '<span class="reorder-sent-flag" hidden></span>' +
         '<span class="reorder-skip" hidden></span>' +
       '</div>' +
+      '<div class="reorder-kboard" hidden></div>' +
       '<ol class="reorder-list"></ol>' +
       '<div class="reorder-mapwrap" hidden>' +
         '<div class="reorder-map"></div>' +
@@ -1193,6 +1475,7 @@
         '<span class="reorder-main"><span class="reorder-name"></span>' +
           '<span class="reorder-addr" hidden></span></span>' +
         '<span class="reorder-marks">' + marks + '</span>' +
+        '<span class="reorder-kennels"></span>' +
         '<button type="button" class="reorder-mapcheck" title="Show this address on the map"' +
           ' aria-label="Map Check">🗺<span class="reorder-mapcheck-label"> Map Check</span></button>' +
         '<button type="button" class="reorder-del" title="Remove from route" aria-label="Remove from route">✕</button>';
@@ -1232,6 +1515,9 @@
     // Tiles were rebuilt (fresh stage, a remote reorder, or a failed-save rollback)
     // — an open map must follow. No-op when the map is closed.
     syncMap(st);
+    // Kennel dropdowns need the WHOLE tile list (occupant hints), so they are
+    // populated here, after the loop — along with the van mockup above the stops.
+    refreshKennelUi(st);
   }
 
   function currentOrderIds(ol) {
@@ -1480,6 +1766,7 @@
 
     if (dst === src) {
       syncMap(src);           // map follows the dropped order immediately
+      refreshKennelUi(src);   // mockup stop numbers follow too
       scheduleSave(src);
       return;
     }
@@ -1549,6 +1836,13 @@
 
     syncMap(src);
     syncMap(dst);
+    // Both mockups follow at once. The moved dog still shows its OLD van's code
+    // from the stale local ctx for a beat — the server DROPS kp on a cross-van
+    // move (owner decision 2026-07-20: the code names a kennel in the van the
+    // dog is leaving), so the renderTiles below adopts it as unassigned and
+    // staff give it a kennel in the NEW van via its dropdown.
+    refreshKennelUi(src);
+    refreshKennelUi(dst);
 
     postStore({
       action: 'moveStop', token: TOKEN,
@@ -1605,6 +1899,14 @@
     st.saveTimer = setTimeout(function () { doSave(st); }, SAVE_DEBOUNCE_MS);
   }
   function doSave(st) {
+    if (st.kpInFlight) {
+      // A kennel-positions POST is mid-air; both writes bump rev, so let it land
+      // and adopt its rev first. One-way defer only (doKpSave waits on
+      // pendingSave) — never both ways, or they would defer forever.
+      if (st.saveTimer) clearTimeout(st.saveTimer);
+      st.saveTimer = setTimeout(function () { doSave(st); }, 400);
+      return;
+    }
     var ol = st.card.querySelector('.reorder-list');
     var ids = currentOrderIds(ol);
     var o = ids.map(function (id) { return st.stopsById[id]; });
@@ -1656,6 +1958,7 @@
     if (li) ol.removeChild(li);
     renumber(ol);
     syncMap(st);                      // map drops the removed stop immediately
+    refreshKennelUi(st);              // the dog vacates its kennel in the mockup too
     scheduleSave(st);                 // saves the shortened ctx.o; server keeps the slot STAGED
   }
 
@@ -1665,6 +1968,8 @@
     var slotKey = st.record.slot_key;
     st.pendingSave = true;            // keep the poll/reconcile off this slot mid-clear
     if (st.saveTimer) { clearTimeout(st.saveTimer); st.saveTimer = null; }
+    if (st.kpSaveTimer) { clearTimeout(st.kpSaveTimer); st.kpSaveTimer = null; }
+    st.pendingKpSave = false;         // a queued kennel save must not fire at a cleared slot
     postStore({ action: 'clearSlot', token: TOKEN, slot_key: slotKey })
       .then(function (r) {
         if (r && r.ok) {
@@ -1757,6 +2062,24 @@
       }
     } catch (e) { /* nudge only — never block a send on error */ }
 
+    // Kennel guard (2026-07-31): the mockup's positions are the FINAL van
+    // spots, so warn — never block — when dogs are still unassigned (owner
+    // decision: warn-don't-block, mirroring the staging-tray nudge above).
+    // The payload itself is untouched: ctx.kp rides as `positions` exactly as
+    // before, and an unassigned dog simply renders no code in Telegram.
+    try {
+      var kr = kennelRoster(st);
+      if (kr) {
+        var unassigned = kr.dogs.filter(function (d) { return !d.code; }).map(function (d) { return d.name; });
+        if (unassigned.length) {
+          var kMsg = '📦 ' + unassigned.length + ' dog' + (unassigned.length === 1 ? ' has' : 's have') +
+            ' no kennel position:\n' + unassigned.join(', ') +
+            '\n\nSend this route anyway?';
+          if (!window.confirm(kMsg)) return;
+        }
+      }
+    } catch (e2) { /* nudge only — never block a send on error */ }
+
     // P5c (2026-07-17): delegate the payload-object CONSTRUCTION to the shared
     // FT_PAYLOAD module when it has loaded (shared/ft-payload.js) — one payload
     // rule, one source. Only the object build is delegated; the surrounding
@@ -1836,6 +2159,8 @@
   // ---- reconcile (poll) -----------------------------------------
   function removeCard(st) {
     if (st.record) cleared[st.record.slot_key] = Date.now();   // tombstone: block a stale in-flight poll re-adding this card
+    if (st.kpSaveTimer) { clearTimeout(st.kpSaveTimer); st.kpSaveTimer = null; }
+    st.pendingKpSave = false;                                  // a queued kennel save must not fire for a removed card
     destroyMap(st);                                            // release the Leaflet instance with its card
     if (st.card && st.card.parentNode) st.card.parentNode.removeChild(st.card);
     if (st.record) delete slots[st.record.slot_key];
@@ -1867,7 +2192,7 @@
     Object.keys(slots).forEach(function (key) {
       if (keys[key]) return;
       var st = slots[key];
-      if (st.dragging || st.pendingSave) { st.staleRemove = true; return; }
+      if (st.dragging || st.pendingSave || st.pendingKpSave) { st.staleRemove = true; return; }
       destroyMap(st);
       if (st.card && st.card.parentNode) st.card.parentNode.removeChild(st.card);
       delete slots[key];
@@ -1893,6 +2218,7 @@
           st = slots[rec.slot_key] = {
             record: rec, card: null, stopsById: {}, renderedRev: null,
             dragging: false, pendingSave: false, saveTimer: null, staleRemove: false,
+            pendingKpSave: false, kpSaveTimer: null, kpInFlight: false,
             map: null, mapLayer: null, mapBounds: null, mapOpen: false
           };
           st.card = buildCard(rec);
@@ -1900,7 +2226,7 @@
           renderTiles(st, rec);
           updateCardMeta(st.card, rec);
           st.renderedRev = rec.rev;
-        } else if (!st.dragging && !st.pendingSave) {
+        } else if (!st.dragging && !st.pendingSave && !st.pendingKpSave) {
           // safe to refresh from server
           st.record = rec;
           if (st.card.parentNode !== mount) mount.appendChild(st.card);
