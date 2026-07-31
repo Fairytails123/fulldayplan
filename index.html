@@ -1180,17 +1180,25 @@
     .alt-menu .alt-opt.sel::after { content: ' \2713'; }   /* tick on the chosen option */
 
     /* ===== Reorder Routes — staging tab (added 2026-06-26) ===== */
-    #reorderView { max-width: 1200px; margin: 0 auto; padding: 16px; display: grid; gap: 18px; }
-    .reorder-head { display: flex; align-items: center; gap: 10px; font-size: 14px; color: #475569; }
+    /* minmax(0,1fr) + min-width:0 (2026-07-31 screen-fit fix): a bare `auto`
+       grid track sizes to its widest item's INTRINSIC width (the Add-Dog
+       form's unwrapped row ≈ 1,545px), which made every section card overflow
+       the viewport's right edge — the whole tab looked shifted right on
+       desktop and was clipped on phones. Pinning the track to the container
+       and letting items shrink restores the centred, screen-fitting layout;
+       the inner flexes (Add-Dog form, tiles ≤600px) already wrap. */
+    #reorderView { max-width: 1200px; margin: 0 auto; padding: 16px; display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr); }
+    #reorderView > * { min-width: 0; }
+    .reorder-head { display: flex; align-items: center; gap: 10px; font-size: 14px; color: #475569; flex-wrap: wrap; }
     .reorder-poll-dot { width: 10px; height: 10px; border-radius: 50%; background: #cbd5e0; flex: 0 0 auto; }
     .reorder-poll-dot.is-ok { background: var(--success); animation: reorderPulse 1.6s ease-out; }
     .reorder-poll-dot.is-bad { background: var(--danger); }
     @keyframes reorderPulse { 0% { box-shadow: 0 0 0 0 rgba(47,133,90,0.5); } 100% { box-shadow: 0 0 0 8px rgba(47,133,90,0); } }
     .reorder-section { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px 16px; }
     .reorder-section-title { margin: 0 0 12px; font-size: 16px; font-weight: 700; color: #1f2937; }
-    .reorder-slots { display: grid; grid-template-columns: 1fr; gap: 14px; }
+    .reorder-slots { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
     .reorder-empty { color: #94a3b8; font-style: italic; padding: 6px 2px; }
-    .reorder-slot { border: 1px solid #e2e8f0; border-top: 3px solid var(--accent); border-radius: 8px; padding: 12px; background: #fff; }
+    .reorder-slot { border: 1px solid #e2e8f0; border-top: 3px solid var(--accent); border-radius: 8px; padding: 12px; background: #fff; min-width: 0; }
     .reorder-slot-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
     .van-badge { display: inline-block; padding: 3px 10px; border-radius: 999px; color: #fff; font-weight: 700; font-size: 13px; letter-spacing: .3px; }
     .van-badge--bv  { background: var(--accent); }
@@ -1200,7 +1208,7 @@
     .reorder-updated-flag { background: var(--info); color: #fff; font-size: 11px; padding: 1px 8px; border-radius: 999px; }
     .reorder-skip { color: #b45309; font-size: 12px; flex-basis: 100%; }
     .reorder-list { list-style: none; margin: 0 0 10px; padding: 0; }
-    .reorder-tile { display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 10px 12px; margin: 8px 0; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 15px; }
+    .reorder-tile { display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 10px 12px; margin: 8px 0; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 15px; min-width: 0; flex-wrap: wrap; }
     .reorder-tile--solo { opacity: .92; }
     .reorder-pos { flex: 0 0 26px; width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; background: var(--accent); color: #fff; border-radius: 50%; font-weight: 700; font-size: 13px; }
     .reorder-grip { flex: 0 0 auto; cursor: grab; color: #94a3b8; font-size: 20px; line-height: 1; touch-action: none; user-select: none; -webkit-user-select: none; padding: 0 4px; }
@@ -1210,7 +1218,7 @@
     .reorder-placeholder { height: 52px; margin: 8px 0; border: 2px dashed var(--accent); border-radius: 8px; background: #ebf8ff; list-style: none; }
     .reorder-tile.is-dragging { background: #fff; }
     .reorder-send { width: 100%; margin-top: 4px; }
-    @media (min-width: 900px) { .reorder-slots { grid-template-columns: 1fr 1fr; } }
+    @media (min-width: 900px) { .reorder-slots { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
 
     /* ── Kennel dropdowns + live van mockup (Reorder tab, 2026-07-31) ──
        Per-dog <select> on each tile (compact, code-only labels) + a
@@ -1229,7 +1237,7 @@
     .reorder-kb-caret { margin-left: auto; color: #94a3b8; transition: transform .15s; }
     .reorder-kboard.collapsed .reorder-kb-caret { transform: rotate(-90deg); }
     .reorder-kboard.collapsed .reorder-kb-body { display: none; }
-    .reorder-kb-body { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }
+    .reorder-kb-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; margin-top: 8px; }
     .reorder-kb-doorlbl { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: #94a3b8; margin-bottom: 4px; text-align: center; }
     .reorder-kb-row { display: grid; gap: 4px; margin-bottom: 4px; }
     .reorder-kb-box { position: relative; border: 1px dashed #cbd5e1; border-radius: 6px; min-height: 36px; padding: 3px 5px 3px; background: #fff; overflow: hidden; }
