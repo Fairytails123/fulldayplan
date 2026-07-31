@@ -333,7 +333,14 @@
       '.reorder-slot.is-drop-blocked{outline:2px dashed #dc2626;outline-offset:2px;background:#fef2f2;' +
         'cursor:not-allowed;}' +
       '.reorder-slot.is-drop-source{opacity:0.97;}' +
-      '.reorder-tile .reorder-main{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;gap:2px;}' +
+      // Sizing rationale (2026-07-31, kennel dropdowns): basis 150px (NOT auto)
+      // so the wrap decision uses a compact hypothetical size — controls stay
+      // on one line whenever they fit and the name/address GROW into the
+      // leftover (ellipsis beyond); basis auto made long-address tiles wrap
+      // their controls even when shrinking would fit. The min-width floor
+      // stops the name crushing to one letter beside two dropdowns; the tile
+      // wraps instead (flex-wrap since the same date).
+      '.reorder-tile .reorder-main{flex:1 1 150px;min-width:min(150px,55%);display:flex;flex-direction:column;gap:2px;}' +
       '.reorder-tile .reorder-main .reorder-name{flex:none;}' +
       '.reorder-tile .reorder-addr{font-size:12px;color:#475569;overflow:hidden;text-overflow:ellipsis;' +
         'white-space:nowrap;max-width:100%;}' +
@@ -810,7 +817,7 @@
   function kbGrid(rows, label, layout, occ) {
     var html = '<div class="reorder-kb-grid"><div class="reorder-kb-doorlbl">' + escapeHtml(label) + '</div>';
     (rows || []).forEach(function (row) {
-      html += '<div class="reorder-kb-row" style="grid-template-columns:repeat(' + row.length + ',1fr)">';
+      html += '<div class="reorder-kb-row" style="grid-template-columns:repeat(' + row.length + ',minmax(0,1fr))">';
       row.forEach(function (code) {
         var dogs = occ[code] || [];
         var arch = (layout.arches || []).indexOf(code) !== -1;
