@@ -51,6 +51,10 @@
   //   hostHydrate() → re-render the boxes
   var hostSetStopValue = null;
   var hostHydrate = null;
+  // Reorder→grid kennel write-back hook (added 2026-07-31):
+  //   hostMoveTileToBox(tileId, boxId) → moves a tile into a kennel box
+  //   (undo state + remove-from-everywhere + max-2, exactly like a drag).
+  var hostMoveTileToBox = null;
 
   function safeState() {
     try { return hostGetState ? hostGetState() : null; } catch (e) { return null; }
@@ -98,6 +102,39 @@
       });
     });
     return out;
+  }
+
+  // One-way Reorder→grid kennel write-back (owner request 2026-07-31): when a
+  // dog's kennel is changed on the Reorder tab, reflect the ASSIGNMENT onto the
+  // Load Plan grid so the seed matches the final word. Deliberate limits, all
+  // silent no-ops (this is a cosmetic courtesy — ctx.kp is the authority):
+  //   - assignments only; NEVER unassigns/trays a tile (a trayed dog silently
+  //     drops off the route at the next re-stage — that trap must stay closed);
+  //   - only when the slot's plan is the currently loaded plan (state is
+  //     per-plan; the other plan's grid simply catches up next time it is the
+  //     seed);
+  //   - skips Add-Dog dogs (no tile), unknown codes for the van, and full boxes.
+  // Matching uses the SAME normName that keyed `positions` at stage time.
+  function applyKennelFromReorder(planKey, van, dogName, posCode) {
+    if (typeof hostMoveTileToBox !== 'function') return false;
+    if (String(planKey || '').toUpperCase() !== String(getCurrentPeriod()).toUpperCase()) return false;
+    var st = safeState();
+    if (!st || !st.tiles || !st.placements) return false;
+    var code = String(posCode || '').toUpperCase().trim();
+    if (!code) return false;
+    var boxEl = document.querySelector('.box[data-box^="' + String(van || '').toLowerCase() + '-"][data-pos="' + code + '"]');
+    if (!boxEl || !boxEl.dataset || !boxEl.dataset.box) return false;
+    var want = normName(dogName);
+    if (!want) return false;
+    var tileId = null;
+    Object.keys(st.tiles).some(function (tid) {
+      var t = st.tiles[tid];
+      if (t && t.text && normName(t.text) === want) { tileId = tid; return true; }
+      return false;
+    });
+    if (!tileId) return false;
+    try { return hostMoveTileToBox(tileId, boxEl.dataset.box) === true; }
+    catch (e) { return false; }
   }
 
   function getCurrentPeriod() {
@@ -590,11 +627,13 @@
       hostGetCurrentPlan = typeof opts.getCurrentPlan === 'function' ? opts.getCurrentPlan : null;
       hostSetStopValue = typeof opts.setStopValue === 'function' ? opts.setStopValue : null;
       hostHydrate = typeof opts.hydrate === 'function' ? opts.hydrate : null;
+      hostMoveTileToBox = typeof opts.moveTileToBox === 'function' ? opts.moveTileToBox : null;
       bindButtons();
       bindToggles();
       console.log('[RouteSender] Initialised. State accessor wired:',
         !!hostGetState, '— currentPlan accessor wired:', !!hostGetCurrentPlan,
-        '— stop write-back wired:', !!hostSetStopValue);
+        '— stop write-back wired:', !!hostSetStopValue,
+        '— kennel write-back wired:', !!hostMoveTileToBox);
     },
     // Diagnostics — call from DevTools to verify the payload shape.
     buildPayload: buildPayload,
@@ -605,6 +644,9 @@
     // Stop-number write-back (added 2026-05-30). Call from DevTools to test:
     //   RouteSender.applyReturnedStops('BV', [{name:'Arlo',stop:1}])
     applyReturnedStops: applyReturnedStops,
+    // Kennel write-back (added 2026-07-31) — called by route_reorder.js when a
+    // dog's kennel is changed on the Reorder tab (one-way, assignments only).
+    applyKennelFromReorder: applyKennelFromReorder,
     // Staging-tray nudge helpers (2026-07-19) — getTrayDogsForPlan is read by
     // route_reorder.js sendFinal (plan-matched left-behind guard).
     getTrayDogs: getTrayDogs,
