@@ -1211,6 +1211,39 @@
     .reorder-tile.is-dragging { background: #fff; }
     .reorder-send { width: 100%; margin-top: 4px; }
     @media (min-width: 900px) { .reorder-slots { grid-template-columns: 1fr 1fr; } }
+
+    /* ── Kennel dropdowns + live van mockup (Reorder tab, 2026-07-31) ──
+       Per-dog <select> on each tile (compact, code-only labels) + a
+       collapsible per-van kennel mockup above the stop list. Light-theme
+       sibling of the /drive app's VAN KENNELS board; kept small per the
+       house subtle-UI rule — no bulky labels, tooltips carry the words. */
+    .reorder-kennels { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px; }
+    .reorder-kennel { font-size: 12px; font-weight: 600; padding: 3px 2px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: #334155; max-width: 92px; }
+    .reorder-kennel.is-un { border-color: #f59e0b; background: #fffbeb; }
+    .reorder-kennel-who { font-size: 10px; color: #64748b; max-width: 52px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .reorder-kboard { border: 1px solid #e2e8f0; border-radius: 8px; background: #f8fafc; padding: 8px 10px; margin-bottom: 10px; font-size: 12px; }
+    .reorder-kb-head { display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; -webkit-user-select: none; }
+    .reorder-kb-title { font-weight: 700; color: #1f2937; }
+    .reorder-kb-count { color: #64748b; }
+    .reorder-kb-un { color: #b45309; background: #fef3c7; border-radius: 999px; padding: 1px 8px; font-weight: 600; }
+    .reorder-kb-caret { margin-left: auto; color: #94a3b8; transition: transform .15s; }
+    .reorder-kboard.collapsed .reorder-kb-caret { transform: rotate(-90deg); }
+    .reorder-kboard.collapsed .reorder-kb-body { display: none; }
+    .reorder-kb-body { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }
+    .reorder-kb-doorlbl { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: #94a3b8; margin-bottom: 4px; text-align: center; }
+    .reorder-kb-row { display: grid; gap: 4px; margin-bottom: 4px; }
+    .reorder-kb-box { position: relative; border: 1px dashed #cbd5e1; border-radius: 6px; min-height: 36px; padding: 3px 5px 3px; background: #fff; overflow: hidden; }
+    .reorder-kb-box.is-occ { border-style: solid; border-color: var(--accent); background: #eef2ff; }
+    .reorder-kb-pos { display: block; font-size: 9px; font-weight: 800; letter-spacing: .05em; color: #94a3b8; line-height: 1.2; }
+    .reorder-kb-box.is-occ .reorder-kb-pos { color: var(--accent); }
+    .reorder-kb-dog { display: block; font-size: 11px; font-weight: 600; color: #1e293b; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .reorder-kb-dog em { font-style: normal; font-weight: 700; color: #fff; background: var(--accent); border-radius: 50%; padding: 0 4px; font-size: 9px; margin-left: 3px; }
+    .reorder-kb-box.has-arch::after { content: ''; position: absolute; right: 4px; bottom: 2px; width: 11px; height: 5px; border: 1px solid #94a3b8; border-bottom: none; border-radius: 10px 10px 0 0; opacity: .7; pointer-events: none; }
+    @media (max-width: 600px) {
+      .reorder-tile { flex-wrap: wrap; }
+      .reorder-kennels { order: 5; }
+      .reorder-kb-body { grid-template-columns: 1fr; }
+    }
   
     /* ── Kennel position labels (added 2026-07-02) ───────────────────
        Staff annotations from the owner's hand-marked reference so each
@@ -3026,7 +3059,26 @@
           getState: function () { return state; },
           getCurrentPlan: function () { return currentPlan; },
           setStopValue: function (boxId, type, value) { setStopValue(boxId, type, value); },
-          hydrate: function () { hydrate(); }
+          hydrate: function () { hydrate(); },
+          // One-way Reorder→grid kennel write-back (2026-07-31): move a tile
+          // into a kennel box, mirroring finishDrag's semantics (undo state,
+          // remove-from-everywhere, max 2 per box) — used when staff change a
+          // dog's kennel on the Reorder tab so the seed grid follows the final
+          // word. Refuses (returns false) rather than half-applies.
+          moveTileToBox: function (tileId, boxId) {
+            if (!state.tiles || !state.tiles[tileId]) return false;
+            var arr = state.placements[boxId] || [];
+            if (arr.indexOf(tileId) !== -1) return false;   // already there
+            if (arr.length >= 2) return false;              // box full — leave the grid alone
+            saveUndoState();
+            Object.keys(state.placements).forEach(function (k) {
+              state.placements[k] = (state.placements[k] || []).filter(function (t) { return t !== tileId; });
+            });
+            (state.placements[boxId] = state.placements[boxId] || []).push(tileId);
+            localSave();
+            hydrate();
+            return true;
+          }
         });
       }
     })();
