@@ -1328,12 +1328,8 @@
   // (set by Format Route at stage time, so it matches the Telegram message exactly);
   // fall back to computing from staged_at + section for routes staged before this
   // feature (today for PM/Half-Day, the next day for NEXT_AM). Europe/London.
-  function dayStampFor(rec) {
-    if (rec && rec.ctx && rec.ctx.dt) return String(rec.ctx.dt);
+  function stampFromDate(d) {
     try {
-      var d = (rec && rec.staged_at) ? new Date(rec.staged_at) : new Date();
-      if (isNaN(d.getTime())) d = new Date();
-      if (rec && rec.section === 'NEXT_AM') d = new Date(d.getTime() + 86400000);
       var parts = new Intl.DateTimeFormat('en-GB', {
         timeZone: 'Europe/London', weekday: 'short', day: '2-digit', month: '2-digit'
       }).formatToParts(d);
@@ -1346,6 +1342,76 @@
       if (!wd || !dd || !mm) return '';
       return wd.slice(0, 3).toUpperCase() + ' ' + dd + '/' + mm;
     } catch (e) { return ''; }
+  }
+
+  function dayStampFor(rec) {
+    if (rec && rec.ctx && rec.ctx.dt) return String(rec.ctx.dt);
+    var d = (rec && rec.staged_at) ? new Date(rec.staged_at) : new Date();
+    if (isNaN(d.getTime())) d = new Date();
+    if (rec && rec.section === 'NEXT_AM') d = new Date(d.getTime() + 86400000);
+    return stampFromDate(d);
+  }
+
+  // The stamp a slot staged TODAY for this section would carry — the overlay's
+  // day guard compares a slot's own stamp against this (slots persist until
+  // overwritten/cleared, and many dogs attend daily, so yesterday's slot must
+  // never renumber today's grid).
+  function expectedStampFor(section) {
+    var d = new Date();
+    if (section === 'NEXT_AM') d = new Date(d.getTime() + 86400000);
+    return stampFromDate(d);
+  }
+
+  // ---- Load-Plan overlay from the staged store (2026-08-02, Kam) ----------
+  // The ReorderQueue is the always-current shared truth for stop ORDER and
+  // KENNEL positions (every drag persists via saveOrder, every kennel edit
+  // via savePositions, and Send Final sends exactly that state). The Load
+  // Plan's cloud snapshot, by contrast, is only as fresh as the last manual
+  // Share. So on plan load / Fetch (and after a Send Final) the grid is
+  // aligned READ-SIDE from the store: kennel assignments through the existing
+  // one-way write-back (RouteSender.applyKennelFromReorder — never trays,
+  // never creates a tile, max-2 refusal) and stop numbers through
+  // RouteSender.applyReturnedStops with clearUnmatched (a dog pulled off the
+  // route sheds its stale number). NOTHING is written to the cloud store —
+  // no dual-write, no stale-device wipe vector; Share stays manual, and a
+  // Share after alignment simply publishes the corrected grid.
+  function overlayFromStore(planId) {
+    planId = String(planId || '').toUpperCase() === 'NEXT_AM' ? 'NEXT_AM' : 'PM';
+    if (!window.RouteSender || !RouteSender.applyKennelFromReorder ||
+        !RouteSender.applyReturnedStops) return;
+    getStaged().then(function (body) {
+      if (!body || body.ok !== true || !Array.isArray(body.slots)) return;
+      applyStoreOverlay(planId, body.slots);
+    }).catch(function () { /* offline / store error → grid stays as loaded */ });
+  }
+
+  function applyStoreOverlay(planId, slotRecs) {
+    var kennelMoves = 0, stopWrites = 0, vansAligned = 0;
+    (slotRecs || []).forEach(function (rec) {
+      if (!rec || !rec.ctx || !rec.van) return;
+      var slotPlan = (rec.section === 'NEXT_AM') ? 'NEXT_AM' : 'PM';   // HALF_DAY rides the PM plan
+      if (slotPlan !== planId) return;
+      if (dayStampFor(rec) !== expectedStampFor(rec.section)) return;  // another day's slot
+      var o = Array.isArray(rec.ctx.o) ? rec.ctx.o : [];
+      if (!o.length) return;
+      var kidx = kennelIndexFor(rec.ctx);
+      var stops = [];
+      o.forEach(function (members, i) {
+        (members || []).forEach(function (m) {
+          if (isSalonName(m)) return;          // rides the route, has no grid tile
+          var code = kidx[normKey(m)];
+          if (code && RouteSender.applyKennelFromReorder(planId, rec.van, m, code)) kennelMoves++;
+          stops.push({ name: m, stop: i + 1 });
+        });
+      });
+      stopWrites += RouteSender.applyReturnedStops(rec.van, stops, planId, { clearUnmatched: true });
+      vansAligned++;
+    });
+    if (vansAligned) {
+      console.log('[RouteReorder] Grid aligned to the staged store (' + planId + '): ' +
+        vansAligned + ' van(s), ' + stopWrites + ' stop number(s), ' + kennelMoves + ' kennel move(s).');
+    }
+    return { vans: vansAligned, stops: stopWrites, kennels: kennelMoves };
   }
 
   function buildCard(rec) {
@@ -2183,6 +2249,12 @@
       setBtn(btn, 'success');
       markCardSent(st);
       toast('✅ ' + ctx.v + ' route sent to Telegram — it stays here so you can reorder & resend', 'success');
+      // Align this device's Load Plan grid with what was just sent (store →
+      // grid, 2026-08-02). Self-guards: applyKennelFromReorder /
+      // applyReturnedStops skip when the sent slot's plan isn't the loaded
+      // one — the next plan load overlays it then.
+      try { overlayFromStore((st.record && st.record.section === 'NEXT_AM') ? 'NEXT_AM' : 'PM'); }
+      catch (e) { /* alignment is best-effort — never taint a successful send */ }
       setTimeout(function () { if (slots[slotKey]) setBtn(btn, 'idle'); }, SENT_RESET_MS);
     }).catch(function () {
       setBtn(btn, 'failed');
@@ -2362,5 +2434,8 @@
     if (active && !document.hidden) poll();
   });
 
-  window.RouteReorder = { enter: enter, exit: exit, toast: toast };
+  window.RouteReorder = { enter: enter, exit: exit, toast: toast,
+    // Store→grid alignment (2026-08-02): called by the page on plan load /
+    // Fetch (deferred a tick so RouteSender.init has wired the hooks).
+    overlayFromStore: overlayFromStore };
 })();
