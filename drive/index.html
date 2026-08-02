@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-<meta name="theme-color" content="#0b0f14">
+<meta name="theme-color" content="#F2F2F7">
 <title>Fairy Tails — Drive</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚐</text></svg>">
 <!-- iOS Home-Screen install: Safari → Share → Add to Home Screen is the iPhone
@@ -12,438 +12,478 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="FT Drive">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&display=swap" rel="stylesheet">
 <style>
+  /* ── Design tokens (2026-08-02 redesign — Routes Driver UX Redesign/README.md is the spec) ── */
   :root {
-    --bg: #0b0f14;
-    --panel: #131a22;
-    --panel-2: #1a232e;
-    --line: #26313d;
-    --ink: #f2f6fa;
-    --ink-dim: #93a3b3;
-    --ink-faint: #5b6b7b;
-    --good: #2dd4a7;
-    --warn: #fbbf24;
-    --bad: #f87171;
-    --accent: #2dd4bf;      /* van colour, set at runtime */
-    --accent-ink: #06251f;
-    --radius: 18px;
-    --pad: clamp(12px, 3.5vw, 20px);
+    --page: #F2F2F7;
+    --card: #FFFFFF;
+    --ink: #1C1C1E;
+    --ink-2: #8E8E93;
+    --ink-3: #AEAEB2;
+    --hairline: rgba(60,60,67,0.12);
+    --hairline-op: #C6C6C8;
+    --blue: #00AFF1;
+    --blue-dark: #0090C8;
+    --blue-deep: #006A94;
+    --blue-bg: #E6F7FE;
+    --green: #34C759;
+    --green-text: #1E8E3E;
+    --amber: #FF9500;
+    --amber-text: #C93400;
+    --amber-bg: #FFF9EE;
+    --red: #FF3B30;
+    --red-text: #D70015;
+    --teal: #32ADE6;
+    --teal-text: #1D7DAB;
+    --sh-card: 0 0.5px 0 rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.04);
+    --sh-raised: 0 2px 8px rgba(0,0,0,0.08);
+    --sh-modal: 0 8px 24px rgba(0,0,0,0.12);
+    --sh-drag: 0 8px 24px rgba(0,0,0,0.18);
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin: 0; padding: 0; }
   body {
-    background: var(--bg);
-    color: var(--ink);
-    font-family: "Bricolage Grotesque", -apple-system, "Segoe UI", Roboto, sans-serif;
-    font-size: 16px;
-    line-height: 1.35;
+    background: var(--page); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", system-ui, "Segoe UI", Roboto, sans-serif;
+    font-size: 15px; line-height: 1.45; -webkit-font-smoothing: antialiased;
     min-height: 100dvh;
-    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 92px);
-    background-image:
-      radial-gradient(1100px 500px at 85% -10%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 60%),
-      radial-gradient(700px 380px at -10% 8%, rgba(255,255,255,0.03), transparent 60%);
-    background-attachment: fixed;
   }
   .num { font-variant-numeric: tabular-nums; }
+  button { font-family: inherit; cursor: pointer; }
+  button:active { transform: scale(0.97); opacity: 0.85; }
+  #wrap { max-width: 480px; margin: 0 auto; padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 110px); }
 
-  /* ── Top bar ─────────────────────────────────────────── */
+  @keyframes ftr-pulse { 0%, 100% { box-shadow: 0 0 0 3px rgba(0,175,241,0.28); } 50% { box-shadow: 0 0 0 7px rgba(0,175,241,0.10); } }
+  @keyframes ftr-pop { 0% { transform: scale(0.85); } 60% { transform: scale(1.06); } 100% { transform: scale(1); } }
+  @keyframes ftr-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  @keyframes ftr-toast { from { opacity: 0; transform: translateX(-50%) translateY(8px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+
+  /* ── Sticky glass header ── */
   header {
     position: sticky; top: 0; z-index: 30;
-    display: flex; align-items: center; gap: 10px;
-    padding: calc(env(safe-area-inset-top, 0px) + 10px) var(--pad) 10px;
-    background: color-mix(in srgb, var(--bg) 88%, transparent);
-    backdrop-filter: blur(10px);
-    border-bottom: 1px solid var(--line);
+    background: rgba(249,249,249,0.94);
+    backdrop-filter: saturate(180%) blur(20px);
+    -webkit-backdrop-filter: saturate(180%) blur(20px);
+    border-bottom: 0.5px solid var(--hairline-op);
+    padding: calc(env(safe-area-inset-top, 0px) + 14px) 16px 12px;
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
   }
-  .van-chip {
-    display: inline-flex; align-items: center; gap: 8px;
-    background: var(--accent); color: var(--accent-ink);
-    font-weight: 800; letter-spacing: 0.04em;
-    border-radius: 999px; padding: 6px 14px; font-size: 15px;
-    border: 0; cursor: pointer;
+  #hdrLeft { min-width: 0; cursor: pointer; }
+  #ridTxt { font-size: 17px; font-weight: 700; letter-spacing: -0.02em; display: flex; align-items: center; gap: 5px; white-space: nowrap; overflow: hidden; }
+  #ridSub { font-size: 12px; font-weight: 600; color: var(--ink-2); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+  #ridSub .drift-ok { color: var(--green); }
+  #ridSub .drift-bad { color: var(--amber-text); }
+  #ridSub .drift-dim { color: var(--ink-2); }
+  .hdr-right { display: flex; align-items: center; gap: 6px; flex: none; }
+  .pill-van {
+    font-size: 12px; font-weight: 700; padding: 5px 11px; border-radius: 9999px;
+    letter-spacing: 0.02em; border: 0; background: rgba(142,142,147,0.12); color: var(--ink-2);
+    position: relative;   /* + invisible ::after pad = a 44px tap target on a 27px pill */
   }
-  .van-chip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent-ink); opacity: 0.55; }
-  #routeMeta { flex: 1; min-width: 0; }
-  #routeMeta .rid { font-weight: 600; font-size: 13px; color: var(--ink-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  #routeMeta .sub { font-size: 12px; color: var(--ink-faint); }
-  .icon-btn {
-    background: var(--panel-2); border: 1px solid var(--line); color: var(--ink-dim);
-    width: 42px; height: 42px; border-radius: 12px; font-size: 18px; cursor: pointer;
-    display: grid; place-items: center; flex: none;
+  .pill-van::after { content: ''; position: absolute; inset: -9px -5px; }
+  .pill-van.vp-BV { background: rgba(0,175,241,0.12); color: var(--blue-dark); }
+  .pill-van.vp-BVX { background: rgba(255,149,0,0.12); color: var(--amber-text); }
+  .pill-van.vp-SV { background: rgba(52,199,89,0.12); color: var(--green-text); }
+  .pill-status {
+    font-size: 13px; font-weight: 700; padding: 5px 11px; border-radius: 9999px;
+    background: rgba(0,175,241,0.08); color: var(--blue); font-variant-numeric: tabular-nums;
   }
-  .icon-btn:active { transform: scale(0.94); }
-  #syncDot { position: absolute; top: calc(env(safe-area-inset-top, 0px) + 8px); right: 8px; width: 7px; height: 7px; border-radius: 50%; background: var(--good); transition: background .3s; }
-  #syncDot.err { background: var(--bad); }
   /* S3 GPS status chip — only shown inside the native GPS shell (v0.2+); hidden everywhere else */
-  .gps-chip { display: none; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; letter-spacing: .02em; border-radius: 999px; padding: 4px 9px; flex: none; white-space: nowrap; border: 1px solid var(--line); background: var(--panel-2); color: var(--ink-faint); }
-  .gps-chip.live { color: #04251f; background: var(--good); border-color: transparent; }
-  .gps-chip.wait { color: #2a1e02; background: #fbbf24; border-color: transparent; }
-  .gps-chip.off { color: var(--ink-faint); background: var(--panel-2); }
+  .gps-chip { display: none; align-items: center; gap: 4px; font-size: 11px; font-weight: 700; letter-spacing: .02em; border-radius: 9999px; padding: 4px 9px; flex: none; white-space: nowrap; background: rgba(142,142,147,0.12); color: var(--ink-2); }
+  .gps-chip.live { color: #FFFFFF; background: var(--green); }
+  .gps-chip.wait { color: #FFFFFF; background: var(--amber); }
+  .gps-chip.off { color: var(--ink-2); background: rgba(142,142,147,0.12); }
 
-  /* ── Banners ─────────────────────────────────────────── */
+  /* ── Banners (kept from the old app — offline/test/queue honesty) ── */
   .banner {
-    margin: 10px var(--pad) 0; padding: 9px 14px; border-radius: 12px;
+    margin: 10px 16px 0; padding: 9px 14px; border-radius: 12px;
     font-size: 13px; font-weight: 600; display: none;
   }
   .banner.show { display: block; }
-  #devBanner { background: #2a2410; color: var(--warn); border: 1px dashed #6b5b17; }
-  #offBanner { background: #2a1414; color: var(--bad); border: 1px dashed #6b2a2a; }
-  #queueBanner { background: #10222a; color: #7dd3fc; border: 1px dashed #1e4657; }
+  #devBanner { background: var(--amber-bg); color: var(--amber-text); border-left: 4px solid var(--amber); }
+  #offBanner { background: rgba(255,59,48,0.08); color: var(--red-text); border-left: 4px solid var(--red); }
+  #queueBanner { background: var(--blue-bg); color: var(--blue-deep); border-left: 4px solid var(--blue); }
 
-  main { padding: 14px var(--pad) 0; max-width: 640px; margin: 0 auto; }
+  main { padding: 12px 16px 0; }
 
-  /* ── Progress strip ──────────────────────────────────── */
-  .progress-card {
-    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
-    padding: 14px 16px; margin-bottom: 16px;
+  /* ── Office note banner (renders only when route.driver_message exists, unacknowledged) ── */
+  .onote {
+    background: var(--blue-bg); border-left: 4px solid var(--blue); border-radius: 14px;
+    padding: 11px 14px; margin-bottom: 12px; display: flex; gap: 10px; align-items: flex-start;
   }
-  .progress-top { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-  .progress-top .big { font-size: 26px; font-weight: 800; }
-  .progress-top .big small { color: var(--ink-faint); font-size: 15px; font-weight: 600; }
-  .pill { font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 999px; letter-spacing: 0.03em; }
-  .pill.staged { background: #223041; color: #93c5fd; }
-  .pill.active { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent); }
-  .pill.completed { background: #1c2b22; color: var(--good); }
-  .bar { height: 8px; border-radius: 99px; background: var(--panel-2); margin-top: 10px; overflow: hidden; }
-  .bar > i { display: block; height: 100%; border-radius: 99px; background: var(--accent); width: 0%; transition: width .6s cubic-bezier(.2,.8,.2,1); }
-  .drift { margin-top: 8px; font-size: 13px; color: var(--ink-dim); }
-  .drift b.ahead { color: var(--good); } .drift b.behind { color: var(--warn); }
-
-  /* ── Kennel board ────────────────────────────────────── */
-  .kboard {
-    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
-    padding: 12px 14px; margin-bottom: 16px;
-  }
-  .kboard .kb-head {
-    display: flex; align-items: center; justify-content: space-between;
-    cursor: pointer; user-select: none;
-  }
-  .kboard .kb-head h4 { margin: 0; font-size: 14px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-dim); }
-  .kboard .kb-head .kb-count { font-size: 13px; font-weight: 800; color: var(--accent); }
-  .kboard .kb-head .kb-caret { color: var(--ink-faint); font-size: 12px; margin-left: 8px; transition: transform .25s; }
-  .kboard.collapsed .kb-caret { transform: rotate(-90deg); }
-  .kb-body { margin-top: 12px; }
-  .kboard.collapsed .kb-body { display: none; }
-  .kb-grids { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  .kb-grid { background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; padding: 8px; }
-  .kb-grid .kb-lbl { text-align: center; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-faint); margin-bottom: 6px; }
-  .kb-row { display: grid; gap: 5px; margin-bottom: 5px; }
-  .kb-row:last-child { margin-bottom: 0; }
-  .kb-box {
-    position: relative; border-radius: 7px; min-height: 44px;
-    border: 1.5px solid var(--line); background: color-mix(in srgb, var(--bg) 60%, var(--panel-2));
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    padding: 3px 2px; overflow: hidden;
-    transition: background .4s, border-color .4s, box-shadow .4s;
-  }
-  .kb-box .kb-pos { font-size: 8.5px; letter-spacing: 0.08em; color: var(--ink-faint); font-weight: 700; }
-  .kb-box .kb-dog { font-size: 10.5px; font-weight: 800; line-height: 1.05; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .kb-box.exp { border-style: dashed; border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
-  .kb-box.exp .kb-dog { color: var(--ink-dim); }
-  .kb-box.occ {
-    background: color-mix(in srgb, var(--accent) 26%, var(--panel-2));
-    border-color: var(--accent);
-  }
-  .kb-box.occ .kb-dog { color: var(--ink); }
-  .kb-box.aboard {
-    background: color-mix(in srgb, var(--warn) 20%, var(--panel-2));
-    border-color: var(--warn);
-  }
-  .kb-box.pop { animation: kbpop .6s cubic-bezier(.2,.9,.3,1.4); }
-  @keyframes kbpop { 0% { transform: scale(0.82); } 55% { transform: scale(1.08); } 100% { transform: scale(1); } }
-  .kb-box .kb-arch {
-    position: absolute; bottom: -1px; width: 16px; height: 8px;
-    background: var(--line); border-radius: 8px 8px 0 0; opacity: .8;
-  }
-  .kb-legend { display: flex; gap: 14px; margin-top: 9px; font-size: 11px; color: var(--ink-faint); flex-wrap: wrap; }
-  .kb-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
-  .kb-legend .l-occ i { background: color-mix(in srgb, var(--accent) 30%, var(--panel-2)); border: 1px solid var(--accent); }
-  .kb-legend .l-exp i { border: 1px dashed color-mix(in srgb, var(--accent) 50%, var(--line)); }
-  .kb-legend .l-aboard i { background: color-mix(in srgb, var(--warn) 22%, var(--panel-2)); border: 1px solid var(--warn); }
-
-  /* ── Timeline ────────────────────────────────────────── */
-  .tl { position: relative; padding-left: 30px; }
-  .tl::before {
-    content: ""; position: absolute; left: 11px; top: 8px; bottom: 8px; width: 2px;
-    background: linear-gradient(var(--line), var(--line));
-  }
-  .stop { position: relative; margin-bottom: 14px; animation: rise .35s both; }
-  @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-  .stop .node {
-    position: absolute; left: -30px; top: 18px; width: 24px; height: 24px; border-radius: 50%;
-    background: var(--bg); border: 2px solid var(--ink-faint);
-    display: grid; place-items: center; font-size: 11px; font-weight: 800; color: var(--ink-dim);
-    z-index: 1;
-  }
-  .stop.done .node   { border-color: var(--good); background: var(--good); color: #06251f; }
-  .stop.skip .node   { border-color: var(--bad); color: var(--bad); background: #1d1113; }
-  .stop.now  .node   { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent) 20%, transparent); animation: pulse 2.2s infinite; }
-  @keyframes pulse { 0%,100% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent); } 50% { box-shadow: 0 0 0 9px color-mix(in srgb, var(--accent) 8%, transparent); } }
-
-  .card {
-    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
-    padding: 14px 16px;
-  }
-  .stop.done .card, .stop.skip .card { opacity: 0.55; }
-  .stop.now .card { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 7%, var(--panel)), var(--panel) 55%); }
-
-  .row1 { display: flex; align-items: flex-start; gap: 10px; }
-  .dog { flex: 1; min-width: 0; }
-  .dog .name { font-size: 19px; font-weight: 800; line-height: 1.15; overflow-wrap: anywhere; }
-  .stop.now .dog .name { font-size: 24px; }
-  .dog .owner { font-size: 13px; color: var(--ink-faint); margin-top: 1px; }
-  .eta { text-align: right; flex: none; }
-  .eta .t { font-size: 21px; font-weight: 800; letter-spacing: 0.01em; }
-  .stop.now .eta .t { font-size: 27px; color: var(--accent); }
-  .eta .lbl { font-size: 10px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--ink-faint); }
-  .typ { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-faint); }
-  .typ.dropoff { color: #93c5fd; }
-
-  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-  .chip {
+  .onote-ico { flex: none; width: 28px; height: 28px; border-radius: 50%; background: rgba(0,175,241,0.14); color: var(--blue-deep); display: grid; place-items: center; margin-top: 1px; }
+  .onote-lbl { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--blue-dark); }
+  .onote-msg { font-size: 14px; font-weight: 600; color: var(--blue-deep); line-height: 1.5; margin-top: 2px; overflow-wrap: anywhere; }
+  .ack-btn {
+    margin-top: 9px; min-height: 36px; padding: 0 16px; border: 0; border-radius: 9999px;
+    background: var(--blue); color: #FFFFFF; font-size: 13px; font-weight: 700;
     display: inline-flex; align-items: center; gap: 6px;
-    background: var(--panel-2); border: 1px solid var(--line);
-    border-radius: 10px; padding: 6px 10px; font-size: 14px; font-weight: 700;
   }
-  .chip.key { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 17px; letter-spacing: 0.14em; color: var(--warn); border-color: #4a3d12; background: #201a08; }
-  .chip.kennel { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
-  .chip.kennel small { color: var(--ink-faint); font-weight: 600; letter-spacing: 0.02em; }
-  /* FT-GROOMING (2026-07-17): grooming leg badge — H2S home→salon · S2H salon→home ·
-     D2S daycare→shop · S2D shop→daycare (values whitelisted server-side by W1). */
-  .chip.groom { color: #e88cd0; border-color: #5c2a4e; background: #26101f; font-weight: 800; letter-spacing: 0.08em; }
-  /* The spelled-out leg sits inside the badge, matching .chip.kennel small. */
-  .chip.groom small { color: #d9a8cb; font-weight: 600; letter-spacing: 0.02em; text-transform: none; }
-  /* FT-GROOMING key (2026-07-20): shown under the kennel board ONLY when this
-     route has grooming legs, so a normal route stays uncluttered. Reuses
-     .kb-legend's type scale. */
-  .kb-legend.groom-key { gap: 10px 16px; border-top: 1px solid var(--line); padding-top: 9px; }
-  .kb-legend.groom-key .gk-title { color: #e88cd0; font-weight: 700; width: 100%; }
-  .kb-legend.groom-key .gk-warn { color: var(--warn); }
-  .kb-legend.groom-key .gk-warn b { color: var(--warn); }
-  .kb-legend.groom-key .gk-item b {
-    color: #e88cd0; font-weight: 800; letter-spacing: 0.08em; margin-right: 5px;
-  }
-  .addr { margin-top: 9px; font-size: 14px; color: var(--ink-dim); overflow-wrap: anywhere; }
-  .note {
-    margin-top: 9px; font-size: 14px; background: #241d0d; color: #fde68a;
-    border-left: 3px solid var(--warn); border-radius: 8px; padding: 8px 11px;
-  }
-  .status-line { margin-top: 9px; font-size: 13px; font-weight: 700; }
-  .status-line.done { color: var(--good); }
-  .status-line.skip { color: var(--bad); }
-  .status-line.arrived { color: var(--accent); }
-  .status-line .q { color: var(--ink-faint); font-weight: 600; }
 
-  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 12px; }
-  .actions .wide { grid-column: 1 / -1; }
-  .btn {
-    border: 0; border-radius: 13px; padding: 13px 10px; font-size: 16px; font-weight: 800;
-    font-family: inherit; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-    min-height: 52px; letter-spacing: 0.01em;
+  /* ── Van kennel board card ── */
+  .bcard {
+    background: var(--card); border-radius: 18px; box-shadow: var(--sh-card);
+    padding: 14px 16px 12px; margin-bottom: 14px;
   }
-  .btn:active { transform: scale(0.97); }
-  .btn.nav { background: var(--panel-2); color: var(--ink); border: 1px solid var(--line); }
-  .btn.call { background: var(--panel-2); color: var(--ink); border: 1px solid var(--line); }
-  .btn.done { background: var(--good); color: #052e22; }
-  .btn.skip { background: transparent; color: var(--bad); border: 1.5px solid #4c2626; }
-  .btn.undo { background: transparent; color: var(--warn); border: 1.5px solid #4a3d12; min-height: 44px; font-size: 14px; }
-  /* 2026-07-29: "not coming today" — rare + destructive, so the same quiet outline
-     idiom as Reset rather than a filled button competing with Done. */
-  .btn.remove { background: transparent; color: var(--bad); border: 1.5px solid #4c2626; min-height: 44px; font-size: 14px; }
-  /* 2026-07-29: the only FILLED red in the app — reserved for "yes, end the route".
-     Every other dialog puts the affirmative on the left, so End is stacked instead
-     (.actions.stack) to break that muscle memory. */
-  .btn.danger { background: var(--bad); color: #2a0b0b; border: 0; font-weight: 800; }
-  .actions.stack { grid-template-columns: 1fr; }
-  .reset-row { display: flex; justify-content: flex-end; margin-top: 10px; }
-  .btn.resetr { background: transparent; color: var(--ink-dim); border: 1px solid var(--line); min-height: 38px; font-size: 13px; padding: 7px 12px; border-radius: 10px; }
-  .btn[disabled] { opacity: 0.45; pointer-events: none; }
-  .stop.now .btn.done { font-size: 18px; min-height: 58px; }
+  .bc-head { display: flex; align-items: center; justify-content: space-between; cursor: pointer; user-select: none; -webkit-user-select: none; padding: 12px 0; margin: -12px 0; }
+  .bc-title { font-size: 14px; font-weight: 700; }
+  .bc-count { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .bc-caret { transition: transform 0.25s ease; }
+  .bcard.collapsed .bc-caret { transform: rotate(-90deg); }
+  .bcard.collapsed .bc-body { display: none; }
+  .board {
+    position: relative; margin-top: 12px; margin-bottom: 6px;
+    border: 1.5px solid #D1D1D6; border-radius: 16px; background: #FBFBFD; display: flex;
+  }
+  .bank { flex: 1; padding: 10px; min-width: 0; }
+  .bank.side { border-right: 1px dashed rgba(60,60,67,0.2); }
+  .krow { display: grid; gap: 5px; margin-bottom: 5px; }
+  .krow:last-child { margin-bottom: 0; }
+  .krow.inset { padding: 0 16%; }
+  .kb-box {
+    height: 36px; border-radius: 8px; border: 1.5px dashed #D1D1D6; background: transparent; color: #C7C7CC;
+    font-size: 10px; font-weight: 700; display: grid; place-items: center; overflow: hidden;
+    padding: 0 2px; white-space: nowrap; text-overflow: ellipsis;
+  }
+  .kb-box .kb-dog, .kb-box .kb-pos { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+  .kb-box.occ { border: 0; background: var(--green); color: #FFFFFF; }
+  .kb-box.aboard { border: 0; background: var(--amber); color: #FFFFFF; }
+  .kb-box.now { border: 0; background: var(--blue); color: #FFFFFF; animation: ftr-pulse 2s infinite; }
+  .kb-box.exp { border: 1.5px dashed var(--ink-3); background: transparent; color: var(--ink-2); }
+  .kb-box.pop { animation: ftr-pop 0.3s ease; }
+  .kb-box.now.pop { animation: ftr-pop 0.3s ease, ftr-pulse 2s infinite; }
+  .door-side { position: absolute; left: -3px; top: 50%; transform: translateY(-50%); width: 5px; height: 48px; background: var(--blue); border-radius: 3px; }
+  .door-back { position: absolute; left: 75%; bottom: -3px; transform: translateX(-50%); width: 48px; height: 5px; background: var(--blue); border-radius: 3px; }
+  .legend { display: flex; gap: 14px; margin-top: 16px; font-size: 11px; font-weight: 600; color: var(--ink-2); flex-wrap: wrap; }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+  .legend .l-occ i { background: var(--green); }
+  .legend .l-now i { background: var(--blue); }
+  .legend .l-aboard i { background: var(--amber); }
+  .legend .l-exp i { border: 1.5px dashed var(--ink-3); }
+  .legend .l-empty i { border: 1.5px dashed #C7C7CC; }
+  .gkey { border-top: 1px solid var(--hairline); margin-top: 12px; padding-top: 10px; font-size: 12px; font-weight: 500; color: var(--ink-2); line-height: 1.6; }
+  .gkey .gk-title { font-weight: 700; color: var(--teal-text); display: block; }
+  .gkey b { color: var(--teal-text); font-weight: 700; }
+  .gkey .gk-warn { color: var(--amber-text); font-weight: 600; display: block; }
 
-  /* ── six-dot drag handle (hold & drag to reorder — DESIGN-drive-reorder.md) ── */
+  /* ── Route finished card ── */
+  .fin-card { background: var(--card); border-radius: 18px; box-shadow: var(--sh-card); padding: 22px 18px; margin-bottom: 14px; text-align: center; }
+  .fin-ico { display: inline-grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: rgba(52,199,89,0.12); color: var(--green-text); }
+  .fin-title { font-size: 20px; font-weight: 800; letter-spacing: -0.02em; margin-top: 10px; }
+  .fin-sub { font-size: 14px; font-weight: 500; color: var(--ink-2); margin-top: 4px; }
+  .btn-reset-soft { margin-top: 14px; min-height: 44px; padding: 0 18px; border: 0; border-radius: 10px; background: rgba(255,59,48,0.10); color: var(--red-text); font-size: 15px; font-weight: 600; }
+
+  /* ── Stop list ── */
+  .stops { display: grid; gap: 8px; }
+  .stop { }
+  .stop.shifting { transition: transform 0.15s ease; }
+  .stop.drag-src { opacity: 0.3; }
+
+  /* closed (done/skipped/removed-locally) rows */
+  .crow { display: flex; align-items: center; gap: 10px; padding: 8px 14px; cursor: pointer; }
+  .crow-tick { width: 20px; height: 20px; border-radius: 50%; color: #FFFFFF; display: grid; place-items: center; flex: none; font-size: 11px; font-weight: 800; }
+  .crow-tick.t-done { background: var(--green); }
+  .crow-tick.t-skip { background: var(--amber); }
+  .crow-tick.t-rm { background: var(--ink-3); }
+  .crow-name { flex: 1; font-size: 14px; font-weight: 600; color: var(--ink-2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tag-aboard { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: rgba(255,149,0,0.12); color: var(--amber-text); margin-left: 6px; }
+  .crow-eta { font-size: 13px; font-weight: 600; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+  .crow-x { margin: -2px 14px 6px 44px; display: flex; align-items: center; gap: 10px; animation: ftr-rise 0.25s ease both; }
+  .crow-x .xline { flex: 1; font-size: 13px; font-weight: 500; }
+  .crow-x .xline.ok { color: var(--green-text); }
+  .crow-x .xline.warn { color: var(--amber-text); }
+  .undo-pill { min-height: 36px; padding: 0 14px; border: 0; border-radius: 9999px; background: rgba(0,175,241,0.08); color: var(--blue); font-size: 13px; font-weight: 600; }
+
+  /* current stop card */
+  .cur {
+    background: var(--card); border-radius: 16px; border-left: 4px solid var(--blue);
+    box-shadow: var(--sh-raised); padding: 14px 16px; animation: ftr-rise 0.25s ease both;
+  }
+  .cur-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+  .cur-micro { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--blue); }
+  .cur-name { font-size: 21px; font-weight: 800; letter-spacing: -0.02em; margin-top: 2px; line-height: 1.15; overflow-wrap: anywhere; }
+  .cur-oa { font-size: 13px; font-weight: 500; color: var(--ink-2); margin-top: 3px; overflow-wrap: anywhere; }
+  .cur-eta-w { text-align: right; flex: none; }
+  .cur-eta { font-size: 24px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+  .cur-win { font-size: 11px; font-weight: 600; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .cur-arrived { margin-top: 8px; font-size: 13px; font-weight: 600; color: var(--blue-dark); }
+  .tiles { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .tile { background: var(--page); border-radius: 12px; padding: 9px 12px; }
+  .tile.key { flex: none; }
+  .tile.door { flex: 1; min-width: 150px; display: flex; align-items: center; gap: 10px; }
+  .tile-lbl { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-2); }
+  .tile-key { font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; letter-spacing: 0.05em; margin-top: 1px; }
+  .tile-lines { flex: 1; min-width: 0; }
+  .tile-lines .tl-line { font-size: 13px; font-weight: 600; margin-top: 2px; line-height: 1.45; }
+  .glyph { flex: none; }
+  .glyph .grow { display: grid; gap: 3px; margin-bottom: 3px; justify-content: center; }
+  .glyph .gcell { width: 18px; height: 18px; border-radius: 5px; border: 1.5px dashed #D1D1D6; background: transparent; }
+  .glyph .gcell.mine { border: 0; background: var(--blue); }
+  .glyph .gcell.other { border: 0; background: #E5E5EA; }
+  .glyph-cap { text-align: center; font-size: 8px; font-weight: 700; letter-spacing: 0.08em; color: var(--ink-3); }
+  .cur-note { background: var(--amber-bg); border-left: 4px solid var(--amber); border-radius: 10px; padding: 9px 12px; margin-top: 10px; font-size: 13px; font-weight: 500; line-height: 1.5; }
+  .ntf-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 13px; min-height: 28px; }
+  .ntf-lbl { font-size: 13px; font-weight: 500; color: var(--ink-2); }
+  .sw { width: 44px; height: 26px; border-radius: 9999px; background: #D1D1D6; position: relative; flex: none; cursor: pointer; transition: background 0.2s ease; border: 0; padding: 0; }
+  .sw.on { background: var(--green); }
+  .sw-knob { position: absolute; top: 2px; left: 2px; width: 22px; height: 22px; border-radius: 50%; background: #FFFFFF; box-shadow: 0 1px 3px rgba(0,0,0,0.25); transition: left 0.2s ease; }
+  .sw.on .sw-knob { left: 20px; }
+  .cur-btns { display: flex; gap: 8px; margin-top: 10px; }
+  .btn-done {
+    flex: 1; min-height: 50px; border: 0; border-radius: 12px; background: var(--blue); color: #FFFFFF;
+    font-size: 16px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  }
+  .btn-ico { width: 50px; min-height: 50px; border: 0; border-radius: 12px; background: rgba(0,175,241,0.08); color: var(--blue); display: grid; place-items: center; flex: none; }
+  .btn-more { width: 50px; min-height: 50px; border: 0; border-radius: 12px; background: rgba(142,142,147,0.12); color: #636366; font-size: 18px; font-weight: 700; flex: none; }
+
+  /* upcoming rows */
+  .urow { background: var(--card); border-radius: 12px; box-shadow: var(--sh-card); }
+  .urow-main { display: flex; align-items: center; gap: 10px; padding: 12px 6px 12px 14px; }
+  .urow-num { width: 24px; height: 24px; border-radius: 50%; border: 2px solid #C7C7CC; color: var(--ink-2); font-size: 12px; font-weight: 700; display: grid; place-items: center; flex: none; font-variant-numeric: tabular-nums; }
+  .urow-main { cursor: pointer; }
+  .urow-name { flex: 1; font-size: 15px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .g-chip { font-size: 11px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: rgba(50,173,230,0.10); color: var(--teal-text); margin-left: 6px; white-space: nowrap; vertical-align: middle; display: inline-block; }
+  .g-chip.warn { background: rgba(255,149,0,0.12); color: var(--amber-text); }
+  .g-chip.arr { background: rgba(0,175,241,0.10); color: var(--blue-dark); }
+  .crow-x .from-tap { color: var(--ink-3); font-weight: 500; }
+  .urow-eta { font-size: 13px; font-weight: 600; color: var(--ink-2); font-variant-numeric: tabular-nums; cursor: pointer; }
   .drag-handle {
-    flex: none; align-self: stretch; width: 40px; margin: -6px -8px -6px 2px;
-    display: grid; place-items: center;
-    background: transparent; border: 0; border-left: 1px dashed var(--line);
-    color: var(--ink-faint); font-size: 20px; letter-spacing: 1px;
-    cursor: grab; touch-action: none; border-radius: 0 12px 12px 0;
-    -webkit-touch-callout: none; -webkit-user-select: none; user-select: none;
+    width: 40px; height: 40px; display: grid; place-items: center; color: #C7C7CC;
+    touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none;
+    -webkit-touch-callout: none; flex: none; background: transparent; border: 0;
   }
-  .drag-handle:active { color: var(--accent); }
-  /* Proven Android drag pattern (ported from the Feeding Manager tablet app):
-     long-press arms the drag, the REAL card never moves mid-gesture — a ghost
-     pill follows the finger and the drop slot is computed at release. */
   body.is-dragging { touch-action: none !important; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
-  .stop.dragging .card { opacity: 0.45; border-style: dashed; border-color: var(--accent); }
   .drag-ghost {
-    position: fixed; z-index: 70; transform: translate(-50%, -50%);
-    padding: 10px 18px; background: var(--accent); color: var(--accent-ink);
-    border-radius: 12px; font-weight: 800; font-size: 15px; white-space: nowrap;
-    pointer-events: none; box-shadow: 0 12px 30px rgba(0,0,0,0.5);
+    position: fixed; z-index: 70; box-sizing: border-box;
+    background: var(--card); border-radius: 12px; font-size: 15px; font-weight: 600; color: var(--ink);
+    box-shadow: var(--sh-drag); pointer-events: none; transform: scale(1.02);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums;
   }
-  /* inset shadows so the insertion line never reflows the timeline */
-  .stop.drop-before .card { box-shadow: inset 0 3px 0 0 var(--accent); }
-  .tl.drop-at-end .stop[data-movable="1"]:last-of-type .card { box-shadow: inset 0 -3px 0 0 var(--accent); }
+  .urow-x { padding: 0 14px 12px 48px; animation: ftr-rise 0.25s ease both; }
+  .x-oa { font-size: 13px; font-weight: 500; color: var(--ink-2); overflow-wrap: anywhere; }
+  .x-chips { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; align-items: center; }
+  .x-chip { display: inline-flex; align-items: center; gap: 6px; background: var(--page); border-radius: 8px; padding: 5px 10px; font-size: 13px; font-weight: 600; color: #3A3A3C; }
+  .x-chip.k { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .x-chip.dim { color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .x-note { background: var(--amber-bg); border-left: 3px solid var(--amber); border-radius: 8px; padding: 7px 10px; margin-top: 8px; font-size: 12.5px; font-weight: 500; line-height: 1.5; }
+  .urow-x .ntf-row { margin-top: 10px; }
 
-  /* ── Footer action ───────────────────────────────────── */
-  #footer {
-    position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
-    padding: 10px var(--pad) calc(env(safe-area-inset-bottom, 0px) + 12px);
-    background: linear-gradient(transparent, var(--bg) 34%);
-    display: none;
-  }
+  /* ── Fixed footer ── */
+  #footer { position: fixed; left: 0; right: 0; bottom: 0; z-index: 30; display: none; }
   #footer.show { display: block; }
-  #footer .btn { width: 100%; max-width: 640px; margin: 0 auto; display: flex; }
-  .btn.start { background: var(--accent); color: var(--accent-ink); font-size: 19px; min-height: 60px; }
-  .btn.end { background: var(--panel-2); color: var(--ink-dim); border: 1px solid var(--line); }
-
-  /* ── Empty / picker / dialogs ────────────────────────── */
-  .empty { text-align: center; color: var(--ink-dim); padding: 60px 20px; }
-  .empty .art { font-size: 52px; margin-bottom: 12px; }
-  .empty h2 { color: var(--ink); font-size: 21px; margin: 0 0 6px; }
-
-  /* route picker (Reorder-tab slots + already-sent routes) */
-  #routePicker { position: fixed; inset: 0; z-index: 48; background: var(--bg); display: none; padding: 18px var(--pad) 40px; overflow: auto; }
-  #routePicker.show { display: block; }
-  #routePicker .rp-head { max-width: 460px; margin: 5vh auto 18px; text-align: center; }
-  #routePicker .rp-head .rp-art { font-size: 38px; }
-  #routePicker .rp-head h1 { font-size: 24px; font-weight: 800; margin: 6px 0 2px; }
-  #routePicker .rp-head p { color: var(--ink-faint); margin: 0; font-size: 13px; }
-  .route-opt {
-    width: 100%; max-width: 460px; margin: 0 auto 10px; display: flex; align-items: center; gap: 13px;
-    background: var(--panel); border: 2px solid var(--line); border-radius: var(--radius);
-    padding: 14px 16px; cursor: pointer; font-family: inherit; color: var(--ink); text-align: left;
+  .foot-bar {
+    max-width: 480px; margin: 0 auto; background: rgba(249,249,249,0.94);
+    backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px);
+    border-top: 0.5px solid var(--hairline-op);
+    padding: 10px 16px calc(env(safe-area-inset-bottom, 0px) + 16px);
   }
-  .route-opt:active { transform: scale(0.985); }
-  .route-opt.unsent { border-style: dashed; }
-  .route-opt[disabled] { opacity: .55; pointer-events: none; }
-  .route-opt .ro-emoji { font-size: 26px; flex: none; }
-  .route-opt .ro-main { flex: 1; min-width: 0; }
-  .route-opt .ro-title { font-size: 17px; font-weight: 800; }
-  .route-opt .ro-sub { font-size: 12.5px; color: var(--ink-faint); margin-top: 1px; }
-  .route-opt .ro-side { flex: none; }
-  .rp-note { max-width: 460px; margin: 6px auto 0; font-size: 12.5px; color: var(--warn); font-weight: 600; }
-  .rp-close { display: flex; max-width: 460px; margin: 18px auto 0; width: 100%; }
-  .rp-empty { max-width: 460px; margin: 26px auto; text-align: center; color: var(--ink-dim); font-size: 14px; }
-  .rp-empty .rp-art { font-size: 40px; margin-bottom: 8px; }
+  .btn-start {
+    width: 100%; min-height: 54px; border: 0; border-radius: 12px; background: var(--blue); color: #FFFFFF;
+    font-size: 17px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 8px;
+  }
+  .foot-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .foot-line { font-size: 13px; font-weight: 600; color: var(--ink-2); }
+  .btn-end { min-height: 44px; padding: 0 18px; border: 0; border-radius: 9999px; background: rgba(142,142,147,0.12); color: #636366; font-size: 15px; font-weight: 700; flex: none; }
+  .btn-end.ready { background: var(--blue); color: #FFFFFF; }
 
-  /* van switch row — big, obvious, lives at the top of the route picker */
-  .rp-vans { display: flex; gap: 8px; max-width: 460px; margin: 0 auto 6px; }
+  /* ── Empty states ── */
+  .empty { text-align: center; color: var(--ink-2); padding: 48px 20px; }
+  .empty h2 { color: var(--ink); font-size: 21px; font-weight: 800; letter-spacing: -0.02em; margin: 0 0 6px; }
+  .empty p { font-size: 14px; font-weight: 500; margin: 0 0 4px; line-height: 1.55; }
+  .empty .e-act { margin: 18px auto 0; max-width: 300px; display: grid; gap: 8px; }
+  .btn-line { width: 100%; min-height: 48px; border: 0; border-radius: 12px; background: var(--card); color: var(--blue); font-size: 15px; font-weight: 700; box-shadow: var(--sh-card); }
+  .btn-line.primary { background: var(--blue); color: #FFFFFF; }
+
+  /* ── Bottom sheets (route sheet + stop options) ── */
+  .sheet { position: fixed; inset: 0; z-index: 48; background: rgba(28,28,30,0.4); display: none; }
+  .sheet.show { display: block; }
+  #moreSheet { z-index: 52; }
+  .sheet-panel {
+    position: absolute; left: 0; right: 0; bottom: 0; max-width: 480px; margin: 0 auto;
+    background: var(--page); border-radius: 20px 20px 0 0; box-shadow: 0 -8px 24px rgba(0,0,0,0.12);
+    padding: 8px 16px calc(env(safe-area-inset-bottom, 0px) + 28px); max-height: 82dvh; overflow: auto;
+  }
+  .grabber { width: 36px; height: 5px; border-radius: 3px; background: #D1D1D6; margin: 4px auto 14px; }
+  .sh-lbl { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-2); margin: 0 2px 8px; }
+  .sh-lbl.later { margin-top: 18px; }
+  .sh-vans { display: flex; gap: 8px; }
   .rp-van {
     flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px;
-    background: var(--panel); border: 2px solid var(--line); border-radius: 14px;
-    padding: 12px 6px 10px; cursor: pointer; font-family: inherit; color: var(--ink-dim);
-    font-size: 13.5px; font-weight: 800; letter-spacing: 0.02em; line-height: 1.15;
+    background: var(--card); border: 2px solid transparent; border-radius: 14px;
+    padding: 12px 6px 10px; color: var(--ink-2); font-size: 13px; font-weight: 700;
   }
-  .rp-van .sw { width: 28px; height: 28px; border-radius: 9px; }
-  .rp-van small { font-weight: 700; font-size: 10.5px; color: var(--ink-faint); letter-spacing: 0.08em; }
-  .rp-van.sel { border-color: var(--accent); color: var(--ink); background: color-mix(in srgb, var(--accent) 12%, var(--panel)); }
-  .rp-van.sel small { color: var(--accent); }
-  .rp-van:active { transform: scale(0.97); }
-  .rp-vans-lbl { max-width: 460px; margin: 0 auto 8px; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-faint); font-weight: 700; }
-  .rp-routes-lbl { max-width: 460px; margin: 14px auto 8px; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-faint); font-weight: 700; }
+  .rp-van .sw-sw { width: 26px; height: 26px; border-radius: 8px; }
+  .rp-van small { font-weight: 700; font-size: 10px; color: var(--ink-3); letter-spacing: 0.08em; }
+  .rp-van.sel { border-color: var(--blue); color: var(--ink); }
+  .route-opt {
+    width: 100%; display: flex; align-items: center; gap: 12px; background: var(--card); border: 0;
+    border-radius: 14px; box-shadow: var(--sh-card); padding: 14px 16px; text-align: left;
+    color: var(--ink); margin-bottom: 8px;
+  }
+  .route-opt.unsent { box-shadow: none; border: 1.5px dashed #C7C7CC; }
+  .route-opt[disabled] { opacity: .55; pointer-events: none; }
+  .ro-ico { width: 38px; height: 38px; border-radius: 10px; background: rgba(0,175,241,0.08); color: var(--blue); display: grid; place-items: center; flex: none; }
+  .ro-main { flex: 1; min-width: 0; }
+  .ro-title { display: block; font-size: 15px; font-weight: 700; }
+  .ro-sub { display: block; font-size: 12px; font-weight: 500; color: var(--ink-2); margin-top: 1px; }
+  .ro-rid { display: block; font-size: 10.5px; font-weight: 600; color: var(--ink-3); margin-top: 1px; font-variant-numeric: tabular-nums; }
+  .ro-pill { font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 9999px; flex: none; background: rgba(0,175,241,0.08); color: var(--blue); }
+  .ro-pill.active { background: rgba(0,175,241,0.10); color: var(--blue-dark); }
+  .ro-pill.completed { background: rgba(52,199,89,0.12); color: var(--green-text); }
+  .ro-pill.unsent { background: rgba(142,142,147,0.12); color: #636366; }
+  .rs-reset {
+    width: 100%; margin-top: 8px; display: flex; align-items: center; justify-content: center; gap: 8px;
+    background: var(--card); border: 0; border-radius: 14px; box-shadow: var(--sh-card);
+    padding: 13px 16px; color: var(--red-text); font-size: 15px; font-weight: 600;
+  }
+  .rp-note { margin: 6px 2px 0; font-size: 12.5px; color: var(--amber-text); font-weight: 600; }
+  .rp-empty { text-align: center; padding: 22px 16px; color: var(--ink-2); font-size: 13px; font-weight: 500; line-height: 1.6; }
+  .rp-empty b { color: var(--ink); font-size: 15px; display: block; margin-bottom: 4px; }
+  .m-title { font-size: 13px; font-weight: 600; color: var(--ink-2); text-align: center; margin-bottom: 12px; }
+  .m-group { background: var(--card); border-radius: 14px; overflow: hidden; box-shadow: var(--sh-card); }
+  .m-item { width: 100%; display: block; padding: 15px 16px; border: 0; background: transparent; font-size: 16px; font-weight: 600; text-align: center; }
+  .m-item.warn { color: var(--amber-text); border-bottom: 1px solid var(--hairline); }
+  .m-item.danger { color: var(--red-text); }
+  .m-cancel { width: 100%; margin-top: 8px; padding: 15px 16px; border: 0; border-radius: 14px; background: var(--card); font-size: 16px; font-weight: 700; color: var(--blue); box-shadow: var(--sh-card); }
 
-  #routeMeta { cursor: pointer; }
-  .van-chip .vc-caret { font-size: 11px; opacity: 0.75; margin-left: -2px; }
-  #routeMeta .rid::after { content: " ▾"; color: var(--ink-faint); font-weight: 700; }
-
-  #picker { position: fixed; inset: 0; z-index: 50; background: var(--bg); display: none; padding: 24px var(--pad); overflow: auto; }
+  /* ── First-run / van picker ── */
+  #picker { position: fixed; inset: 0; z-index: 50; background: var(--page); display: none; padding: 24px 20px; overflow: auto; }
   #picker.show { display: block; }
-  #picker .brand { text-align: center; margin: 8vh 0 26px; }
-  #picker .brand .logo { font-size: 46px; }
-  #picker .brand h1 { font-size: 28px; font-weight: 800; margin: 8px 0 2px; }
-  #picker .brand p { color: var(--ink-faint); margin: 0; font-size: 14px; }
+  #picker .inner { max-width: 420px; margin: 0 auto; }
+  #picker .brand { text-align: center; margin: 6vh 0 26px; }
+  #picker .brand img { height: 72px; width: auto; }
+  #picker .brand h1 { font-size: 24px; font-weight: 800; letter-spacing: -0.02em; margin: 12px 0 4px; }
+  #picker .brand p { color: var(--ink-2); margin: 0; font-size: 14px; font-weight: 500; line-height: 1.5; }
   .van-opt {
-    width: 100%; max-width: 420px; margin: 0 auto 12px; display: flex; align-items: center; gap: 14px;
-    background: var(--panel); border: 2px solid var(--line); border-radius: var(--radius);
-    padding: 16px 18px; cursor: pointer; font-family: inherit; color: var(--ink); font-size: 17px; font-weight: 800;
+    width: 100%; margin-bottom: 10px; display: flex; align-items: center; gap: 14px;
+    background: var(--card); border: 2px solid transparent; border-radius: 16px; padding: 15px 16px;
+    color: var(--ink); font-size: 16px; font-weight: 700; text-align: left; box-shadow: var(--sh-card);
   }
   .van-opt .swatch { width: 34px; height: 34px; border-radius: 10px; flex: none; }
-  .van-opt small { display: block; font-weight: 600; color: var(--ink-faint); font-size: 12px; }
-  .van-opt.sel { border-color: var(--accent); }
-  #keyRow { max-width: 420px; margin: 18px auto 0; display: none; }
+  .van-opt small { display: block; font-weight: 600; color: var(--ink-2); font-size: 12px; }
+  .van-opt.sel.v-BV { border-color: #00AFF1; }
+  .van-opt.sel.v-BVX { border-color: #FF9500; }
+  .van-opt.sel.v-SV { border-color: #34C759; }
+  #keyRow { margin-top: 16px; display: none; }
   #keyRow.show { display: block; }
-  #keyRow label { font-size: 13px; color: var(--ink-dim); font-weight: 700; }
+  #keyRow label { font-size: 13px; color: #636366; font-weight: 600; }
   #keyInput {
-    width: 100%; margin-top: 6px; background: var(--panel-2); border: 1px solid var(--line);
-    color: var(--ink); border-radius: 12px; padding: 14px; font-size: 17px; font-family: ui-monospace, monospace;
+    width: 100%; margin-top: 6px; background: var(--card); border: 0; color: var(--ink);
+    border-radius: 12px; padding: 14px; font-size: 17px; font-variant-numeric: tabular-nums;
+    box-shadow: var(--sh-card); outline: none;
   }
-  #keyGo { width: 100%; margin-top: 12px; }
-  #keyErr { color: var(--bad); font-size: 13px; margin-top: 8px; font-weight: 700; display: none; }
+  #keyErr { color: var(--red-text); font-size: 13px; margin-top: 8px; font-weight: 600; display: none; }
+  #keyGo { width: 100%; margin-top: 12px; border: 0; border-radius: 12px; font-size: 17px; font-weight: 700; min-height: 54px; background: var(--blue); color: #FFFFFF; }
 
+  /* ── Dialogs (native <dialog>, redesign chrome) ── */
   dialog {
-    background: var(--panel); color: var(--ink); border: 1px solid var(--line);
-    border-radius: 20px; padding: 20px; max-width: min(92vw, 420px); width: 100%;
+    background: var(--card); color: var(--ink); border: 0;
+    border-radius: 18px; box-shadow: var(--sh-modal); padding: 20px; max-width: min(92vw, 400px); width: 100%;
   }
-  dialog::backdrop { background: rgba(4, 8, 12, 0.72); backdrop-filter: blur(3px); }
-  dialog h3 { margin: 0 0 8px; font-size: 20px; }
-  dialog p { color: var(--ink-dim); font-size: 14px; margin: 0 0 14px; }
-  dialog ul { color: var(--ink-dim); font-size: 14px; margin: 0 0 14px; padding-left: 20px; }
-  dialog .actions { margin-top: 6px; }
+  dialog::backdrop { background: rgba(28,28,30,0.4); }
+  dialog h3 { margin: 0 0 8px; font-size: 19px; font-weight: 700; letter-spacing: -0.01em; }
+  dialog p { color: #636366; font-size: 14px; font-weight: 500; line-height: 1.55; margin: 0 0 12px; }
+  dialog p.warn { color: var(--amber-text); }
+  dialog p.danger { color: var(--red-text); }
+  dialog p.dim { color: var(--ink-2); }
+  dialog ul { color: #636366; font-size: 14px; font-weight: 500; margin: 0 0 12px; padding-left: 20px; }
+  dialog ul li { margin-bottom: 3px; }
+  .dlg-toggle { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--page); border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; }
+  .dlg-toggle span.lbl { font-size: 14px; font-weight: 600; }
+  .dlg-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px; }
+  .dlg-btns.stack { grid-template-columns: 1fr; }
+  .dlg-btns .wide { grid-column: 1 / -1; }
+  .db { border: 0; border-radius: 12px; padding: 12px 10px; font-size: 15px; font-weight: 700; min-height: 48px; }
+  .db[disabled] { opacity: 0.45; pointer-events: none; }
+  .db-primary { background: var(--blue); color: #FFFFFF; }
+  .db-neutral { background: rgba(142,142,147,0.12); color: #3A3A3C; }
+  .db-danger { background: var(--red); color: #FFFFFF; }
+  .db-soft { background: rgba(255,59,48,0.10); color: var(--red-text); }
+  .db-text { background: transparent; color: var(--ink-2); }
 
+  /* ── Toast ── */
   .toast {
-    position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(env(safe-area-inset-bottom, 0px) + 100px);
-    background: var(--panel-2); border: 1px solid var(--line); color: var(--ink);
-    padding: 11px 18px; border-radius: 999px; font-size: 14px; font-weight: 700;
-    z-index: 60; opacity: 0; transition: opacity .25s, transform .25s; pointer-events: none; white-space: nowrap;
+    position: fixed; left: 50%; transform: translateX(-50%);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 96px);
+    background: #1C1C1E; color: #FFFFFF; padding: 11px 18px; border-radius: 14px;
+    font-size: 14px; font-weight: 600; z-index: 60; pointer-events: none;
+    white-space: nowrap; box-shadow: var(--sh-modal); max-width: 90vw; overflow: hidden; text-overflow: ellipsis;
+    opacity: 0; transition: opacity .2s ease;
   }
-  .toast.show { opacity: 1; transform: translateX(-50%) translateY(-6px); }
+  .toast.show { opacity: 1; animation: ftr-toast 0.2s ease; }
 </style>
 </head>
 <body>
-
+<div id="wrap">
 <header>
-  <button class="van-chip" id="vanChip" aria-label="Change van"><span class="dot"></span><span id="vanChipTxt">VAN</span><span class="vc-caret">▾</span></button>
-  <div id="routeMeta"><div class="rid" id="ridTxt">—</div><div class="sub" id="ridSub"></div></div>
-  <button class="icon-btn" id="refreshBtn" aria-label="Refresh">⟳</button>
-  <span id="syncDot" title="sync status"></span>
+  <div id="hdrLeft" role="button" aria-label="Route and van options">
+    <div id="ridTxt">—</div>
+    <div id="ridSub"></div>
+  </div>
+  <div class="hdr-right">
+    <button class="pill-van" id="vanChip" aria-label="Change van"><span id="vanChipTxt">VAN</span></button>
+    <span class="pill-status" id="statusPill" style="display:none"></span>
+  </div>
 </header>
 
-<div class="banner" id="devBanner">🧪 Test mode — taps are recorded for checking, customers are NOT notified.</div>
-<div class="banner" id="offBanner">📡 Offline — showing the last loaded route. Taps will send when signal returns.</div>
+<div class="banner" id="devBanner">Test mode — taps are recorded for checking, customers are NOT notified.</div>
+<div class="banner" id="offBanner">Offline — showing the last loaded route. Taps will send when signal returns.</div>
 <div class="banner" id="queueBanner"></div>
 
 <main id="main"></main>
+</div>
 
 <div id="footer"></div>
 
 <div id="picker">
-  <div class="brand">
-    <div class="logo">🐾🚐</div>
-    <h1>Fairy Tails Drive</h1>
-    <p>Pick the van you're driving. You can switch vans any time — tap the van badge at the top of the app.</p>
-  </div>
-  <button class="van-opt" data-van="BV"><span class="swatch" style="background:#2dd4bf"></span><span>Big Van<small>BV</small></span></button>
-  <button class="van-opt" data-van="BVX"><span class="swatch" style="background:#fbbf24"></span><span>Big Van Xray<small>BVX</small></span></button>
-  <button class="van-opt" data-van="SV"><span class="swatch" style="background:#a78bfa"></span><span>Small Van<small>SV</small></span></button>
-  <div id="keyRow">
-    <label for="keyInput">Van access code</label>
-    <input id="keyInput" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="e.g. sv1a2b3c4d">
-    <div id="keyErr">That code doesn't match this van — check with the office.</div>
-    <button class="btn start" id="keyGo">Open my route</button>
+  <div class="inner">
+    <div class="brand">
+      <img src="logo.png" alt="The Fairy Tails K9 Centre">
+      <h1>Fairy Tails Drive</h1>
+      <p>Pick the van you're driving. You can switch any time from the route name at the top.</p>
+    </div>
+    <button class="van-opt v-BV" data-van="BV"><span class="swatch" style="background:#00AFF1"></span><span>Big Van<small>BV</small></span></button>
+    <button class="van-opt v-BVX" data-van="BVX"><span class="swatch" style="background:#FF9500"></span><span>Big Van X<small>BVX</small></span></button>
+    <button class="van-opt v-SV" data-van="SV"><span class="swatch" style="background:#34C759"></span><span>Small Van<small>SV</small></span></button>
+    <div id="keyRow">
+      <label for="keyInput">Van access code</label>
+      <input id="keyInput" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Access code from the office">
+      <div id="keyErr">That code doesn't match this van — check with the office.</div>
+      <button id="keyGo">Open my route</button>
+    </div>
   </div>
 </div>
 
-<div id="routePicker">
-  <div class="rp-head">
-    <div class="rp-art">🗂</div>
-    <h1>Choose a route</h1>
-    <p id="rpSub">Anything staged in the office Reorder tab shows here.</p>
+<div id="routePicker" class="sheet">
+  <div class="sheet-panel">
+    <div class="grabber"></div>
+    <div class="sh-lbl">Your van</div>
+    <div class="sh-vans" id="rpVans">
+      <button class="rp-van" data-van="BV"><span class="sw-sw" style="background:#00AFF1"></span>Big Van<small>BV</small></button>
+      <button class="rp-van" data-van="BVX"><span class="sw-sw" style="background:#FF9500"></span>Big Van X<small>BVX</small></button>
+      <button class="rp-van" data-van="SV"><span class="sw-sw" style="background:#34C759"></span>Small Van<small>SV</small></button>
+    </div>
+    <div class="sh-lbl later" id="rpRoutesLbl">Routes for this van</div>
+    <div id="routeList"></div>
   </div>
-  <div class="rp-vans-lbl">Your van — tap to switch</div>
-  <div class="rp-vans" id="rpVans">
-    <button class="rp-van" data-van="BV"><span class="sw" style="background:#2dd4bf"></span>Big Van<small>BV</small></button>
-    <button class="rp-van" data-van="BVX"><span class="sw" style="background:#fbbf24"></span>Big Van X<small>BVX</small></button>
-    <button class="rp-van" data-van="SV"><span class="sw" style="background:#a78bfa"></span>Small Van<small>SV</small></button>
+</div>
+
+<div id="moreSheet" class="sheet">
+  <div class="sheet-panel">
+    <div class="grabber"></div>
+    <div class="m-title" id="moreTitle"></div>
+    <div class="m-group">
+      <button class="m-item warn" id="moreSkip">Skip this stop</button>
+      <button class="m-item danger" id="moreRemove">Not coming today</button>
+    </div>
+    <button class="m-cancel" id="moreCancel">Cancel</button>
   </div>
-  <div class="rp-routes-lbl">Routes for this van</div>
-  <div id="routeList"></div>
-  <button class="btn nav rp-close" id="rpClose">Close</button>
 </div>
 
 <dialog id="dlg"></dialog>
@@ -466,12 +506,15 @@
   var TAP_PATH = '/van-eta-drive-tap-r8c2';
   var POLL_MS = 20000;
 
-  var VAN_COLOURS = { BV: ['#2dd4bf', '#04251f'], BVX: ['#fbbf24', '#2a1e02'], SV: ['#a78bfa', '#1d1140'] };
-  var VAN_NAMES = { BV: 'Big Van', BVX: 'Big Van Xray', SV: 'Small Van' };
-  var POS_WORDS = { S: 'Side', B: 'Back', T: 'Top', M: 'Middle', P: 'Passenger', D: 'Driver' };
+  /* 2026-08-02 redesign: vans get identity PILLS, never a theme (UX Critique:
+     "Vans deserve a badge, not the whole theme"). One brand blue everywhere. */
+  var VAN_COLOURS = { BV: '#00AFF1', BVX: '#FF9500', SV: '#34C759' };
+  var VAN_NAMES = { BV: 'Big Van', BVX: 'Big Van X', SV: 'Small Van' };
+  var ROW_WORDS = { T: 'top', M: 'middle', B: 'bottom' };
+  var COL_WORDS = { P: 'passenger side', M: 'middle', D: 'driver side' };
   var CLOSED = ['collected', 'dropped', 'skipped', 'removed'];
 
-  var state = { van: '', key: '', data: null, phonesLoaded: '', lastGood: 0, timer: null, flushing: false };
+  var state = { van: '', key: '', data: null, phonesLoaded: '', lastGood: 0, timer: null, flushing: false, expandedId: null };
 
   /* ── storage helpers ── */
   function lsGet(k, fb) { try { var v = localStorage.getItem(k); return v === null ? fb : JSON.parse(v); } catch (e) { return fb; } }
@@ -498,6 +541,7 @@
       localStorage.removeItem('veta_ov_' + rid);
       localStorage.removeItem('veta_rov_' + rid);
       localStorage.removeItem('veta_ord_' + rid);
+      localStorage.removeItem('veta_ntf_' + rid);   // notify choices + told flags reset with the route (2026-08-02)
     } catch (e) {}
   }
   /* Local taps are DEVICE state, not truth — a tap made hours ago must never
@@ -505,7 +549,9 @@
      dev taps made the real afternoon route open "already running with stops
      ticked"). GC: past-day route keys are dropped whole; same-day tap/route
      overlays older than 12 h are pruned. The order overlay reconciles against
-     server truth itself (reconcileOrd) so only its past-day keys are dropped. */
+     server truth itself (reconcileOrd) so only its past-day keys are dropped.
+     2026-08-02: veta_ntf_* (per-stop message toggles) and veta_ack_* (office-note
+     acknowledgements) join the past-day sweep; neither carries timestamps. */
   var OVERLAY_TTL_MS = 12 * 3600 * 1000;
   function gcLocal() {
     qGcStale();   // 2026-07-29: the tap queue is GC'd too, not just the overlays
@@ -514,11 +560,11 @@
     var keys = [];
     try { for (var i = 0; i < localStorage.length; i++) { keys.push(localStorage.key(i)); } } catch (e) { return; }
     keys.forEach(function (k) {
-      var m = /^veta_(ov|rov|ord)_(\d{4}-\d{2}-\d{2})/.exec(k || '');
+      var m = /^veta_(ov|rov|ord|ntf|ack)_(\d{4}-\d{2}-\d{2})/.exec(k || '');
       if (!m) return;
       try {
         if (m[2] < today) { localStorage.removeItem(k); return; }
-        if (m[1] === 'ord') return;
+        if (m[1] !== 'ov' && m[1] !== 'rov') return;
         var ov = lsGet(k, {}); var changed = false;
         Object.keys(ov).forEach(function (kk) {
           var ts = (ov[kk] && ov[kk].ts !== undefined) ? ov[kk].ts : ov[kk];   // rov stores bare timestamps
@@ -591,6 +637,50 @@
     return st;
   }
 
+  /* ── per-stop "message the parent?" toggle (2026-08-02 redesign) ──
+     Default ON; flipped on the current card or an expanded row BEFORE Done.
+     Maps to the existing `notify` flag on the done tap — no new contract.
+     `told` records what actually happened at Done for the done-row status line. */
+  function ntfMap() { var rid = state.data && state.data.route ? state.data.route.route_id : ''; return lsGet('veta_ntf_' + rid, {}); }
+  function ntfSet(sid, patch) {
+    var rid = state.data && state.data.route ? state.data.route.route_id : ''; if (!rid) return;
+    var m = lsGet('veta_ntf_' + rid, {});
+    m[String(sid)] = Object.assign({}, m[String(sid)] || {}, patch);
+    lsSet('veta_ntf_' + rid, m);
+  }
+  function stopNotify(s) {
+    var e = ntfMap()[String(s.stop_id)];
+    return (e && e.n !== undefined) ? !!e.n : true;
+  }
+  function toldState(s) {
+    var e = ntfMap()[String(s.stop_id)];
+    return (e && e.told !== undefined) ? !!e.told : undefined;
+  }
+  /* The salon has no parent; a stop with no contact at all cannot be messaged. */
+  function isSalon(s) { return /grooming\s*salon/i.test(String(s && s.dog_name || '')); }
+  function hasNotifyUI(s) {
+    if (isSalon(s)) return false;
+    return !!(String(s.client_name || '').trim() || String(s.phone || '').trim());
+  }
+  function firstName(s) { return String(s || '').trim().split(/\s+/)[0] || ''; }
+
+  /* ── office note (dormant until W15 serves route.driver_message — Phase 2) ── */
+  function officeMsg() {
+    var r = state.data && state.data.route;
+    var msg = r ? String(r.driver_message || '').trim() : '';
+    if (!msg) return '';
+    var acked = lsGet('veta_ack_' + r.route_id, '');
+    return msg === acked ? '' : msg;
+  }
+  function ackOfficeMsg() {
+    var r = state.data && state.data.route; if (!r) return;
+    var msg = String(r.driver_message || '').trim();
+    lsSet('veta_ack_' + r.route_id, msg);
+    sendTap('ack_message', 0);   // read-receipt; W16 gains this action in the office-note backend phase
+    render();
+    toast('Acknowledged — the office knows you’ve seen it');
+  }
+
   /* ── tap queue (persisted, flushed when online; server dedupes on tap_id) ── */
   function q() { return lsGet('veta_tapq', []); }
   function qPush(item) { var a = q(); a.push(item); lsSet('veta_tapq', a); updateQueueBanner(); flush(); }
@@ -610,7 +700,7 @@
   }
   function updateQueueBanner() {
     var n = q().length, el = document.getElementById('queueBanner');
-    el.textContent = '📤 ' + n + (n === 1 ? ' tap' : ' taps') + ' waiting to send…';
+    el.textContent = n + (n === 1 ? ' tap' : ' taps') + ' waiting to send…';
     el.classList.toggle('show', n > 0);
   }
   /* Drop queued taps from a previous day BEFORE they are sent (2026-07-29).
@@ -765,7 +855,12 @@
       var hdr = document.querySelector('header'); if (!hdr) return null;
       chip = document.getElementById('gpsChip');
       if (!chip) { chip = document.createElement('span'); chip.id = 'gpsChip'; chip.className = 'gps-chip';
-        hdr.insertBefore(chip, document.getElementById('refreshBtn')); }
+        /* 2026-08-02 redesign: the chip leads the right-hand pill group. The old
+           anchor #refreshBtn no longer exists; falling back to it (null) appends
+           to the header, which keeps the harness's stub-document path working. */
+        var right = (hdr.querySelector ? hdr.querySelector('.hdr-right') : null);
+        if (right) { right.insertBefore(chip, right.firstChild); }
+        else { hdr.insertBefore(chip, document.getElementById('refreshBtn')); } }
       return chip;
     }
     function paint() {
@@ -793,12 +888,12 @@
     window.addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); });
   }
 
-  /* ── route picker: Reorder-tab slots + already-sent routes ──────────
+  /* ── route picker data: Reorder-tab slots + already-sent routes ──────────
      The office stages routes in the Load Plan's "Reorder Routes" tab (Apps
      Script store — same URL + token as route_reorder.js). Every slot for
-     this van is offered here, labelled with its day, date and run type.
-     Picking a route that is already in the VAN-ETA tables just opens it;
-     picking one that has NOT been sent yet posts the office's exact
+     this van is offered in the route sheet, labelled with its day, date and
+     run type. Picking a route that is already in the VAN-ETA tables just
+     opens it; picking one that has NOT been sent yet posts the office's exact
      "Send Final Route" payload (a faithful port of route_reorder.js
      sendFinal() — a change THERE must be mirrored HERE) to the same
      van-route webhook, then pins and opens the ingested route. */
@@ -807,9 +902,9 @@
   var SEND_URL = 'https://auto.thefairytails.co.uk/webhook/van-route';
   var SEND_TIMEOUT_MS = 30000;
   var RP_SECTIONS = {
-    HALF_DAY: { emoji: '☀️', title: 'Half Day' },
-    PM: { emoji: '🌆', title: 'PM run' },
-    NEXT_AM: { emoji: '📅', title: 'Next Day AM' }
+    HALF_DAY: { title: 'Half Day' },
+    PM: { title: 'PM run' },
+    NEXT_AM: { title: 'Next Day AM' }
   };
 
   function ymdLondon(offsetDays) {
@@ -956,86 +1051,7 @@
       });
   }
 
-  function hideRoutePicker() { document.getElementById('routePicker').classList.remove('show'); }
-  function openRoutePicker() {
-    var list = document.getElementById('routeList');
-    markRpVans();
-    document.getElementById('routePicker').classList.add('show');
-    list.innerHTML = '<div class="rp-empty"><div class="rp-art">📡</div>Looking for routes…</div>';
-    var vanAtOpen = state.van;
-    var availP = fetch(API_BASE + DATA_PATH + '?van=' + encodeURIComponent(state.van) + '&key=' + encodeURIComponent(state.key))
-      .then(function (r) { return r.json(); })
-      .then(function (j) {
-        if (j && j.ok !== true && (j.error === 'unauthorised' || j.error === 'unknown van')) {
-          hideRoutePicker(); showPicker(true); throw new Error('auth');
-        }
-        if (!j || j.ok !== true) throw new Error('api');
-        return j.available || [];
-      });
-    var queueP = fetchQueue().catch(function () { return null; });   // null = Reorder tab unreachable (still show sent routes)
-    Promise.all([availP, queueP])
-      .then(function (res) { if (vanAtOpen !== state.van) return; renderRouteList(res[0], res[1]); })
-      .catch(function () { if (vanAtOpen !== state.van) return; list.innerHTML = '<div class="rp-empty"><div class="rp-art">📡</div>Can\'t reach the server — check signal, close and retry.</div>'; });
-  }
-
-  function renderRouteList(avail, queue) {
-    var list = document.getElementById('routeList');
-    var entries = [], seen = {};
-    (queue || []).forEach(function (slot) {
-      var rid = slotRid(slot);
-      var sec = RP_SECTIONS[slot.section] || { emoji: '🚐', title: String(slot.section || 'Route') };
-      var stops = ((slot.ctx || {}).o || []).length;
-      var inTable = (avail || []).find(function (a) { return a.route_id === rid; }) || null;
-      seen[rid] = true;
-      entries.push({
-        rid: rid, date: rid.slice(0, 10), emoji: sec.emoji, title: sec.title,
-        sub: dayLabel(rid.slice(0, 10)) + ' · ' + stops + (stops === 1 ? ' stop' : ' stops') + ((slot.ctx || {}).t ? ' · departs ' + (slot.ctx || {}).t : ''),
-        status: inTable ? String(inTable.status || '') : '', unsent: !inTable, slot: slot
-      });
-    });
-    (avail || []).forEach(function (a) {
-      if (seen[a.route_id]) return;
-      entries.push({
-        rid: a.route_id, date: String(a.date || ''), emoji: a.route_type === 'AM' ? '🌅' : (a.route_type === 'HD' ? '☀️' : '🌆'),
-        title: (a.route_type === 'AM' ? 'AM run' : (a.route_type === 'HD' ? 'Half Day' : 'PM run')),
-        sub: dayLabel(String(a.date || '')), status: String(a.status || ''), unsent: false, slot: null
-      });
-    });
-    entries.sort(function (x, y) { return x.date < y.date ? -1 : x.date > y.date ? 1 : (x.title < y.title ? -1 : 1); });
-    if (!entries.length) {
-      list.innerHTML = '<div class="rp-empty"><div class="rp-art">🐾</div><h2 style="color:var(--ink);font-size:19px;margin:0 0 6px">Nothing staged for ' + esc(VAN_NAMES[state.van] || state.van) + '</h2>Ask the office to stage the route in the Load Plan\'s Reorder Routes tab, then close and reopen this list.</div>' +
-        (queue === null ? '<div class="rp-note">⚠️ Couldn\'t check the Reorder tab (poor signal?) — staged-but-unsent routes may be missing from this list.</div>' : '');
-      return;
-    }
-    var h = '';
-    entries.forEach(function (e, i) {
-      var pillCls = e.status === 'active' ? 'active' : (e.status === 'completed' ? 'completed' : 'staged');
-      var pillTxt = e.unsent ? 'NOT SENT YET' : (e.status === 'active' ? 'ON THE ROAD' : (e.status === 'completed' ? 'FINISHED' : 'READY'));
-      h += '<button class="route-opt' + (e.unsent ? ' unsent' : '') + '" data-i="' + i + '">' +
-        '<span class="ro-emoji">' + e.emoji + '</span>' +
-        '<div class="ro-main"><div class="ro-title">' + esc(e.title) + '</div><div class="ro-sub">' + esc(e.sub) + '</div></div>' +
-        '<span class="ro-side"><span class="pill ' + pillCls + '">' + pillTxt + '</span></span>' +
-        '</button>';
-    });
-    if (queue === null) h += '<div class="rp-note">⚠️ Couldn\'t check the Reorder tab (poor signal?) — staged-but-unsent routes may be missing from this list.</div>';
-    list.innerHTML = h;
-    list.querySelectorAll('.route-opt').forEach(function (b) {
-      b.addEventListener('click', function () {
-        var e = entries[Number(b.getAttribute('data-i'))];
-        if (!e) return;
-        if (!e.unsent) {
-          setPin(e.rid); hideRoutePicker();
-          state.data = null; state.waitRetries = 0; render(); load(false);
-          return;
-        }
-        dialog('📨 Send &amp; open this route?', '<p><b>' + esc(e.title) + '</b> — ' + esc(e.sub) + '.</p><p>The office hasn\'t sent it yet: picking it sends the route (the group Telegram message goes out, same as the office pressing Send Final Route) and opens it here.</p>',
-          [['Send &amp; open ▶️', 'go', 'btn start'], ['Back', '', 'btn nav']],
-          function (c) { if (c === 'go') sendQueueSlot(e.slot, b); });
-      });
-    });
-  }
-
-  /* ── rendering ── */
+  /* ── shared formatting helpers ── */
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   /* ── ETA display, re-based on how the run is ACTUALLY going (2026-07-29) ──
      planned_eta is a plan time minted at send: departure_time + drive minutes. The
@@ -1056,25 +1072,23 @@
     var mins = ((Number(m[1]) * 60 + Number(m[2]) + sh) % 1440 + 1440) % 1440;
     return String(Math.floor(mins / 60)).padStart(2, '0') + ':' + String(mins % 60).padStart(2, '0');
   }
-  function kennelWords(code) {
+  /* Kennel code → plain words (redesign wording: "top · driver side"). */
+  function posWords(code) {
     var c = String(code || '').trim().toUpperCase();
     if (!/^[SB][TMB][PMD]$/.test(c)) return '';
-    return POS_WORDS[c[0]] + ' · ' + POS_WORDS[c[1]] + ' · ' + POS_WORDS[c[2]];
+    return ROW_WORDS[c[1]] + ' · ' + COL_WORDS[c[2]];
   }
 
   /* FT-GROOMING leg codes (2026-07-20). The codes come from the grooming feed
-     (grooming-feature/feed_core.js gfRunPlan) and used to reach the driver as a
-     bare "✂️ S2H" chip, which tells a driver nothing. One source of truth for
-     BOTH the stop chip and the key below. Whitelist lookup: an unrecognised code
-     yields '' and degrades to the bare chip rather than injecting anything.
-     "Salon" is the Grooming Salon stop (15 Mount Pleasant Rd); "day care" is the
-     barn. NOTE: the office digest words D2S/S2D as "daycare➜shop" — same legs,
-     different word for the same place. */
+     (grooming-feature/feed_core.js gfRunPlan) and reach the driver spelled out.
+     Whitelist lookup: an unrecognised code yields '' and degrades to the plain
+     "grooming" chip rather than injecting anything. "Salon" is the Grooming
+     Salon stop (15 Mount Pleasant Rd); "day care" is the barn. */
   var LEG_WORDS = {
-    H2S: 'home ➜ salon',
-    S2H: 'salon ➜ home',
-    D2S: 'day care ➜ salon',
-    S2D: 'salon ➜ day care'
+    H2S: 'home → salon',
+    S2H: 'salon → home',
+    D2S: 'day care → salon',
+    S2D: 'salon → day care'
   };
   var LEG_HELP = {
     H2S: 'Collect from home, drop at the salon',
@@ -1084,32 +1098,29 @@
   };
   function legWords(code) { return LEG_WORDS[String(code || '').trim().toUpperCase()] || ''; }
 
-  /* The key only appears when this route actually has grooming legs, so a normal
-     route is not cluttered. Lists just the codes present on THIS route. */
-  function groomKey() {
-    var stops = (state.data && state.data.stops) || [];
-    var seen = {}, order = [], unbooked = 0;
-    stops.forEach(function (s) {
-      var c = String(s && s.leg_code || '').trim().toUpperCase();
-      if (c && LEG_WORDS[c]) { if (!seen[c]) { seen[c] = true; order.push(c); } return; }
-      // Flagged grooming but no leg: not booked on the grooming form for this run.
-      if (String(s && s.is_grooming) === 'Y') unbooked++;
-    });
-    if (!order.length && !unbooked) return '';
-    return '<div class="kb-legend groom-key">' +
-      '<span class="gk-title">✂️ Grooming legs on this route:</span>' +
-      order.map(function (c) {
-        return '<span class="gk-item"><b>' + esc(c) + '</b> ' + esc(LEG_HELP[c]) + '</span>';
-      }).join('') +
-      (unbooked ? '<span class="gk-item gk-warn"><b>no salon stop</b> ' + unbooked +
-        (unbooked === 1 ? ' grooming dog has' : ' grooming dogs have') +
-        ' no salon leg on this route — check with the office</span>' : '') +
-      '</div>';
-  }
   function toast(msg) {
     var el = document.getElementById('toast');
     el.textContent = msg; el.classList.add('show');
     clearTimeout(el._t); el._t = setTimeout(function () { el.classList.remove('show'); }, 2400);
+  }
+
+  /* ── inline stroke icons (lifted from the design prototype) ── */
+  function svgIcon(name, size, extra) {
+    var stroke = 'fill="none" stroke="currentColor" stroke-width="' + (extra && extra.w || 2) + '"';
+    var paths = {
+      chevron: '<path d="M19.5 8.25l-7.5 7.5-7.5-7.5"></path>',
+      check: '<path d="M4.5 12.75l6 6 9-13.5"></path>',
+      megaphone: '<path d="M3 10v4a1 1 0 001 1h2l5 4V5L6 9H4a1 1 0 00-1 1z"></path><path d="M15 9a4 4 0 010 6M18 7a7.5 7.5 0 010 10"></path>',
+      nav: '<path d="M12 2.5l7 18-7-4-7 4 7-18z"></path>',
+      phone: '<path d="M3 5a2 2 0 012-2h2l2 5-2.2 1.6a13 13 0 006.6 6.6L15 14l5 2v2a2 2 0 01-2 2A16 16 0 013 5z"></path>',
+      key: '<circle cx="8" cy="14" r="4"></circle><path d="M11 11L20 2M16 6l3 3M13 9l2 2"></path>',
+      bars: '<path d="M4 8h16M4 12h16M4 16h16"></path>',
+      van: '<rect x="2" y="7" width="15" height="10" rx="2"></rect><path d="M17 10h3l2 3v4h-5"></path><circle cx="7" cy="19" r="1.6"></circle><circle cx="17.5" cy="19" r="1.6"></circle>',
+      play: '<path d="M7 4.5l12 7.5-12 7.5v-15z"></path>'
+    };
+    if (name === 'play') stroke = 'fill="currentColor"';
+    return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" ' + stroke + ' aria-hidden="true"' +
+      (extra && extra.style ? ' style="' + extra.style + '"' : '') + '>' + paths[name] + '</svg>';
   }
 
   /* ── kennel board ── */
@@ -1138,6 +1149,7 @@
         if (s.stop_type === 'dropoff') {
           if (st === 'dropped') delete occ[a.code];
           else if (st === 'skipped') occ[a.code] = { dog: a.dog, cls: 'aboard' };
+          else if (st === 'removed') occ[a.code] = { dog: a.dog, cls: 'occ' };   // dog is aboard either way (W16 refuses drop-off removals; belt for a server-side one)
           else occ[a.code] = { dog: a.dog, cls: 'occ' };
         } else {
           if (st === 'collected' || st === 'dropped') occ[a.code] = { dog: a.dog, cls: 'occ' };
@@ -1154,115 +1166,317 @@
     Object.keys(occ).forEach(function (c) { if (occ[c].cls === 'occ' || occ[c].cls === 'aboard') out.push({ code: c, dog: occ[c].dog }); });
     return out;
   }
-  function kennelBoard() {
+  function kennelBoard(nowSeq) {
     var layout = (window.FT_KENNELS || {})[state.van];
     if (!layout || !state.data || !state.data.route) return '';
     var occ = occupancy();
+    var aboardN = 0, expN = 0, assignedN = 0;
+    Object.keys(occ).forEach(function (c) { assignedN++; if (occ[c].cls === 'exp') expN++; else aboardN++; });
+    /* display copy: the current stop's boxes go blue with a pulse */
+    var disp = {};
+    Object.keys(occ).forEach(function (c) { disp[c] = { dog: occ[c].dog, cls: occ[c].cls }; });
+    var hasNow = false, hasAboard = false;
+    var nowStop = nowSeq >= 0 ? (state.data.stops || []).find(function (s) { return seqEff(s) === nowSeq; }) : null;
+    if (nowStop) {
+      kennelAssignments(nowStop).forEach(function (a) {
+        disp[a.code] = { dog: a.dog, cls: 'now' };
+        hasNow = true;
+      });
+    }
+    Object.keys(disp).forEach(function (c) { if (disp[c].cls === 'aboard') hasAboard = true; });
     var prev = state.prevOcc || {};
-    var occN = Object.keys(occ).filter(function (c) { return occ[c].cls !== 'exp'; }).length;
     var totalBoxes = layout.side.concat(layout.back).reduce(function (n, r) { return n + r.length; }, 0);
+    var free = totalBoxes - assignedN;
     var collapsed = lsGet('veta_kb_collapsed', false);
-    function grid(rows, lbl) {
-      var h = '<div class="kb-grid"><div class="kb-lbl">' + lbl + '</div>';
+    function bank(rows, cls) {
+      var h = '<div class="bank ' + cls + '">';
       rows.forEach(function (row) {
-        h += '<div class="kb-row" style="grid-template-columns:repeat(' + row.length + ',1fr)">';
+        h += '<div class="krow' + (row.length === 2 ? ' inset' : '') + '" style="grid-template-columns:repeat(' + row.length + ',1fr)">';
         row.forEach(function (code) {
-          var o = occ[code];
+          var o = disp[code];
           var was = JSON.stringify(prev[code] || null), is = JSON.stringify(o || null);
           var pop = was !== is ? ' pop' : '';
-          h += '<div class="kb-box ' + (o ? o.cls : '') + pop + '">';
-          h += '<span class="kb-pos">' + code + '</span>';
-          if (o) h += '<span class="kb-dog">' + esc(o.dog) + '</span>';
-          if ((layout.arches || []).indexOf(code) >= 0) h += '<span class="kb-arch"></span>';
-          h += '</div>';
+          if (o) h += '<span class="kb-box ' + o.cls + pop + '"><span class="kb-dog">' + esc(o.dog) + '</span></span>';
+          else h += '<span class="kb-box' + pop + '"><span class="kb-pos">' + code + '</span></span>';
         });
         h += '</div>';
       });
       return h + '</div>';
     }
-    var h = '<div class="kboard' + (collapsed ? ' collapsed' : '') + '" id="kboard">';
-    h += '<div class="kb-head" id="kbHead"><h4>🚐 Van kennels</h4><div><span class="kb-count num">' + occN + ' / ' + totalBoxes + ' in van</span><span class="kb-caret">▼</span></div></div>';
-    h += '<div class="kb-body"><div class="kb-grids">' + grid(layout.side, 'Side door') + grid(layout.back, 'Back door') + '</div>';
-    h += '<div class="kb-legend"><span class="l-occ"><i></i>In the van</span><span class="l-exp"><i></i>To collect</span><span class="l-aboard"><i></i>Skipped drop — still aboard</span></div>';
+    var count = aboardN + ' aboard' + (expN ? ' · ' + expN + ' to collect' : '') +
+      ' · ' + free + (free === 1 ? ' box' : ' boxes') + ' free';
+    var h = '<div class="bcard' + (collapsed ? ' collapsed' : '') + '" id="kboard">';
+    h += '<div class="bc-head" id="kbHead"><span class="bc-title">In the van</span>' +
+      '<span class="bc-count num" id="kbCount">' + count +
+      '<span class="bc-caret">' + svgIcon('chevron', 12, { w: 2.5 }) + '</span></span></div>';
+    h += '<div class="bc-body"><div class="board">' + bank(layout.side, 'side') + bank(layout.back, 'back') +
+      '<span class="door-side"></span><span class="door-back"></span></div>';
+    h += '<div class="legend">' +
+      '<span class="l-occ"><i></i>Aboard</span>' +
+      (hasNow ? '<span class="l-now"><i></i>This stop</span>' : '') +
+      (hasAboard ? '<span class="l-aboard"><i></i>Skipped — still aboard</span>' : '') +
+      (expN ? '<span class="l-exp"><i></i>To collect</span>' : '') +
+      '<span class="l-empty"><i></i>Empty</span></div>';
     h += '</div></div>';
-    state.prevOcc = occ;
+    state.prevOcc = disp;
     return h;
   }
 
-  function stopCard(s, isNow, routeActive, canMove) {
-    var eff = effStatus(s);
+  /* Grooming key — only when this route actually has grooming legs, so a
+     normal route stays uncluttered. Lists just the codes present. */
+  function groomKeyCard() {
+    var stops = (state.data && state.data.stops) || [];
+    var seen = {}, order = [], unbooked = 0;
+    stops.forEach(function (s) {
+      if (effStatus(s).st === 'removed') return;
+      var c = String(s && s.leg_code || '').trim().toUpperCase();
+      if (c && LEG_WORDS[c]) { if (!seen[c]) { seen[c] = true; order.push(c); } return; }
+      // Flagged grooming but no leg: not booked on the grooming form for this run.
+      if (String(s && s.is_grooming) === 'Y') unbooked++;
+    });
+    if (!order.length && !unbooked) return '';
+    return '<div class="bcard" style="padding:12px 16px"><div class="gkey" style="border-top:0;margin-top:0;padding-top:0">' +
+      '<span class="gk-title">Grooming on this route</span>' +
+      order.map(function (c) {
+        return '<span class="gk-item"><b>' + esc(LEG_WORDS[c]) + '</b> — ' + esc(LEG_HELP[c]) + '</span><br>';
+      }).join('') +
+      (unbooked ? '<span class="gk-warn">' + unbooked +
+        (unbooked === 1 ? ' grooming dog has' : ' grooming dogs have') +
+        ' no salon leg on this route — check with the office</span>' : '') +
+      '</div></div>';
+  }
+
+  /* Per-stop grooming chip; the salon stop instead lists who to collect there. */
+  function salonCollectNames() {
+    var stops = (state.data && state.data.stops) || [];
+    var names = [];
+    stops.forEach(function (s) {
+      if (effStatus(s).st === 'removed') return;
+      var c = String(s.leg_code || '').trim().toUpperCase();
+      if (c === 'S2H' || c === 'S2D') names.push(firstName(s.dog_name));
+    });
+    return names.filter(Boolean);
+  }
+  function stopChipHtml(s) {
+    if (isSalon(s)) {
+      var names = salonCollectNames();
+      return names.length ? '<span class="g-chip">collect ' + esc(names.join(' & ')) + '</span>' : '';
+    }
+    var lw = legWords(s.leg_code);
+    if (lw) return '<span class="g-chip">' + esc(lw) + '</span>';
+    if (String(s.is_grooming) === 'Y') return '<span class="g-chip warn">grooming — no salon stop</span>';
+    return '';
+  }
+
+  /* ── door tiles on the current card (1C feature: door + position without
+     scrolling to the board) ── */
+  function doorTilesHtml(s, occ) {
+    var layout = (window.FT_KENNELS || {})[state.van];
+    var asg = kennelAssignments(s);
+    if (!layout || !asg.length) return '';
+    var banks = {};
+    asg.forEach(function (a) { (banks[a.code[0]] = banks[a.code[0]] || []).push(a); });
+    return Object.keys(banks).sort().reverse().map(function (bk) {
+      var rows = bk === 'S' ? layout.side : layout.back;
+      var grid = rows.map(function (row) {
+        var cells = row.map(function (code) {
+          var mine = banks[bk].some(function (a) { return a.code === code; });
+          if (mine) return '<span class="gcell mine"></span>';
+          if (occ[code]) return '<span class="gcell other"></span>';
+          return '<span class="gcell"></span>';
+        }).join('');
+        return '<div class="grow" style="grid-template-columns:repeat(' + row.length + ',18px)">' + cells + '</div>';
+      }).join('');
+      var lines = banks[bk].map(function (a) { return '<div class="tl-line">' + esc(a.dog) + ' — ' + posWords(a.code) + '</div>'; }).join('');
+      return '<div class="tile door"><div class="tile-lines"><div class="tile-lbl">' + (bk === 'S' ? 'Side door' : 'Back door') + '</div>' + lines + '</div>' +
+        '<div class="glyph">' + grid + '<div class="glyph-cap">' + (bk === 'S' ? 'SIDE VIEW' : 'REAR VIEW') + '</div></div></div>';
+    }).join('');
+  }
+  function doorWordsFor(s) {
+    var asg = kennelAssignments(s);
+    if (!asg.length) return '';
+    var banks = {};
+    asg.forEach(function (a) { (banks[a.code[0]] = banks[a.code[0]] || []).push(a); });
+    return Object.keys(banks).sort().reverse().map(function (bk) {
+      return (bk === 'S' ? 'Side' : 'Back') + ': ' + banks[bk].map(function (a) { return a.dog + ' — ' + posWords(a.code); }).join(' · ');
+    }).join('  ·  ');
+  }
+
+  function ntfRowHtml(s) {
+    if (!hasNotifyUI(s)) return '';
+    var on = stopNotify(s);
+    var who = firstName(s.client_name) || 'The parent';
+    var word = s.stop_type === 'dropoff' ? 'dropped home' : 'collected';
+    return '<div class="ntf-row"><span class="ntf-lbl">' + esc(who) + ' gets a “' + word + '” text</span>' +
+      '<button type="button" class="sw' + (on ? ' on' : '') + '" role="switch" aria-checked="' + on + '" data-act="toggle" data-sid="' + esc(String(s.stop_id)) + '" aria-label="Message the parent when done"><span class="sw-knob"></span></button></div>';
+  }
+
+  function doneLabelFor(s) {
+    if (isSalon(s)) return 'Done at salon';
+    return s.stop_type === 'dropoff' ? 'Dropped home' : 'Collected';
+  }
+  function ownerAddr(s) {
+    var bits = [];
+    if (s.client_name) bits.push(esc(s.client_name));
+    if (s.address) bits.push(esc(s.address));
+    return bits.join(' · ');
+  }
+  function windowLine(s) {
+    var w = (s.window_start && s.window_end) ? 'window ' + esc(s.window_start) + '–' + esc(s.window_end) : '';
+    if (etaShiftMin()) w += (w ? ' · ' : 'ETA ') + 'adj';
+    return w;
+  }
+
+  /* ── stop rows ── */
+  function closedRowHtml(s, eff) {
     var sq = seqEff(s);
-    /* A removed stop is off the route — draw nothing. The server already filters
-       these out of W15's response; this covers the moment between the local tap
-       and the next poll. Surviving stops keep their original numbers on purpose:
-       seq is the address of every queued tap, every /doneN and every stop_id. */
-    if (eff.st === 'removed') return '';
-    var movable = !!canMove && (eff.st === 'pending' || eff.st === 'next');
-    var cls = 'stop';
-    if (eff.st === 'collected' || eff.st === 'dropped') cls += ' done';
-    else if (eff.st === 'skipped') cls += ' skip';
-    else if (isNow) cls += ' now';
-    var open = CLOSED.indexOf(eff.st) < 0;
-    var node = (eff.st === 'collected' || eff.st === 'dropped') ? '✓' : (eff.st === 'skipped' ? '✕' : String(sq));
-    var kw = kennelWords(s.kennel);
-    var h = '';
-    h += '<section class="' + cls + '" data-seq="' + sq + '" data-sid="' + esc(String(s.stop_id || '')) + '"' + (movable ? ' data-movable="1"' : '') + '><div class="node">' + node + '</div><div class="card">';
-    h += '<div class="row1"><div class="dog">';
-    h += '<div class="typ' + (s.stop_type === 'dropoff' ? ' dropoff' : '') + '">' + (s.stop_type === 'dropoff' ? '🏡 Drop-off' : '🐶 Pick-up') + '</div>';
-    h += '<div class="name">' + esc(s.dog_name || ('Stop ' + sq)) + '</div>';
-    if (s.client_name) h += '<div class="owner">' + esc(s.client_name) + '</div>';
-    h += '</div><div class="eta"><div class="t num">' + esc(shownEta(s)) + '</div><div class="lbl">ETA' + (etaShiftMin() ? ' <small>adj</small>' : '') + '</div></div>';
-    if (movable) h += '<button class="drag-handle" aria-label="Hold and drag to move this stop">⠿</button>';
-    h += '</div>';
-    var chips = '';
-    if (s.kennel) chips += '<span class="chip kennel">📦 ' + esc(s.kennel) + (kw ? ' <small>' + kw + '</small>' : '') + '</span>';
-    if (s.key_code) chips += '<span class="chip key">🔑 ' + esc(s.key_code) + '</span>';
-    // FT-GROOMING leg badge (W15 fields, additive 2026-07-17): H2S/S2H/D2S/S2D
-    // say which salon leg this stop is; a grooming stop with no code still gets ✂️.
-    // 2026-07-20: spell the leg out. The bare code alone meant nothing to a
-    // driver — same treatment as the kennel chip's <small> words above.
-    if (s.leg_code) {
-      var lw = legWords(s.leg_code);
-      chips += '<span class="chip groom">✂️ ' + esc(s.leg_code) + (lw ? ' <small>' + lw + '</small>' : '') + '</span>';
+    var sid = String(s.stop_id || '');
+    var isDone = eff.st === 'collected' || eff.st === 'dropped';
+    var isRm = eff.st === 'removed';
+    var tickCls = isDone ? 't-done' : (isRm ? 't-rm' : 't-skip');
+    var tickChar = isDone ? '✓' : '✕';
+    var stillAboard = eff.st === 'skipped' && s.stop_type === 'dropoff' && kennelAssignments(s).length > 0;
+    var expanded = state.expandedId === sid;
+    var h = '<div class="stop" data-seq="' + sq + '" data-sid="' + esc(sid) + '" data-row="closed">';
+    h += '<div class="crow" data-exp="' + esc(sid) + '">' +
+      '<span class="crow-tick ' + tickCls + '">' + tickChar + '</span>' +
+      '<span class="crow-name">' + esc(s.dog_name || ('Stop ' + sq)) +
+      (stillAboard ? '<span class="tag-aboard">still aboard</span>' : '') +
+      (isRm ? '<span class="tag-aboard" style="background:rgba(142,142,147,0.12);color:#636366">not coming</span>' : '') +
+      '</span>' +
+      '<span class="crow-eta num">' + esc(shownEta(s)) + '</span></div>';
+    if (expanded) {
+      var line, cls;
+      var fromTap = eff.local ? ' <span class="from-tap">· from your tap</span>' : '';
+      if (isDone) {
+        var told = toldState(s);
+        var clause = told === undefined ? '' : (told ? ' · ' + esc(firstName(s.client_name) || 'the parent') + ' was told' : ' · no message');
+        line = (eff.st === 'dropped' ? 'Dropped home' : 'Collected') + clause + fromTap; cls = 'ok';
+      } else if (isRm) {
+        line = 'Not coming today — taken off this round'; cls = 'warn';
+      } else {
+        line = (s.stop_type === 'dropoff' ? 'Skipped — nothing dropped' : 'Skipped — not collected') + fromTap; cls = 'warn';
+      }
+      /* Undo on any closed stop the app can actually reverse: a tap made on
+         THIS phone always can; a server-closed stop only once taps are live
+         (in test mode the server would not move — no lying buttons, B19). */
+      var undoable = !isRm && (eff.local || state.data.tap_mode === 'live');
+      var rmUndo = isRm && eff.local;   // a local removal can be put straight back before the server filters it
+      h += '<div class="crow-x"><span class="xline ' + cls + '">' + line + '</span>' +
+        (undoable ? '<button class="undo-pill" data-act="undo" data-seq="' + sq + '">Undo</button>' : '') +
+        (rmUndo ? '<button class="undo-pill" data-act="unremove" data-seq="' + sq + '">Put it back</button>' : '') +
+        '</div>';
     }
-    // 2026-07-20: stage4 supplies the leg from the booking, or derives it from
-    // the dog's position relative to the salon stop. So a missing code means
-    // this route has NO salon stop — there is no salon leg to name.
-    else if (String(s.is_grooming) === 'Y') chips += '<span class="chip groom">✂️ grooming <small>no salon stop</small></span>';
-    if (s.window_start && s.window_end) chips += '<span class="chip num">🕐 ' + esc(s.window_start) + '–' + esc(s.window_end) + '</span>';
-    if (chips) h += '<div class="chips">' + chips + '</div>';
-    if (s.address) h += '<div class="addr">📍 ' + esc(s.address) + '</div>';
-    if (s.note) h += '<div class="note">' + esc(s.note) + '</div>';
-    if (eff.st === 'collected' || eff.st === 'dropped') h += '<div class="status-line done">✓ ' + (eff.st === 'dropped' ? 'Dropped home' : 'Collected') + (eff.local ? ' <span class="q">(from your tap)</span>' : '') + '</div>';
-    else if (eff.st === 'skipped') h += '<div class="status-line skip">✕ Skipped' + (eff.local ? ' <span class="q">(from your tap)</span>' : '') + '</div>';
-    else if (eff.st === 'arrived') h += '<div class="status-line arrived">📍 GPS says you\'re here — tap Done when the dog is aboard</div>';
-    if (open && routeActive) {
-      h += '<div class="actions">';
-      if (s.nav_url) h += '<button class="btn nav' + (s.phone ? '' : ' wide') + '" data-act="nav" data-seq="' + sq + '">🧭 Navigate</button>';
-      if (s.phone) h += '<button class="btn call' + (s.nav_url ? '' : ' wide') + '" data-act="call" data-seq="' + sq + '">📞 Call parent</button>';
-      h += '<button class="btn done" data-act="done" data-seq="' + sq + '">✅ Done</button>';
-      h += '<button class="btn skip" data-act="skip" data-seq="' + sq + '">✗ Skip</button>';
-      h += '</div>';
-      /* 2026-07-29 (Kam): a parent rings in the morning to say the dog is not
-         coming, after the route has already been finalised. Deliberately its own
-         quiet full-width row BELOW the main actions — never in .row1, which is the
-         only line bindDrag reasons about geometrically and which already holds the
-         40px touch-action:none drag island. No stopPropagation anywhere (that is
-         what keeps the Android drag alive). */
-      h += '<div class="actions"><button class="btn remove wide" data-act="remove" data-seq="' + sq + '">✕ Not coming today</button></div>';
+    return h + '</div>';
+  }
+
+  function currentCardHtml(s, eff, occ) {
+    var sq = seqEff(s);
+    var sid = String(s.stop_id || '');
+    var movable = eff.st === 'pending' || eff.st === 'next';
+    var h = '<div class="stop" data-seq="' + sq + '" data-sid="' + esc(sid) + '" data-name="' + esc(s.dog_name || ('Stop ' + sq)) + '" data-row="current"' + (movable ? ' data-movable="1"' : '') + '>';
+    h += '<div class="cur">';
+    h += '<div class="cur-top"><div style="min-width:0">';
+    h += '<div class="cur-micro">Stop ' + sq + ' · now</div>';
+    h += '<div class="cur-name">' + esc(s.dog_name || ('Stop ' + sq)) + stopChipHtml(s) + '</div>';
+    var oa = ownerAddr(s);
+    if (oa) h += '<div class="cur-oa">' + oa + '</div>';
+    h += '</div><div class="cur-eta-w"><div class="cur-eta num">' + esc(shownEta(s)) + '</div>' +
+      '<div class="cur-win num">' + windowLine(s) + '</div></div></div>';
+    if (eff.st === 'arrived') {
+      h += '<div class="cur-arrived">GPS says you’re here — tap ' + doneLabelFor(s) + ' when the dog is ' + (s.stop_type === 'dropoff' ? 'home' : 'aboard') + '</div>';
     }
-    /* Undo on any closed stop the app can actually reverse: a tap made on
-       THIS phone always can; a server-closed stop only once taps are live
-       (in test mode the server would not move — no lying buttons, B19). */
-    var undoable = (eff.st === 'collected' || eff.st === 'dropped' || eff.st === 'skipped')
-      && (eff.local || state.data.tap_mode === 'live');
-    if (undoable) {
-      h += '<div class="actions"><button class="btn undo wide" data-act="undo" data-seq="' + sq + '">↩️ Undo — not done</button></div>';
-    }
-    h += '</div></section>';
+    var tiles = '';
+    if (s.key_code) tiles += '<div class="tile key"><div class="tile-lbl">Key safe</div><div class="tile-key num">' + esc(s.key_code) + '</div></div>';
+    tiles += doorTilesHtml(s, occ);
+    if (tiles) h += '<div class="tiles">' + tiles + '</div>';
+    if (s.note) h += '<div class="cur-note">' + esc(s.note) + '</div>';
+    h += ntfRowHtml(s);
+    h += '<div class="cur-btns">';
+    h += '<button class="btn-done" data-act="done" data-seq="' + sq + '">' + svgIcon('check', 19, { w: 2.4 }) + doneLabelFor(s) + '</button>';
+    if (s.nav_url) h += '<button class="btn-ico" data-act="nav" data-seq="' + sq + '" aria-label="Navigate">' + svgIcon('nav', 19) + '</button>';
+    if (s.phone) h += '<button class="btn-ico" data-act="call" data-seq="' + sq + '" aria-label="Call parent">' + svgIcon('phone', 19) + '</button>';
+    h += '<button class="btn-more" data-act="more" data-seq="' + sq + '" aria-label="More options">⋯</button>';
+    h += '</div></div></div>';
     return h;
   }
 
+  function upcomingRowHtml(s, eff, canMove) {
+    var sq = seqEff(s);
+    var sid = String(s.stop_id || '');
+    var movable = !!canMove && (eff.st === 'pending' || eff.st === 'next');
+    var expanded = state.expandedId === sid;
+    var h = '<div class="stop" data-seq="' + sq + '" data-sid="' + esc(sid) + '" data-name="' + esc(s.dog_name || ('Stop ' + sq)) + '" data-row="upcoming"' + (movable ? ' data-movable="1"' : '') + '>';
+    /* data-exp sits on the whole row bar ("tap anywhere except handle" — README);
+       the [data-exp] click handler ignores taps on buttons, which covers the handle. */
+    h += '<div class="urow"><div class="urow-main" data-exp="' + esc(sid) + '">';
+    h += '<span class="urow-num num">' + sq + '</span>';
+    h += '<span class="urow-name">' + esc(s.dog_name || ('Stop ' + sq)) + stopChipHtml(s) +
+      (eff.st === 'arrived' ? '<span class="g-chip arr">GPS: you’re here</span>' : '') + '</span>';
+    h += '<span class="urow-eta num">' + esc(shownEta(s)) + '</span>';
+    if (movable) h += '<button class="drag-handle" aria-label="Drag to reorder">' + svgIcon('bars', 17) + '</button>';
+    else h += '<span style="width:8px;flex:none"></span>';
+    h += '</div>';
+    if (expanded) {
+      h += '<div class="urow-x">';
+      var oa = ownerAddr(s);
+      if (oa) h += '<div class="x-oa">' + oa + '</div>';
+      var chips = '';
+      if (s.key_code) chips += '<span class="x-chip k">' + svgIcon('key', 13, { style: 'color:#8E8E93' }) + esc(s.key_code) + '</span>';
+      var dw = doorWordsFor(s);
+      if (dw) chips += '<span class="x-chip">' + esc(dw) + '</span>';
+      if (s.window_start && s.window_end) chips += '<span class="x-chip dim">' + esc(s.window_start) + '–' + esc(s.window_end) + '</span>';
+      if (chips) h += '<div class="x-chips">' + chips + '</div>';
+      if (s.note) h += '<div class="x-note">' + esc(s.note) + '</div>';
+      h += ntfRowHtml(s);
+      h += '</div>';
+    }
+    return h + '</div></div>';   // closes .urow then .stop
+  }
+
+  function officeNoteHtml() {
+    var msg = officeMsg();
+    if (!msg) return '';
+    return '<div class="onote" id="onote"><span class="onote-ico">' + svgIcon('megaphone', 15) + '</span>' +
+      '<div style="min-width:0"><div class="onote-lbl">Office note</div>' +
+      '<div class="onote-msg">' + esc(msg) + '</div>' +
+      '<button class="ack-btn" data-act="ack">' + svgIcon('check', 14, { w: 2.6 }) + 'Acknowledge</button></div></div>';
+  }
+
+  /* ── header ── */
+  function paintVanPill() {
+    var el = document.getElementById('vanChip');
+    document.getElementById('vanChipTxt').textContent = state.van || 'VAN';
+    el.className = 'pill-van' + (state.van ? ' vp-' + state.van : '');
+  }
+  function setHeader(title, subHtml, pillTxt) {
+    document.getElementById('ridTxt').innerHTML = esc(title) + ' ' + svgIcon('chevron', 12, { w: 2.5, style: 'color:#AEAEB2;flex:none' });
+    document.getElementById('ridSub').innerHTML = subHtml;
+    var pill = document.getElementById('statusPill');
+    if (pillTxt) { pill.style.display = ''; pill.textContent = pillTxt; }
+    else { pill.style.display = 'none'; }
+  }
+  function runLabel(rt) {
+    return rt === 'HD' ? 'Half Day run' : (rt === 'AM' ? 'AM run' : (rt === 'PM' ? 'PM run' : 'Route'));
+  }
+  function driftHtml(rst) {
+    if (rst === 'completed') return '<span class="drift-dim">finished</span>';
+    var d = etaShiftMin();
+    if (!d) return '<span class="drift-ok">on time</span>';
+    var ahead = d < 0;
+    return '<span class="' + (ahead ? 'drift-ok' : 'drift-bad') + '">' + Math.abs(d) + ' min ' + (ahead ? 'ahead' : 'behind') + '</span>';
+  }
+
+  function scrollToCurrent() {
+    setTimeout(function () {
+      var el = document.querySelector('.stop[data-row="current"]');
+      if (!el) return;
+      var top = el.getBoundingClientRect().top + (document.scrollingElement || document.documentElement).scrollTop - 140;
+      window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+    }, 120);
+  }
+
+  /* ── render ── */
   function render() {
     var main = document.getElementById('main');
     var footer = document.getElementById('footer');
@@ -1274,19 +1488,25 @@
     var dlgEl = document.getElementById('dlg');
     if ((dlgEl && dlgEl.open) || document.body.classList.contains('is-dragging')) { state.renderPending = true; return; }
     GPS.sync();   // S3: keep phone GPS matched to route state on EVERY render path (incl. the early returns below); no-op unless the native plugin is present
-    document.getElementById('vanChipTxt').textContent = state.van || 'VAN';
-    if (!d) { main.innerHTML = '<div class="empty"><div class="art">📡</div><h2>Loading…</h2></div>'; return; }
+    paintVanPill();
+    if (!d) {
+      setHeader(VAN_NAMES[state.van] || 'Fairy Tails Drive', 'Loading…', '');
+      main.innerHTML = '<div class="empty"><h2>Loading…</h2><p>Fetching your route.</p></div>';
+      footer.className = ''; footer.innerHTML = '';
+      return;
+    }
     document.getElementById('devBanner').classList.toggle('show', d.tap_mode === 'dev');
     var r = d.route;
     if (!r) {
-      document.getElementById('ridTxt').textContent = VAN_NAMES[state.van] || state.van;
       var waitPin = getPin();
       if (waitPin && d.rid_found === false) {
-        document.getElementById('ridSub').textContent = 'Waiting for ' + waitPin;
-        main.innerHTML = '<div class="empty"><div class="art">📨</div><h2>Route sent — arriving…</h2><p>Waiting for <b>' + esc(waitPin) + '</b> to come through.<br>This refreshes itself every few seconds.</p><div class="actions" style="max-width:300px;margin:18px auto 0"><button class="btn nav wide" id="pickAnother">🗂 Choose a different route</button></div></div>';
+        setHeader(VAN_NAMES[state.van] || state.van, 'Route sent — arriving…', '');
+        main.innerHTML = '<div class="empty"><h2>Route sent — arriving…</h2><p>Waiting for <b class="num">' + esc(waitPin) + '</b> to come through.<br>This refreshes itself every few seconds.</p>' +
+          '<div class="e-act"><button class="btn-line" id="pickAnother">Choose a different route</button></div></div>';
       } else {
-        document.getElementById('ridSub').textContent = 'No route loaded';
-        main.innerHTML = '<div class="empty"><div class="art">🐾</div><h2>No route loaded</h2><p>Pick one of the routes staged by the office for ' + esc(VAN_NAMES[state.van] || state.van) + '.</p><div class="actions" style="max-width:300px;margin:18px auto 0"><button class="btn start wide" id="seeRoutes">🗂 See available routes</button></div></div>';
+        setHeader(VAN_NAMES[state.van] || state.van, 'No route loaded', '');
+        main.innerHTML = '<div class="empty"><h2>No route loaded</h2><p>Pick one of the routes staged by the office for ' + esc(VAN_NAMES[state.van] || state.van) + '.</p>' +
+          '<div class="e-act"><button class="btn-line primary" id="seeRoutes">See available routes</button></div></div>';
       }
       footer.className = ''; footer.innerHTML = '';
       var pa = document.getElementById('pickAnother');
@@ -1297,71 +1517,97 @@
     }
     var rst = effRouteStatus();
     /* A dog taken off the route is OFF it: excluded from the working set entirely,
-       so the x/N counter, the progress bar, the "now" card and the End-route
-       warning all describe the route the driver is actually driving. (Without this
-       a removal read as "1 / 3 done" the moment it was tapped — the removed stop
-       counted as both a stop and a closed one, because 'removed' is in CLOSED.)
-       Surviving stops keep their ORIGINAL seq numbers on purpose — 2026-07-29. */
-    var stops = d.stops.slice()
-      .filter(function (s) { return effStatus(s).st !== 'removed'; })
-      .sort(function (a, b) { return seqEff(a) - seqEff(b); });
-    var total = stops.length;
-    var closed = stops.filter(function (s) { var e = effStatus(s).st; return CLOSED.indexOf(e) >= 0; }).length;
-    var doneN = stops.filter(function (s) { var e = effStatus(s).st; return e === 'collected' || e === 'dropped'; }).length;
-    var open = stops.filter(function (s) { return CLOSED.indexOf(effStatus(s).st) < 0; });
+       so the x/N counter, the "now" card and the End-route warning all describe
+       the route the driver is actually driving. A LOCAL removal still paints a
+       quiet closed row (with "Put it back") until the next poll confirms it;
+       a server-side removal never even arrives (W15 filters them). Surviving
+       stops keep their ORIGINAL seq numbers on purpose — 2026-07-29. */
+    var sorted = d.stops.slice().sort(function (a, b) { return seqEff(a) - seqEff(b); });
+    var working = sorted.filter(function (s) { return effStatus(s).st !== 'removed'; });
+    var total = working.length;
+    var closed = working.filter(function (s) { return CLOSED.indexOf(effStatus(s).st) >= 0; }).length;
+    var doneN = working.filter(function (s) { var e = effStatus(s).st; return e === 'collected' || e === 'dropped'; }).length;
+    var open = working.filter(function (s) { return CLOSED.indexOf(effStatus(s).st) < 0; });
     var nowSeq = (rst === 'active' && open.length) ? seqEff(open[0]) : -1;
 
-    document.getElementById('ridTxt').textContent = r.route_id;
-    var rtLabel = r.route_type === 'HD' ? 'Half Day' : (r.route_type || '');
-    document.getElementById('ridSub').textContent = rtLabel + ' run · updated ' + new Date(d.generated_at).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    var allDrop = total > 0 && working.every(function (s) { return s.stop_type === 'dropoff'; });
+    var stopWord = allDrop ? (total === 1 ? 'drop-off' : 'drop-offs') : (total === 1 ? 'stop' : 'stops');
+    var sub = esc(VAN_NAMES[state.van] || state.van) + ' · ' +
+      (rst === 'staged' ? total + ' ' + stopWord + ' · ready'
+        : closed + ' of ' + total + ' done · ' + driftHtml(rst));
+    /* Quiet staleness cue (review 2026-08-02): the refresh button and sync dot
+       are gone by design, so when polls have not landed for a while the header
+       says how old the picture is — silent-stale data must never look fresh. */
+    if (state.lastGood && Date.now() - state.lastGood > 3 * POLL_MS) {
+      sub += ' · <span class="drift-bad num">updated ' +
+        new Date(state.lastGood).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) + '</span>';
+    }
+    var pillTxt = rst === 'staged' ? 'Ready' : (rst === 'active' ? closed + ' / ' + total : '✓ Done');
+    setHeader(runLabel(r.route_type), sub, pillTxt);
 
+    var occ = occupancy();
     var h = '';
-    h += '<div class="progress-card"><div class="progress-top"><div class="big num">' + closed + '<small> / ' + total + ' stops</small></div>';
-    h += '<span class="pill ' + rst + '">' + (rst === 'staged' ? 'READY TO START' : rst === 'active' ? 'ON THE ROAD' : 'FINISHED') + '</span></div>';
-    h += '<div class="bar"><i style="width:' + (total ? Math.round(closed / total * 100) : 0) + '%"></i></div>';
-    if (rst === 'active' && r.drift_min) {
-      var ahead = r.drift_min < 0;
-      h += '<div class="drift">Running <b class="' + (ahead ? 'ahead' : 'behind') + '">' + Math.abs(r.drift_min) + ' min ' + (ahead ? 'ahead' : 'behind') + '</b> of plan</div>';
-    }
-    /* Reset lives at the top of the route (Kam 2026-07-13): clears every tick
-       and puts the route back to ready-to-start. Shown as soon as there is
-       anything to reset (started, ticked or finished). */
-    if (rst !== 'staged' || closed > 0) {
-      h += '<div class="reset-row"><button class="btn resetr" id="resetBtn">↺ Reset route</button></div>';
-    }
-    h += '</div>';
-
-    h += kennelBoard();
-    h += groomKey();   // FT-GROOMING: what H2S/S2H/D2S/S2D mean (only when present)
-
+    h += officeNoteHtml();
+    h += kennelBoard(nowSeq);
+    h += groomKeyCard();
     if (rst === 'completed') {
-      h += '<div class="empty" style="padding:26px 12px"><div class="art">🏁</div><h2>Route finished</h2><p>' + doneN + ' done · ' + (closed - doneN) + ' skipped' + (total - closed ? ' · <b style="color:var(--warn)">' + (total - closed) + ' never marked</b>' : '') + '</p></div>';
+      var aboardN = occupiedList().length;
+      var never = total - closed;
+      h += '<div class="fin-card"><span class="fin-ico">' + svgIcon('check', 22, { w: 2.6 }) + '</span>' +
+        '<div class="fin-title">Route finished</div>' +
+        '<div class="fin-sub num">' + doneN + ' done · ' + (closed - doneN) + ' skipped' +
+        (never ? ' · ' + never + ' never marked' : '') +
+        (aboardN ? ' · ' + aboardN + ' still aboard' : '') + '</div>' +
+        '<button class="btn-reset-soft" id="resetBtn">Reset route</button></div>';
     }
-
-    h += '<div class="tl">';
+    h += '<div class="stops" id="stops">';
     var canMove = rst === 'staged' || rst === 'active';
-    stops.forEach(function (s) { h += stopCard(s, seqEff(s) === nowSeq, rst === 'active', canMove); });
+    sorted.forEach(function (s) {
+      var eff = effStatus(s);
+      if (eff.st === 'removed') { if (eff.local) h += closedRowHtml(s, eff); return; }
+      if (CLOSED.indexOf(eff.st) >= 0) { h += closedRowHtml(s, eff); return; }
+      if (seqEff(s) === nowSeq) { h += currentCardHtml(s, eff, occ); return; }
+      h += upcomingRowHtml(s, eff, canMove);
+    });
     h += '</div>';
     main.innerHTML = h;
     if (canMove) bindDrag(main, rst);
 
     if (rst === 'staged') {
       footer.className = 'show';
-      footer.innerHTML = '<button class="btn start" id="startBtn">▶️ Start route</button>';
+      footer.innerHTML = '<div class="foot-bar"><button class="btn-start" id="startBtn">' + svgIcon('play', 18) + 'Start route</button></div>';
       document.getElementById('startBtn').onclick = confirmStart;
     } else if (rst === 'active') {
       footer.className = 'show';
-      /* 2026-07-29: ending is now a two-tap, explicitly-worded action, so nudge
-         when there is genuinely nothing left — otherwise the extra friction just
-         means more routes are left open overnight. */
       var allDone = open.length === 0;
-      footer.innerHTML = (allDone ? '<div class="drift" style="margin:0 0 8px">All stops marked — tap 🏁 End route to finish.</div>' : '')
-        + '<button class="btn end" id="endBtn">🏁 End route</button>';
+      footer.innerHTML = '<div class="foot-bar"><div class="foot-row">' +
+        '<span class="foot-line num">' + closed + ' of ' + total + ' done · ' + driftHtml(rst) + '</span>' +
+        '<button class="btn-end' + (allDone ? ' ready' : '') + '" id="endBtn">End route</button></div></div>';
       document.getElementById('endBtn').onclick = confirmEnd;
     } else { footer.className = ''; footer.innerHTML = ''; }
 
-    main.querySelectorAll('.btn[data-act]').forEach(function (b) {
-      b.addEventListener('click', function () { onAction(b.getAttribute('data-act'), Number(b.getAttribute('data-seq'))); });
+    main.querySelectorAll('[data-act]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        if (document.body.classList.contains('is-dragging')) return;   // a second finger mid-drag must not fire actions
+        var act = b.getAttribute('data-act');
+        if (act === 'ack') { ackOfficeMsg(); return; }
+        if (act === 'toggle') {
+          var sid = b.getAttribute('data-sid');
+          var s = (state.data.stops || []).find(function (x) { return String(x.stop_id) === sid; });
+          if (s) { ntfSet(sid, { n: !stopNotify(s) }); render(); }
+          return;
+        }
+        onAction(act, Number(b.getAttribute('data-seq')));
+      });
+    });
+    main.querySelectorAll('[data-exp]').forEach(function (el) {
+      el.addEventListener('click', function (e) {
+        if (document.body.classList.contains('is-dragging')) return;   // second-finger tap mid-drag
+        if (e.target && e.target.closest && e.target.closest('button')) return;
+        var sid = el.getAttribute('data-exp');
+        state.expandedId = state.expandedId === sid ? null : sid;
+        render();
+      });
     });
     var rb = document.getElementById('resetBtn');
     if (rb) rb.addEventListener('click', confirmReset);
@@ -1375,152 +1621,161 @@
 
   function findStop(seq) { return (state.data.stops || []).find(function (s) { return seqEff(s) === seq; }); }
 
-  /* ── hold-&-drag reorder (six-dot handle; DESIGN-drive-reorder.md) ──
-     PORTED from the Feeding Manager's tablet-proven Android drag (that
-     project's CLAUDE.md: "Android touch-action quirks deliberately
-     hand-balanced"): long-press (300 ms, 8 px slop) arms the drag; the
-     REAL card never moves mid-gesture (Android fires pointercancel when a
-     touched element is re-inserted) — a ghost pill follows the finger,
-     an inset insertion line previews the slot, and the drop index is
-     hit-tested at release. Touch listeners start PASSIVE (scroll wins
-     until the timer fires), then swap to NON-passive + preventDefault.
-     Separate mouse fallback. Staged route: applies silently. Active
-     route: driver-gated "update parents" dialog. Offline-safe via the
-     shared tap queue. */
+  /* ── instant-lift drag reorder (2026-08-02 redesign) ──
+     The handle lifts on pointerdown — no long-press (README: "Instant lift on
+     the handle — NO 300ms long-press"). The B22 Android lessons still govern
+     the DANGEROUS half of drag engineering and are all kept:
+       - the REAL row is never moved or re-inserted mid-gesture (Android fires
+         pointercancel when a touched element is re-parented) — displaced rows
+         slide with pure CSS transforms; the dragged row just dims;
+       - render() defers while body.is-dragging (the 20 s poll must not rebuild
+         the DOM under a live pointer capture);
+       - document-level pointerup/pointercancel fallbacks + a non-passive
+         touchmove preventDefault while dragging (touch-action:none on a 40px
+         handle alone is not trusted on every Android WebView);
+       - contextmenu suppressed on handles and during drags.
+     Slot hit-testing uses rects CACHED at lift in DOCUMENT coordinates, so
+     auto-scroll never skews the maths. The current stop card has no handle but
+     IS displaceable — dropping a row above it makes that stop the new "now"
+     ("traffic jam, do Snoopy before Enzo"). Staged: applies silently. Active:
+     driver-gated "Update parents?" dialog. Offline-safe via the shared queue. */
   function bindDrag(main, rst) {
-    var LONG_PRESS_MS = 300, SLOP = 8;
-    var pend = null;   // armed, waiting for the long-press timer
-    var drag = null;   // live drag session
+    var drag = null, ghost = null;
     function movables() { return Array.prototype.slice.call(main.querySelectorAll('.stop[data-movable="1"]')); }
-    function clearIndicator() {
-      movables().forEach(function (el) { el.classList.remove('drop-before'); });
-      var tl = main.querySelector('.tl'); if (tl) tl.classList.remove('drop-at-end');
+    function clearShifts() {
+      movables().forEach(function (el) { el.classList.remove('shifting'); el.style.transform = ''; });
     }
-    function othersOf(card) { return movables().filter(function (el) { return el !== card; }); }
-    function dropIndexAt(card, y) {
-      var others = othersOf(card);
+    function applyShifts() {
+      if (!drag) return;
+      var others = drag.list.filter(function (id) { return id !== drag.sid; });
+      drag.rows.forEach(function (el) {
+        var id = el.getAttribute('data-sid');
+        if (id === drag.sid) return;
+        var j = others.indexOf(id);
+        if (j < 0) return;
+        var finalIdx = j < drag.slot ? j : j + 1;
+        var origIdx = j < drag.origIdx ? j : j + 1;
+        el.classList.add('shifting');
+        el.style.transform = finalIdx !== origIdx ? 'translateY(' + ((finalIdx - origIdx) * drag.h) + 'px)' : '';
+      });
+    }
+    function slotFromDocY(docY) {
+      var others = drag.list.filter(function (id) { return id !== drag.sid; });
       for (var i = 0; i < others.length; i++) {
-        var r = others[i].getBoundingClientRect();
-        if (y < r.top + r.height / 2) { return i; }
+        var r = drag.rects[others[i]];
+        if (r && docY < r.top + r.height / 2) { return i; }
       }
       return others.length;
     }
-    function showIndicator(card, y) {
-      clearIndicator();
-      var others = othersOf(card);
-      var idx = dropIndexAt(card, y);
-      if (idx < others.length) { others[idx].classList.add('drop-before'); }
-      else { var tl = main.querySelector('.tl'); if (tl) tl.classList.add('drop-at-end'); }
-    }
-    /* ---- pending (pre-long-press) phase ---- */
-    function armCancel() {
-      if (pend) { clearTimeout(pend.timer); pend = null; }
-      document.removeEventListener('touchmove', pendTouchMove);
-      document.removeEventListener('touchend', armCancel);
-      document.removeEventListener('touchcancel', armCancel);
-      document.removeEventListener('mousemove', pendMouseMove);
-      document.removeEventListener('mouseup', armCancel);
-    }
-    function pendTouchMove(e) {
-      if (!pend || drag) { return; }
-      var t = e.touches[0];
-      if (Math.abs(t.clientX - pend.x) > SLOP || Math.abs(t.clientY - pend.y) > SLOP) { armCancel(); }  // it's a scroll
-    }
-    function pendMouseMove(e) {
-      if (!pend || drag) { return; }
-      if (Math.abs(e.clientX - pend.x) > SLOP || Math.abs(e.clientY - pend.y) > SLOP) { armCancel(); }
-    }
-    /* ---- live drag phase ---- */
-    function activate() {
-      if (!pend) { return; }
-      var card = pend.card, isTouch = pend.isTouch, x = pend.x, y = pend.y;
-      armCancel();
-      drag = { card: card, isTouch: isTouch, lastY: y, startOrder: movables().map(function (el) { return el.getAttribute('data-sid'); }) };
-      document.body.classList.add('is-dragging');
-      card.classList.add('dragging');
-      if (navigator.vibrate) { navigator.vibrate(30); }
-      var name = (card.querySelector('.dog .name') || {}).textContent || 'Stop';
-      var g = document.createElement('div');
-      g.className = 'drag-ghost';
-      g.textContent = '⠿ ' + name;
-      g.style.left = x + 'px'; g.style.top = y + 'px';
-      document.body.appendChild(g);
-      drag.ghost = g;
-      showIndicator(card, y);
-      if (isTouch) {
-        document.addEventListener('touchmove', dragTouchMove, { passive: false });  // NON-passive: preventDefault stops the scroll
-        document.addEventListener('touchend', dragTouchEnd);
-        document.addEventListener('touchcancel', dragCancel);
-      } else {
-        document.addEventListener('mousemove', dragMouseMove);
-        document.addEventListener('mouseup', dragMouseEnd);
-      }
-    }
-    function moveTo(x, y) {
-      if (!drag) { return; }
-      drag.lastY = y;
-      if (drag.ghost) { drag.ghost.style.left = x + 'px'; drag.ghost.style.top = y + 'px'; }
-      showIndicator(drag.card, y);
-      if (y < 140) { window.scrollBy(0, -12); } else if (y > window.innerHeight - 150) { window.scrollBy(0, 12); }
-    }
-    function dragTouchMove(e) { if (!drag) { return; } e.preventDefault(); var t = e.touches[0]; moveTo(t.clientX, t.clientY); }
-    function dragMouseMove(e) { if (!drag) { return; } moveTo(e.clientX, e.clientY); }
-    function dragTouchEnd(e) { var t = e.changedTouches && e.changedTouches[0]; finish(t ? t.clientY : (drag && drag.lastY)); }
-    function dragMouseEnd(e) { finish(e.clientY); }
-    function dragCancel() { finish(null); }
-    function unhookDrag() {
-      document.removeEventListener('touchmove', dragTouchMove);
-      document.removeEventListener('touchend', dragTouchEnd);
-      document.removeEventListener('touchcancel', dragCancel);
-      document.removeEventListener('mousemove', dragMouseMove);
-      document.removeEventListener('mouseup', dragMouseEnd);
-    }
-    function finish(finalY) {
-      unhookDrag();
-      if (!drag) { return; }
-      var card = drag.card, startOrder = drag.startOrder;
-      if (drag.ghost) { drag.ghost.remove(); }
-      document.querySelectorAll('.drag-ghost').forEach(function (el) { el.remove(); });   // orphan sweep
-      card.classList.remove('dragging');
-      document.body.classList.remove('is-dragging');
-      clearIndicator();
-      var y = finalY;
-      drag = null;
-      if (y === null || y === undefined) { render(); return; }                            // cancelled
-      var others = othersOf(card).map(function (el) { return el.getAttribute('data-sid'); });
-      var idx = dropIndexAt(card, y);
-      others.splice(idx, 0, card.getAttribute('data-sid'));
-      var newOrder = others;
-      if (newOrder.join('|') === startOrder.join('|')) { render(); return; }
-      if (navigator.vibrate) { navigator.vibrate([30, 50, 30]); }
-      if (rst === 'staged') { applyReorder(newOrder, false); return; }
-      var devNote = (state.data && state.data.tap_mode === 'dev') ? '<p>🧪 Test mode — parents will NOT actually be messaged.</p>' : '';
-      dialog('🔀 Stops reordered', '<p>Send parents the updated notification? Only the stops whose position changed are messaged.</p>' + devNote,
-        [['Yes, update parents', 'yes', 'btn start'], ['Just reorder', 'no', 'btn nav'], ['Cancel', '', 'btn skip']],
-        function (c) {
-          if (c === 'yes') { applyReorder(newOrder, true); }
-          else if (c === 'no') { applyReorder(newOrder, false); }
-          else { render(); }
-        });
-    }
-    /* ---- arm on the handle: touch + mouse, long-press to start ---- */
-    main.querySelectorAll('.drag-handle').forEach(function (hd) {
-      hd.addEventListener('touchstart', function (e) {
-        if (drag || pend || e.touches.length !== 1) { return; }
-        var t = e.touches[0];
-        var card = hd.closest('.stop'); if (!card) { return; }
-        pend = { card: card, x: t.clientX, y: t.clientY, isTouch: true, timer: setTimeout(activate, LONG_PRESS_MS) };
-        document.addEventListener('touchmove', pendTouchMove, { passive: true });        // passive: scroll wins until the timer fires
-        document.addEventListener('touchend', armCancel);
-        document.addEventListener('touchcancel', armCancel);
-      }, { passive: true });
-      hd.addEventListener('mousedown', function (e) {
-        if (drag || pend || e.button !== 0) { return; }
-        var card = hd.closest('.stop'); if (!card) { return; }
-        pend = { card: card, x: e.clientX, y: e.clientY, isTouch: false, timer: setTimeout(activate, LONG_PRESS_MS) };
-        document.addEventListener('mousemove', pendMouseMove);
-        document.addEventListener('mouseup', armCancel);
+    function blockTouch(e) { if (drag) e.preventDefault(); }
+    function onDown(e) {
+      if (drag) return;
+      if (e.pointerType === 'mouse' && e.button !== 0) return;
+      var handle = e.currentTarget;
+      var row = handle.closest('.stop'); if (!row) return;
+      e.preventDefault();
+      try { handle.setPointerCapture(e.pointerId); } catch (err) {}
+      var rows = movables();
+      var list = rows.map(function (el) { return el.getAttribute('data-sid'); });
+      var sid = row.getAttribute('data-sid');
+      var idx = list.indexOf(sid); if (idx < 0) return;
+      var rects = {};
+      rows.forEach(function (el) {
+        var r = el.getBoundingClientRect();
+        rects[el.getAttribute('data-sid')] = { top: r.top + window.scrollY, height: r.height, left: r.left, width: r.width };
       });
+      var rr = rects[sid]; if (!rr) return;
+      drag = {
+        sid: sid, row: row, pid: e.pointerId, rows: rows, list: list, origIdx: idx, slot: idx,
+        rects: rects, h: rr.height + 8, offYv: e.clientY - (rr.top - window.scrollY),
+        startOrder: list.slice()
+      };
+      drag.handle = handle;
+      document.body.classList.add('is-dragging');
+      row.classList.add('drag-src');
+      if (navigator.vibrate) { navigator.vibrate(15); }
+      /* The ghost is a floating CLONE of the row (README) — cloning, never
+         re-parenting the touched element itself (B22). */
+      ghost = document.createElement('div');
+      ghost.className = 'drag-ghost';
+      var mainRow = row.querySelector('.urow-main');
+      if (mainRow) {
+        var cl = mainRow.cloneNode(true);
+        cl.removeAttribute('data-exp');
+        cl.setAttribute('aria-hidden', 'true');
+        ghost.appendChild(cl);
+      } else {
+        ghost.style.padding = '14px';
+        ghost.textContent = row.getAttribute('data-seq') + '  ·  ' + (row.getAttribute('data-name') || 'Stop');
+      }
+      ghost.style.left = rr.left + 'px';
+      ghost.style.width = rr.width + 'px';
+      ghost.style.top = (e.clientY - drag.offYv) + 'px';
+      document.body.appendChild(ghost);
+      document.addEventListener('pointermove', onMove);
+      document.addEventListener('pointerup', onUp);
+      document.addEventListener('pointercancel', onCancel);
+      document.addEventListener('touchmove', blockTouch, { passive: false });
+      /* Backstops: if the pointer stream dies without pointerup/pointercancel
+         (WebView backgrounded mid-gesture, system gesture steal), the drag must
+         never stay armed — body.is-dragging would freeze every render and block
+         all future drags until a reload (review 2026-08-02). */
+      handle.addEventListener('lostpointercapture', onLost);
+      document.addEventListener('visibilitychange', onVisCancel);
+    }
+    function onMove(e) {
+      if (!drag || e.pointerId !== drag.pid) return;
+      e.preventDefault();
+      if (ghost) ghost.style.top = (e.clientY - drag.offYv) + 'px';
+      var k = slotFromDocY(e.clientY + window.scrollY);
+      if (k !== drag.slot) { drag.slot = k; if (navigator.vibrate) { navigator.vibrate(8); } applyShifts(); }
+      if (e.clientY < 150) { window.scrollBy(0, -10); } else if (e.clientY > window.innerHeight - 130) { window.scrollBy(0, 10); }
+    }
+    function onUp(e) { if (!drag || e.pointerId !== drag.pid) return; finish(drag.slot); }
+    function onCancel(e) { if (!drag || e.pointerId !== drag.pid) return; finish(null); }
+    /* lostpointercapture also fires after a normal pointerup — by then finish()
+       has already nulled `drag`, so this only acts on a genuine mid-drag loss. */
+    function onLost(e) { if (!drag || e.pointerId !== drag.pid) return; finish(null); }
+    function onVisCancel() { if (drag && document.hidden) finish(null); }
+    function unhook(h) {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      document.removeEventListener('pointercancel', onCancel);
+      document.removeEventListener('touchmove', blockTouch);
+      document.removeEventListener('visibilitychange', onVisCancel);
+      if (h) { h.removeEventListener('lostpointercapture', onLost); }
+    }
+    function finish(k) {
+      if (!drag) return;
+      var d = drag; drag = null;
+      unhook(d.handle);
+      if (ghost) { ghost.remove(); ghost = null; }
+      document.querySelectorAll('.drag-ghost').forEach(function (el) { el.remove(); });   // orphan sweep
+      d.row.classList.remove('drag-src');
+      document.body.classList.remove('is-dragging');
+      clearShifts();
+      if (k === null || k === undefined) { render(); return; }                            // cancelled
+      var others = d.startOrder.filter(function (id) { return id !== d.sid; });
+      others.splice(k, 0, d.sid);
+      var newOrder = others;
+      if (newOrder.join('|') === d.startOrder.join('|')) { render(); return; }
+      if (navigator.vibrate) { navigator.vibrate([20, 40, 20]); }
+      if (rst === 'staged') { applyReorder(newOrder, false); return; }
+      /* Route binding, like confirmStart/confirmEnd: the poll can swap
+         state.data while this dialog sits open (render defers, data does not) —
+         never apply a drag from one route to another (review 2026-08-02). */
+      var ridAtLift = state.data && state.data.route ? state.data.route.route_id : '';
+      var dev = (state.data && state.data.tap_mode === 'dev') ? '<p class="dim">Test mode — parents will NOT actually be messaged.</p>' : '';
+      dialog('Order updated', '<p>Message the parents whose position changed with their new time?</p>' + dev,
+        [['Update parents', 'yes', 'primary'], ['Just reorder', 'no', 'neutral'], ['Cancel', '', 'text']],
+        function (c) {
+          if (!c) { render(); return; }
+          if (!state.data || !state.data.route || state.data.route.route_id !== ridAtLift) { toast('⚠️ The route changed — check it and try again'); render(); return; }
+          applyReorder(newOrder, c === 'yes');
+        }, { stack: true });
+    }
+    main.querySelectorAll('.drag-handle').forEach(function (hd) {
+      hd.addEventListener('pointerdown', onDown);
     });
     /* Android: a long-press fires the native context menu (Download/Share)
        right on top of the drag — suppress it on handles and during drags. */
@@ -1538,6 +1793,11 @@
     // Same slot maths as the server: the movable stops' current effective
     // sequence numbers, re-dealt in the new order.
     var movable = (state.data.stops || []).filter(function (s) { return orderIds.indexOf(String(s.stop_id)) >= 0; });
+    /* If any dragged stop has vanished from server truth mid-gesture (office
+       removal, re-ingest), the slot maths below would run off the end and two
+       rows could end up sharing a displayed seq — the address of every tap.
+       Refuse and repaint from truth instead (review 2026-08-02). */
+    if (movable.length !== orderIds.length) { toast('⚠️ The route changed — check the order and try again'); render(); return; }
     var slots = movable.map(function (s) { return seqEff(s); }).sort(function (a, b) { return a - b; });
     var ov = lsGet('veta_ord_' + rid, {});
     var seqMap = {};   // old displayed seq -> new (for the tap-overlay re-key)
@@ -1560,81 +1820,117 @@
     if (tchanged) lsSet('veta_ov_' + rid, tapOv2);
     qPush({ van: state.van, key: state.key, route_id: rid, action: 'reorder', order: orderIds, notify: !!notify, tap_id: uuid(), ts: new Date().toISOString() });
     render();
-    toast(notify ? '🔀 Order updated — parents will be told' : '🔀 Order updated');
+    toast(notify ? 'Order updated — parents will be told' : 'Order updated');
   }
 
+  /* ── stop actions ── */
   function onAction(act, seq) {
     var s = findStop(seq); if (!s) return;
     if (act === 'nav') { window.open(s.nav_url, '_blank'); return; }
     if (act === 'call') { location.href = 'tel:' + s.phone.replace(/\s+/g, ''); return; }
-    if (act === 'done') {
-      /* Done ALWAYS completes the stop (Kam 2026-07-13) — the choice is only
-         whether the parent is messaged. Mistakes are reversed with Undo. */
-      var doneWord = s.stop_type === 'dropoff' ? 'dropped home' : 'collected';
-      var devNote = state.data.tap_mode === 'dev' ? '<p>🧪 Test mode — no parent is actually messaged either way.</p>' : '';
-      dialog('✅ ' + esc(s.dog_name) + ' ' + doneWord,
-        '<p>Stop ' + seq + ' will be marked done. Message the parent?</p>' + devNote,
-        [['Yes — message the parent', 'yes', 'btn done'], ['No — don\'t message', 'no', 'btn nav']],
-        function (choice) {
-          var notify = choice === 'yes';
-          setOverlay(seq, 'done'); sendTap('done', seq, notify); render();
-          toast(notify ? '✅ Stop ' + seq + ' done — parent will be told' : '✅ Stop ' + seq + ' done, no message');
-        });
-      return;
+    if (act === 'done') { doDone(s, seq); return; }
+    if (act === 'undo') { doUndo(s, seq); return; }
+    if (act === 'unremove') { doUnremove(s, seq); return; }
+    if (act === 'more') { openMoreSheet(s, seq); return; }
+  }
+
+  /* One-tap Done (the redesign's headline change, Kam-approved design):
+     Done ALWAYS completes the stop — the per-stop toggle decides whether the
+     parent is messaged, with NO confirmation dialog. Mistakes are reversed
+     with the immediate Undo on the done row. */
+  function doDone(s, seq) {
+    var notify = hasNotifyUI(s) ? stopNotify(s) : false;
+    setOverlay(seq, 'done');
+    /* `told` drives the persistent "X was told" line on the done row — in dev
+       tap mode NOBODY is messaged (W16 is log-only), so recording told there
+       would be a persistent lie (B19 class). The toast is honest either way. */
+    ntfSet(String(s.stop_id), { told: notify && state.data.tap_mode !== 'dev' });
+    sendTap('done', seq, notify);
+    state.expandedId = null;
+    render();
+    var name = String(s.dog_name || ('Stop ' + seq));
+    if (state.data.tap_mode === 'dev') { toast('✓ ' + name + ' — test mode, nobody is messaged'); }
+    else if (notify) { toast('✓ ' + name + ' — ' + (firstName(s.client_name) || 'the parent') + ' gets a text'); }
+    else { toast('✓ ' + name + ' — no message sent'); }
+    var stillOpen = (state.data.stops || []).some(function (x) { return CLOSED.indexOf(effStatus(x).st) < 0; });
+    if (!stillOpen) { setTimeout(function () { toast('All stops marked — end the route when the van is empty'); }, 2800); }
+    scrollToCurrent();
+  }
+
+  /* Undo is immediate — no dialog (README). Nobody is messaged by an undo. */
+  function doUndo(s, seq) {
+    var wasLocal = effStatus(s).local;
+    // a still-queued done/skip for this stop is superseded — drop it
+    qRemove(function (t) { return t.route_id === state.data.route.route_id && (t.action === 'done' || t.action === 'skip') && Number(t.seq) === seq; });
+    clearStopOverlay(seq);
+    ntfSet(String(s.stop_id), { told: undefined });
+    sendTap('undo', seq);
+    state.expandedId = null;
+    render();
+    toast(wasLocal ? ('Stop ' + seq + ' back to not done — nobody is messaged') : ('Undo sent — stop ' + seq + ' will clear shortly'));
+    if (state.data.tap_mode === 'live') { reloadSoon(); }
+  }
+
+  /* Put a LOCALLY-removed stop straight back (the removal dialog promises it).
+     If the remove tap is still queued it is simply dropped; if it already went
+     to the server, an undo tap follows it (W2's undo accepts 'removed'). */
+  function doUnremove(s, seq) {
+    var rid = state.data.route.route_id;
+    var dropped = qRemove(function (t) { return t.route_id === rid && t.action === 'remove' && Number(t.seq) === seq; });
+    clearStopOverlay(seq);
+    if (!dropped) { sendTap('undo', seq); }
+    state.expandedId = null;
+    render();
+    toast('✓ ' + String(s.dog_name || ('Stop ' + seq)) + ' back on the route');
+    if (state.data.tap_mode === 'live') { reloadSoon(); }
+  }
+
+  function doSkipConfirm(s, seq) {
+    var name = String(s.dog_name || ('Stop ' + seq));
+    var dev = state.data.tap_mode === 'dev' ? '<p class="dim">Test mode — nothing moves on the office record.</p>' : '';
+    var body;
+    if (s.stop_type === 'dropoff') {
+      var aboard = kennelAssignments(s).map(function (a) { return a.dog; });
+      body = '<p>Stop ' + seq + ' is marked skipped — nothing is dropped' +
+        (aboard.length ? ' and ' + esc(aboard.join(' and ')) + (aboard.length > 1 ? ' stay' : ' stays') + ' aboard (shown amber on the van)' : '') +
+        '. Nobody is messaged.</p>';
+    } else {
+      body = '<p>Stop ' + seq + ' is marked skipped — <b>' + esc(name) + '</b> is not collected. Nobody is messaged.</p>';
     }
-    if (act === 'undo') {
-      var wasLocal = effStatus(s).local;
-      dialog('↩️ Undo stop ' + seq + '?',
-        '<p><b>' + esc(s.dog_name) + '</b> goes back to <b>not done</b>. Nobody is messaged by an undo.</p>',
-        [['Undo it ↩️', 'go', 'btn done'], ['Back', '', 'btn nav']],
-        function (choice) {
-          if (choice !== 'go') return;
-          // a still-queued done/skip for this stop is superseded — drop it
-          qRemove(function (t) { return t.route_id === state.data.route.route_id && (t.action === 'done' || t.action === 'skip') && Number(t.seq) === seq; });
-          clearStopOverlay(seq); sendTap('undo', seq); render();
-          toast(wasLocal ? ('↩️ Stop ' + seq + ' back to not done') : ('↩️ Undo sent — stop ' + seq + ' will clear shortly'));
-          if (state.data.tap_mode === 'live') { reloadSoon(); }
-        });
-      return;
-    }
-    if (act === 'skip') {
-      dialog('✗ Skip this stop?', '<p><b>' + esc(s.dog_name) + '</b> — stop ' + seq + ' will be marked skipped (not collected).</p>',
-        [['Skip it', 'skip', 'btn skip'], ['Cancel', '', 'btn nav']],
-        function (choice) { if (choice === 'skip') { setOverlay(seq, 'skip'); sendTap('skip', seq); render(); toast('✗ Stop ' + seq + ' skipped'); } });
-      return;
-    }
-    if (act === 'remove') { confirmRemove(s, seq); return; }
+    dialog('Skip ' + esc(name) + '?', body + dev,
+      [['Skip stop', 'skip', 'soft'], ['Cancel', '', 'neutral']],
+      function (c) { if (c === 'skip') { setOverlay(seq, 'skip'); sendTap('skip', seq); state.expandedId = null; render(); toast('Stop ' + seq + ' skipped'); scrollToCurrent(); } });
   }
 
   /* ── take a dog off a route that has already been sent (2026-07-29, Kam) ──
      The server does the real validating (W16 refuses drop-offs, two-dog stops, the
-     salon, the last open stop, a stale stop_id and a closed route). These two
+     salon, the last open stop, a stale stop_id and a closed route). These
      client-side refusals exist only so the driver gets a straight answer instantly
      instead of a round-trip and a rejection toast. */
   function confirmRemove(s, seq) {
     var name = String(s.dog_name || 'this dog');
     if (s.stop_type === 'dropoff') {
-      dialog('✕ Take this stop off?',
-        '<p><b>' + esc(name) + '</b> is a drop-off — the dog is already in the van, so the stop cannot be taken off.</p><p>Use <b>✅ Done</b> once the dog is home, or <b>✗ Skip</b> if you could not drop it.</p>',
-        [['Back', '', 'btn nav']], function () {});
+      dialog('Not coming today?',
+        '<p><b>' + esc(firstName(name) || name) + '</b> is already aboard — a drop-off can’t come off the route.</p><p>Use <b>' + doneLabelFor(s) + '</b> once the dog is home, or <b>Skip</b> if you couldn’t drop off.</p>',
+        [['OK', '', 'neutral']], function () {});
       return;
     }
     if (/\s&\s|\band\b/i.test(name)) {
-      dialog('✕ Take this stop off?',
+      dialog('Not coming today?',
         '<p>Stop ' + seq + ' is a two-dog call: <b>' + esc(name) + '</b>.</p><p>The app can only drop the whole stop, so taking it off would mean neither dog is collected.</p><p>If only one of them is off today, leave the stop on and ring the office.</p>',
-        [['Back', '', 'btn nav']], function () {});
+        [['Back', '', 'neutral']], function () {});
       return;
     }
     var lw = legWords(s.leg_code);
-    var body = '<p>Stop ' + seq + ' comes off today\'s round. The rest of the route keeps its order and its times — nothing else changes.</p>';
-    body += '<p>' + (s.client_name ? esc(String(s.client_name).split(/\s+/)[0]) : 'The owner') + ' is <b>not</b> messaged automatically. The office is told straight away and will ring them if needed.</p>';
+    var body = '<p>Stop ' + seq + ' comes off today’s round. The rest of the route keeps its order and its times — nothing else changes.</p>';
+    body += '<p>' + (s.client_name ? esc(firstName(s.client_name)) : 'The owner') + ' is <b>not</b> messaged automatically. The office is told straight away and will ring them if needed.</p>';
     if (s.leg_code || String(s.is_grooming) === 'Y') {
-      body += '<p style="color:var(--warn)"><b>⚠️ This is a grooming leg' + (s.leg_code ? ' (' + esc(s.leg_code) + (lw ? ' — ' + lw : '') + ')' : '') + '.</b> The salon will not be expecting this dog — the office is told, but ring them if it matters today.</p>';
+      body += '<p class="warn"><b>This is a grooming leg' + (lw ? ' (' + esc(lw) + ')' : '') + '.</b> The salon will not be expecting this dog — the office is told, but ring them if it matters today.</p>';
     }
-    body += '<p>Made a mistake? <b>↩️ Undo</b> puts the stop straight back.</p>';
+    body += '<p>Made a mistake? <b>Put it back</b> on the stop’s row reverses it for the first few seconds — after that, ring the office.</p>';
     var ridAtOpen = state.data && state.data.route ? state.data.route.route_id : '';
-    dialog('✕ Take ' + esc(name) + ' off this route?', body,
-      [['No — leave it on', '', 'btn nav'], ['Yes — take it off ✕', 'go', 'btn danger']],
+    dialog('Take ' + esc(name) + ' off this route?', body,
+      [['No — leave it on', '', 'neutral'], ['Yes — take it off', 'go', 'danger']],
       function (c) {
         if (c !== 'go') return;
         if (!state.data || !state.data.route || state.data.route.route_id !== ridAtOpen) { toast('⚠️ The route changed — check it and try again'); render(); return; }
@@ -1642,6 +1938,7 @@
         qRemove(function (t) { return t.route_id === ridAtOpen && (t.action === 'done' || t.action === 'skip') && Number(t.seq) === seq; });
         setOverlay(seq, 'remove');
         sendTap('remove', seq, undefined, { stop_id: String(s.stop_id || '') });
+        state.expandedId = null;
         render();
         toast('✕ ' + name + ' taken off the route');
         if (state.data.tap_mode === 'live') { reloadSoon(); }
@@ -1649,19 +1946,39 @@
       { stack: true, armMs: 500 });
   }
 
+  /* ── stop options sheet (⋯) — Skip / Not coming today live here now,
+     deliberately two taps (they no longer clutter every card) ── */
+  var moreCtx = null;
+  function openMoreSheet(s, seq) {
+    moreCtx = { rid: state.data && state.data.route ? state.data.route.route_id : '', seq: seq };
+    document.getElementById('moreTitle').textContent = 'Stop ' + seq + ' — ' + String(s.dog_name || '');
+    document.getElementById('moreSheet').classList.add('show');
+  }
+  function hideMoreSheet() { document.getElementById('moreSheet').classList.remove('show'); moreCtx = null; }
+  function moreResolve() {
+    if (!moreCtx || !state.data || !state.data.route || state.data.route.route_id !== moreCtx.rid) { hideMoreSheet(); return null; }
+    var seq = moreCtx.seq;
+    var s = findStop(seq);
+    hideMoreSheet();
+    return s ? { s: s, seq: seq } : null;
+  }
+
+  /* ── route-level flows ── */
   function confirmStart() {
-    /* Start offers the parent-notification choice (Kam 2026-07-13): a reset
-       route being restarted must not force duplicate day-plan messages. */
-    var devNote = state.data.tap_mode === 'dev' ? '<p>🧪 Test mode — parents are not actually messaged either way.</p>' : '';
-    dialog('▶️ Start the route?',
-      '<p>The plan becomes live and the stop order is locked in. Send parents their day-plan message?</p>' + devNote,
-      [['Start &amp; message parents ▶️', 'yes', 'btn start'], ['Start silently', 'no', 'btn nav'], ['Not yet', '', 'btn skip']],
-      function (c) {
-        if (!c) return;
-        var notify = c === 'yes';
-        setRouteOverlay('start'); sendTap('start', 0, notify); render();
-        toast(notify ? '▶️ Route started — parents messaged' : '▶️ Route started, no messages');
-      });
+    /* Start carries the parent-notification choice (Kam 2026-07-13): a reset
+       route being restarted must not force duplicate day-plan messages. The
+       redesign folds it into one toggle, default ON. */
+    var dev = state.data.tap_mode === 'dev' ? '<p class="dim">Test mode — parents are not actually messaged either way.</p>' : '';
+    dialog('Start the route?',
+      '<p>The stop order locks in and your GPS goes live for the office.</p>' + dev,
+      [['Start route', 'go', 'primary'], ['Not yet', '', 'neutral']],
+      function (c, notify) {
+        if (c !== 'go') return;
+        setRouteOverlay('start'); sendTap('start', 0, !!notify); render();
+        toast(notify ? 'Route started — parents get their day plan' : 'Route started quietly');
+        scrollToCurrent();
+      },
+      { toggle: { label: 'Send parents their day plan', value: true } });
   }
   function confirmReset() {
     var d = state.data; if (!d || !d.route) return;
@@ -1674,21 +1991,24 @@
     // phone's ticks clear — GPS/Telegram-marked stops stay until the office
     // resets them from the dashboard.
     var scopeNote = d.tap_mode === 'dev'
-      ? ('<p>🧪 Test mode — this clears the ' + (closedLocal || 'any') + ' tick' + (closedLocal === 1 ? '' : 's') + ' made on THIS phone' + (closedServer ? ('; the ' + closedServer + ' stop' + (closedServer === 1 ? '' : 's') + ' marked by GPS/Telegram stay until the office resets them') : '; the office record is untouched') + '.</p>')
-      : '<p>The office record is reset too — the route shows as ready to start again everywhere.</p>';
-    dialog('↺ Reset the whole route?',
+      ? ('<p class="dim">Test mode — this clears the ' + (closedLocal || 'any') + ' tick' + (closedLocal === 1 ? '' : 's') + ' made on THIS phone' + (closedServer ? ('; the ' + closedServer + ' stop' + (closedServer === 1 ? '' : 's') + ' marked by GPS/Telegram stay until the office resets them') : '; the office record is untouched') + '.</p>')
+      : '<p>The office record resets too — the route shows as ready to start again everywhere.</p>';
+    dialog('Reset the whole route?',
       '<p>' + (closed ? ('<b>' + closed + ' marked stop' + (closed === 1 ? '' : 's') + '</b> go back to not done and t') : 'T') + 'he route returns to <b>ready to start</b>. Nobody is messaged by the reset itself.</p>' + scopeNote,
-      [['Reset route ↺', 'go', 'btn skip'], ['Back', '', 'btn nav']],
+      [['Reset route', 'go', 'soft'], ['Back', '', 'neutral']],
       function (c) {
         if (c !== 'go') return;
         // every still-queued tap for this route is part of the run being
-        // declared void — drop them before queueing the reset
-        qRemove(function (t) { return t.route_id === rid && t.action !== 'reset'; });
+        // declared void — drop them before queueing the reset. An ack_message
+        // is about the office NOTE, not the run: it survives the sweep, or the
+        // office would silently never get its read-receipt (review 2026-08-02).
+        qRemove(function (t) { return t.route_id === rid && t.action !== 'reset' && t.action !== 'ack_message'; });
         clearLocalForRoute();
         sendTap('reset', 0);
         state.prevOcc = {};
+        state.expandedId = null;
         render();
-        toast('↺ Route reset');
+        toast('Route reset — ready to start');
         if (d.tap_mode === 'live') { reloadSoon(); }
       });
   }
@@ -1699,35 +2019,39 @@
     // 2026-07-20: flag the grooming leg on any unmarked stop — an unfinished
     // grooming leg is the one that strands a dog at the salon, so it must not
     // read like an ordinary missed stop.
-    if (open.length) body += '<p style="color:var(--warn)"><b>' + open.length + ' stop' + (open.length > 1 ? 's are' : ' is') + ' not marked:</b></p><ul>' + open.map(function (s) {
-      var lw = legWords(s.leg_code);
-      var g = s.leg_code ? ('✂️ ' + esc(s.leg_code) + (lw ? ' ' + lw : ''))
-                         : (String(s.is_grooming) === 'Y' ? '✂️ grooming · no salon stop' : '');
-      return '<li>' + s.seq + ' — ' + esc(s.dog_name) + (g ? ' <span class="chip groom">' + g + '</span>' : '') + '</li>';
-    }).join('') + '</ul>';
-    if (aboard.length) body += '<p style="color:var(--bad)"><b>🚨 Kennels still occupied:</b></p><ul>' + aboard.map(function (k) { return '<li><b>' + esc(k.code) + '</b> — ' + esc(k.dog) + '</li>'; }).join('') + '</ul><p>Check the van before you finish.</p>';
-    if (!body) body = '<p>All stops marked and every kennel is empty. Nice one.</p>';
-    else if (open.length && !aboard.length) body += '<p>Mark them Done/Skip first if the dogs were handled.</p>';
-    body += '<p>Ending the route stops your GPS and tells the office this run is finished.</p>';
-    /* 2026-07-29 (Kam): "when the user selects End Route, display a confirmation
-       dialog requiring them to tap Yes before the route is ended."
-       Three deliberate differences from every other dialog in this app:
-         - the affirmative is SECOND. Done/Start/Undo/Skip/Reset all put it first,
-           so on a 2-column grid it lands on the same pixels every time; End used
-           to inherit that muscle memory.
-         - the buttons are STACKED and the confirm is the only filled red in the app.
+    if (open.length) {
+      body += '<p class="warn"><b>' + open.length + ' stop' + (open.length > 1 ? 's are' : ' is') + ' not marked:</b></p><ul>' + open.map(function (s) {
+        var lw = legWords(s.leg_code);
+        var g = lw ? ('<span class="g-chip">' + esc(lw) + '</span>')
+          : (String(s.is_grooming) === 'Y' ? '<span class="g-chip warn">grooming — no salon stop</span>' : '');
+        return '<li>' + seqEff(s) + ' — ' + esc(s.dog_name) + (g ? ' ' + g : '') + '</li>';
+      }).join('') + '</ul>';
+    }
+    if (aboard.length) {
+      body += '<p class="danger"><b>Dogs still aboard:</b></p><ul>' + aboard.map(function (k) {
+        return '<li><b>' + esc(k.dog) + '</b> — ' + posWords(k.code) + ' (' + (k.code[0] === 'S' ? 'side' : 'back') + ' door)</li>';
+      }).join('') + '</ul><p>Check the van before you finish.</p>';
+    }
+    if (!body) body = '<p>All stops marked and every box is empty. Nice one.</p>';
+    else if (open.length && !aboard.length) body += '<p>Mark them done or skipped first if the dogs were handled.</p>';
+    body += '<p class="dim">Ending the route stops your GPS and tells the office this run is finished.</p>';
+    /* 2026-07-29 (Kam): ending requires an explicit Yes. Three deliberate
+       differences from every other dialog in this app, all kept by the redesign:
+         - the affirmative is LAST (stacked), so Done/Start muscle memory can
+           never land on it;
+         - the confirm is the only filled red in the app;
          - a 600 ms arm delay, so a double-tap that opens the dialog cannot also
            dismiss it.
        Plus a route binding: the 20 s poll can swap state.data underneath an open
        dialog, and this must never end a route the driver was not looking at. */
     var ridAtOpen = state.data.route.route_id;
-    dialog('🏁 End the route?', body,
-      [['No — keep going', '', 'btn nav'], ['Yes — end the route 🏁', 'go', 'btn danger']],
+    dialog('End the route?', body,
+      [['Keep going', '', 'neutral'], ['End route', 'go', 'danger']],
       function (c) {
         if (c !== 'go') return;
         if (!state.data || !state.data.route || state.data.route.route_id !== ridAtOpen) { toast('⚠️ The route changed — check it and try again'); render(); return; }
         if (effRouteStatus() !== 'active') { render(); return; }
-        setRouteOverlay('end'); sendTap('end', 0); render(); toast('🏁 Route ended');
+        setRouteOverlay('end'); sendTap('end', 0); render(); toast('Route finished — the office has been told');
       },
       { stack: true, armMs: 600 });
   }
@@ -1738,13 +2062,26 @@
     // showModal() on an already-open dialog throws; close first so a second
     // prompt can never leave the first one's listeners live underneath it.
     if (dlg.open) { try { dlg.close(); } catch (e) {} }
-    dlg.innerHTML = '<h3>' + title + '</h3>' + bodyHtml +
-      '<div class="actions' + (opts.stack ? ' stack' : '') + '">' + buttons.map(function (b) {
-        return '<button class="' + b[2] + ((buttons.length === 1 || opts.stack) ? ' wide' : '') + '" data-c="' + b[1] + '"' + (opts.armMs ? ' disabled' : '') + '>' + b[0] + '</button>';
-      }).join('') + '</div>';
+    var tglVal = opts.toggle ? (opts.toggle.value !== false) : undefined;
+    var VAR = { primary: 'db-primary', neutral: 'db-neutral', danger: 'db-danger', soft: 'db-soft', text: 'db-text' };
+    var h = '<h3>' + title + '</h3>' + bodyHtml;
+    if (opts.toggle) {
+      h += '<div class="dlg-toggle"><span class="lbl">' + esc(opts.toggle.label) + '</span>' +
+        '<button type="button" class="sw' + (tglVal ? ' on' : '') + '" role="switch" aria-checked="' + tglVal + '" id="dlgSw"><span class="sw-knob"></span></button></div>';
+    }
+    h += '<div class="dlg-btns' + (opts.stack ? ' stack' : '') + '">' + buttons.map(function (b) {
+      return '<button class="db ' + (VAR[b[2]] || 'db-neutral') + ((buttons.length === 1 || opts.stack) ? ' wide' : '') + '" data-c="' + b[1] + '"' + (opts.armMs ? ' disabled' : '') + '>' + b[0] + '</button>';
+    }).join('') + '</div>';
+    dlg.innerHTML = h;
+    var sw = document.getElementById('dlgSw');
+    if (sw) sw.addEventListener('click', function () {
+      tglVal = !tglVal;
+      sw.classList.toggle('on', tglVal);
+      sw.setAttribute('aria-checked', String(tglVal));
+    });
     var fired = false;   // one answer per dialog, whatever the touch stack does
-    dlg.querySelectorAll('button').forEach(function (b) {
-      b.addEventListener('click', function () { if (fired) return; fired = true; dlg.close(); cb(b.getAttribute('data-c')); });
+    dlg.querySelectorAll('button[data-c]').forEach(function (b) {
+      b.addEventListener('click', function () { if (fired) return; fired = true; dlg.close(); cb(b.getAttribute('data-c'), tglVal); });
     });
     if (opts.armMs) {
       setTimeout(function () {
@@ -1759,6 +2096,94 @@
     dlg.showModal();
   }
 
+  /* ── route sheet (bottom sheet: van switch + staged/sent routes) ── */
+  function hideRoutePicker() { document.getElementById('routePicker').classList.remove('show'); }
+  function openRoutePicker() {
+    var list = document.getElementById('routeList');
+    markRpVans();
+    document.getElementById('rpRoutesLbl').textContent = 'Routes for ' + (VAN_NAMES[state.van] || state.van);
+    document.getElementById('routePicker').classList.add('show');
+    list.innerHTML = '<div class="rp-empty">Looking for routes…</div>';
+    var vanAtOpen = state.van;
+    var availP = fetch(API_BASE + DATA_PATH + '?van=' + encodeURIComponent(state.van) + '&key=' + encodeURIComponent(state.key))
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (j && j.ok !== true && (j.error === 'unauthorised' || j.error === 'unknown van')) {
+          hideRoutePicker(); showPicker(true); throw new Error('auth');
+        }
+        if (!j || j.ok !== true) throw new Error('api');
+        return j.available || [];
+      });
+    var queueP = fetchQueue().catch(function () { return null; });   // null = Reorder tab unreachable (still show sent routes)
+    Promise.all([availP, queueP])
+      .then(function (res) { if (vanAtOpen !== state.van) return; renderRouteList(res[0], res[1]); })
+      .catch(function () { if (vanAtOpen !== state.van) return; list.innerHTML = '<div class="rp-empty"><b>Can’t reach the server</b>Check signal, close and retry.</div>'; });
+  }
+
+  function renderRouteList(avail, queue) {
+    var list = document.getElementById('routeList');
+    var entries = [], seen = {};
+    (queue || []).forEach(function (slot) {
+      var rid = slotRid(slot);
+      var sec = RP_SECTIONS[slot.section] || { title: String(slot.section || 'Route') };
+      var stops = ((slot.ctx || {}).o || []).length;
+      var inTable = (avail || []).find(function (a) { return a.route_id === rid; }) || null;
+      seen[rid] = true;
+      entries.push({
+        rid: rid, date: rid.slice(0, 10), title: sec.title,
+        sub: dayLabel(rid.slice(0, 10)) + ' · ' + stops + (stops === 1 ? ' stop' : ' stops') + ((slot.ctx || {}).t ? ' · departs ' + (slot.ctx || {}).t : ''),
+        status: inTable ? String(inTable.status || '') : '', unsent: !inTable, slot: slot
+      });
+    });
+    (avail || []).forEach(function (a) {
+      if (seen[a.route_id]) return;
+      entries.push({
+        rid: a.route_id, date: String(a.date || ''),
+        title: (a.route_type === 'AM' ? 'AM run' : (a.route_type === 'HD' ? 'Half Day' : 'PM run')),
+        sub: dayLabel(String(a.date || '')), status: String(a.status || ''), unsent: false, slot: null
+      });
+    });
+    entries.sort(function (x, y) { return x.date < y.date ? -1 : x.date > y.date ? 1 : (x.title < y.title ? -1 : 1); });
+    var openRid = state.data && state.data.route ? state.data.route.route_id : '';
+    var rst = effRouteStatus();
+    var closedTicks = (state.data && state.data.stops || []).filter(function (s) { return CLOSED.indexOf(effStatus(s).st) >= 0; }).length;
+    var canReset = openRid && (rst !== 'staged' || closedTicks > 0);
+    if (!entries.length) {
+      list.innerHTML = '<div class="rp-empty"><b>Nothing staged for ' + esc(VAN_NAMES[state.van] || state.van) + '</b>Ask the office to stage the route in the Load Plan’s Reorder Routes tab, then close and reopen this list.</div>' +
+        (queue === null ? '<div class="rp-note">⚠️ Couldn’t check the Reorder tab (poor signal?) — staged-but-unsent routes may be missing from this list.</div>' : '');
+      return;
+    }
+    var h = '';
+    entries.forEach(function (e, i) {
+      var pillCls = e.unsent ? ' unsent' : (e.status === 'active' ? ' active' : (e.status === 'completed' ? ' completed' : ''));
+      var pillTxt = e.unsent ? 'NOT SENT YET' : (e.status === 'active' ? 'ON THE ROAD' : (e.status === 'completed' ? 'FINISHED' : 'READY'));
+      h += '<button class="route-opt' + (e.unsent ? ' unsent' : '') + '" data-i="' + i + '">' +
+        '<span class="ro-ico">' + svgIcon('van', 18) + '</span>' +
+        '<span class="ro-main"><span class="ro-title">' + esc(e.title) + '</span><span class="ro-sub">' + esc(e.sub) + '</span><span class="ro-rid">' + esc(e.rid) + '</span></span>' +
+        '<span class="ro-pill' + pillCls + '">' + pillTxt + '</span>' +
+        '</button>';
+    });
+    if (canReset) h += '<button class="rs-reset" id="rsResetBtn">Reset this route</button>';
+    if (queue === null) h += '<div class="rp-note">⚠️ Couldn’t check the Reorder tab (poor signal?) — staged-but-unsent routes may be missing from this list.</div>';
+    list.innerHTML = h;
+    list.querySelectorAll('.route-opt').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var e = entries[Number(b.getAttribute('data-i'))];
+        if (!e) return;
+        if (!e.unsent) {
+          setPin(e.rid); hideRoutePicker();
+          state.data = null; state.waitRetries = 0; state.expandedId = null; render(); load(false);
+          return;
+        }
+        dialog('Send &amp; open this route?', '<p><b>' + esc(e.title) + '</b> — ' + esc(e.sub) + '.</p><p>The office hasn’t sent it yet: picking it sends the route (the group Telegram message goes out, same as the office pressing Send Final Route) and opens it here.</p>',
+          [['Send &amp; open', 'go', 'primary'], ['Back', '', 'neutral']],
+          function (c) { if (c === 'go') sendQueueSlot(e.slot, b); });
+      });
+    });
+    var rr = document.getElementById('rsResetBtn');
+    if (rr) rr.addEventListener('click', function () { hideRoutePicker(); confirmReset(); });
+  }
+
   /* ── data loading ── */
   function load(withPhones) {
     if (!state.van || !state.key) return;
@@ -1767,7 +2192,6 @@
     var url = API_BASE + DATA_PATH + '?van=' + encodeURIComponent(state.van) + '&key=' + encodeURIComponent(state.key) + (pin ? '&rid=' + encodeURIComponent(pin) : '') + (withPhones ? '&phones=1' : '');
     return fetch(url).then(function (r) { return r.json(); }).then(function (j) {
       if (vanAtReq !== state.van) return;
-      document.getElementById('syncDot').classList.remove('err');
       document.getElementById('offBanner').classList.remove('show');
       if (!j.ok) {
         if (j.error === 'unauthorised' || j.error === 'unknown van') { showPicker(true); return; }
@@ -1796,8 +2220,7 @@
       if (!pin && !j.route && !state.autoPickerShown) { state.autoPickerShown = true; openRoutePicker(); }
       if (j.route && state.phonesLoaded !== j.route.route_id) { state.phonesLoaded = j.route.route_id; load(true); }
     }).catch(function () {
-      document.getElementById('syncDot').classList.add('err');
-      if (state.data) { document.getElementById('offBanner').classList.add('show'); }
+      if (state.data) { document.getElementById('offBanner').classList.add('show'); render(); }
       else {
         var cached = lsGet('veta_last_' + state.van, null);
         /* 2026-07-29: never paint a cache from a previous day. It used to render
@@ -1810,7 +2233,7 @@
     });
   }
 
-  /* ── van picker ── */
+  /* ── first-run van picker ── */
   var pickedVan = '';
   function showPicker(badKey) {
     document.getElementById('picker').classList.add('show');
@@ -1820,9 +2243,6 @@
   function selectVan(v) {
     pickedVan = v;
     document.querySelectorAll('.van-opt').forEach(function (b) { b.classList.toggle('sel', b.getAttribute('data-van') === v); });
-    var col = VAN_COLOURS[v];
-    document.documentElement.style.setProperty('--accent', col[0]);
-    document.documentElement.style.setProperty('--accent-ink', col[1]);
     document.getElementById('keyRow').classList.add('show');
     document.getElementById('keyInput').focus();
   }
@@ -1839,7 +2259,7 @@
     boot();
   });
   /* van switching — flexi ops: any driver may take any van on any day.
-     The header van badge opens the route picker, whose van row switches
+     The header pills open the route sheet, whose van row switches
      van in one tap (the shared access code is kept — no re-typing). */
   function markRpVans() {
     document.querySelectorAll('.rp-van').forEach(function (b) { b.classList.toggle('sel', b.getAttribute('data-van') === state.van); });
@@ -1848,12 +2268,11 @@
     if (!v || !VAN_COLOURS[v] || v === state.van) return;
     state.van = v;
     lsSet('veta_cred', { van: state.van, key: state.key });
-    applyAccent();
-    state.data = null; state.avail = []; state.phonesLoaded = ''; state.prevOcc = {}; state.waitRetries = 0; state.autoPickerShown = true;
-    document.getElementById('vanChipTxt').textContent = v;
+    state.data = null; state.avail = []; state.phonesLoaded = ''; state.prevOcc = {}; state.waitRetries = 0; state.autoPickerShown = true; state.expandedId = null;
+    paintVanPill();
     markRpVans();
     render();
-    toast('🚐 Now on ' + (VAN_NAMES[v] || v));
+    toast('Now on ' + (VAN_NAMES[v] || v));
     openRoutePicker();
     load(false);
   }
@@ -1863,9 +2282,22 @@
   document.getElementById('vanChip').addEventListener('click', function () {
     if (state.van && state.key) openRoutePicker(); else showPicker(false);
   });
-  document.getElementById('refreshBtn').addEventListener('click', function () { load(false); toast('⟳ Refreshing…'); });
-  document.getElementById('routeMeta').addEventListener('click', function () { if (state.van && state.key) openRoutePicker(); });
-  document.getElementById('rpClose').addEventListener('click', hideRoutePicker);
+  document.getElementById('hdrLeft').addEventListener('click', function () {
+    if (state.van && state.key) openRoutePicker(); else showPicker(false);
+  });
+  document.getElementById('routePicker').addEventListener('click', function (e) {
+    if (e.target === document.getElementById('routePicker')) hideRoutePicker();
+  });
+  document.getElementById('moreSheet').addEventListener('click', function (e) {
+    if (e.target === document.getElementById('moreSheet')) hideMoreSheet();
+  });
+  document.getElementById('moreCancel').addEventListener('click', hideMoreSheet);
+  document.getElementById('moreSkip').addEventListener('click', function () {
+    var m = moreResolve(); if (m) doSkipConfirm(m.s, m.seq);
+  });
+  document.getElementById('moreRemove').addEventListener('click', function () {
+    var m = moreResolve(); if (m) confirmRemove(m.s, m.seq);
+  });
 
   /* once per boot: if more routes are on offer than the one showing, say so */
   function bootDiscovery() {
@@ -1876,21 +2308,15 @@
       }).length;
       var total = (state.avail || []).length + unsent;
       var shownRid = state.data && state.data.route ? state.data.route.route_id : '';
-      if (shownRid && total > 1) toast('🗂 More routes are staged — tap the route name up top to switch');
+      if (shownRid && total > 1) toast('More routes are staged — tap the route name up top to switch');
     }).catch(function () {});
   }
 
   window.addEventListener('online', function () { flush(); load(false); });
   document.addEventListener('visibilitychange', function () { if (!document.hidden) { gcLocal(); flush(); load(false); } });
 
-  function applyAccent() {
-    var col = VAN_COLOURS[state.van] || VAN_COLOURS.BV;
-    document.documentElement.style.setProperty('--accent', col[0]);
-    document.documentElement.style.setProperty('--accent-ink', col[1]);
-  }
-
   function boot() {
-    applyAccent();
+    paintVanPill();
     gcLocal();
     render();
     load(false);
