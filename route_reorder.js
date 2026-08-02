@@ -343,7 +343,9 @@
       '.reorder-arrow i{display:block;width:0;height:0;border-left:6px solid var(--van-deep,#0074A6);' +
         'border-top:4.5px solid transparent;border-bottom:4.5px solid transparent;' +
         'filter:drop-shadow(0 0 1px #fff) drop-shadow(0 0 1px #fff);}' +
-      // ---- per-tile address line + Map Check button (2026-07-19) ----
+      // ---- per-tile address line (2026-07-19; the per-tile Map Check button
+      // was removed 2026-08-02 on Kam's request — the card-level "Check on
+      // map" covers it and the rows read cleaner) ----
       // The name+address column takes the flex slot .reorder-name held alone;
       // .reorder-name keeps its base ellipsis styling but stops flexing itself.
       // Cross-van move (2026-07-20): while a tile is dragged, every OTHER run in
@@ -366,17 +368,8 @@
       '.reorder-tile .reorder-main .reorder-name{flex:none;}' +
       '.reorder-tile .reorder-addr{font-size:12px;color:#8E8E93;overflow:hidden;text-overflow:ellipsis;' +
         'white-space:nowrap;max-width:100%;}' +
-      '.reorder-tile .reorder-mapcheck{flex:0 0 auto;border:none;background:rgba(0,175,241,0.10);color:#006A94;' +
-        'font-size:12px;font-weight:700;padding:0 9px;border-radius:9px;cursor:pointer;min-height:34px;' +
-        'line-height:1.1;white-space:nowrap;}' +
-      '.reorder-tile .reorder-mapcheck:hover{background:rgba(0,175,241,0.18);}' +
-      // Phones (review 2026-07-19): the full label starves the name/address
-      // column at 320-390px -- collapse the button to the map icon (the title/
-      // aria-label keep it discoverable) and tighten the tile gap.
       '@media (max-width:600px){' +
         '.reorder-tile{gap:6px;}' +
-        '.reorder-tile .reorder-mapcheck-label{display:none;}' +
-        '.reorder-tile .reorder-mapcheck{padding:0 8px;}' +
         '.reorder-up,.reorder-down{width:34px;height:34px;}' +
       '}';
     var el = document.createElement('style');
@@ -1200,15 +1193,10 @@
         L.marker(plot.start, { icon: pinIcon(L, '🏠', 'reorder-pin--start'), zIndexOffset: -100 })
           .bindPopup('<div class="reorder-pop"><b>Start</b></div>').addTo(st.mapLayer);
       }
-      // Marker references keyed by member-set so Map Check (2026-07-19) can open
-      // a stop's popup even when its pin was fanned out away from the true point.
-      // Rebuilt on every sync — stale references must never survive clearLayers.
-      st.markersByMembers = {};
       plot.stops.forEach(function (s, i) {
         // EARLIER stops paint on top: if anything still overlaps, you want to see stop 1.
-        var mk = L.marker(placed[i].pin, { icon: pinIcon(L, String(s.n)), zIndexOffset: 1000 - s.n })
+        L.marker(placed[i].pin, { icon: pinIcon(L, String(s.n)), zIndexOffset: 1000 - s.n })
           .bindPopup(popupHtml(s.n, s.members, s.pt)).addTo(st.mapLayer);
-        st.markersByMembers[s.members.join('+')] = mk;
       });
       if (plot.end) {
         // A return-to-Centre route ends where it started; don't stack a 2nd pin there.
@@ -1281,15 +1269,7 @@
       setTimeout(function () {
         if (!st.map || !st.mapOpen) return;
         st.map.invalidateSize();
-        // Map Check (2026-07-19): a queued single-stop focus replaces the
-        // fit-all, so the requested pin is front and centre on first paint.
-        if (st.pendingFocus) {
-          var pf = st.pendingFocus;
-          st.pendingFocus = null;
-          focusStop(st, pf.members, pf.pt);
-        } else {
-          fitMap(st);
-        }
+        fitMap(st);
       }, 0);
     }).catch(function () {
       toast('Could not load the map — check the connection and try again', 'error');
@@ -1299,7 +1279,6 @@
   function closeMap(st) {
     exitFullscreenFor(st);           // never leave a full-screen overlay on a hidden map
     st.mapOpen = false;
-    st.pendingFocus = null;          // a queued Map Check focus dies with the map
     var wrap = st.card && st.card.querySelector('.reorder-mapwrap');
     var btn = st.card && st.card.querySelector('.reorder-mapbtn');
     if (wrap) wrap.hidden = true;
@@ -1312,40 +1291,9 @@
     if (st.mapOpen) closeMap(st); else openMap(st);
   }
 
-  // Centre the map on one stop's TRUE point and open its popup. animate:false —
-  // the zoom applies synchronously, its zoomend syncMap rebuild runs NOW, and
-  // the marker looked up below is the fresh post-rebuild one. Guarded like
-  // syncMap: a map error must never break the tab.
-  function focusStop(st, members, pt) {
-    try {
-      if (!st.map || !st.mapOpen) return;
-      st.map.invalidateSize();
-      st.map.setView(pt, Math.max(st.map.getZoom() || 0, 16), { animate: false });
-      var mk = st.markersByMembers && st.markersByMembers[members.join('+')];
-      if (mk && mk.openPopup) mk.openPopup();
-    } catch (e) { /* never let the map break the tab */ }
-  }
-
-  // "🗺 Map Check" (2026-07-19): show ONE stop's exact routed location. Opens the
-  // card's map if it isn't open, then centres on the stop and opens its popup
-  // (name + "Open in Google Maps"). Coordinates resolve exactly like the pins
-  // themselves (coordIndexFor — ctx.ex wins over ctx.c), so an ALT dog's pin is
-  // its routed SECOND address. When the map has to open first, the focus is
-  // QUEUED (st.pendingFocus) and consumed by openMap's ready callback in place
-  // of the fit-all — deterministic, no race with fitMap.
-  function mapCheckStop(st, stopId) {
-    var members = (st && st.stopsById && st.stopsById[stopId]) || [];
-    var ctx = (st && st.record && st.record.ctx) || {};
-    var pt = stopCoord(members, coordIndexFor(ctx));
-    if (!pt) {
-      toast('No map location for ' + (members.join(' & ') || 'this dog') +
-        ' — re-stage this route from the Load Plan', 'info');
-      return;
-    }
-    if (st.mapOpen && st.map) { focusStop(st, members, pt); return; }
-    st.pendingFocus = { members: members, pt: pt };
-    openMap(st);
-  }
+  // (The per-tile "🗺 Map Check" single-stop focus — focusStop/mapCheckStop/
+  // st.pendingFocus, 2026-07-19 — was removed 2026-08-02 on Kam's request:
+  // the card-level "Check on map" + tappable pins cover it.)
 
   function destroyMap(st) {
     // A card can vanish under a full-screen map (cleared or re-staged on another device).
@@ -1529,8 +1477,6 @@
         '<span class="reorder-marks">' + marks + '</span>' +
         (dogCount > 1 ? '<span class="reorder-share">Same house</span>' : '') +
         '<span class="reorder-kennels"></span>' +
-        '<button type="button" class="reorder-mapcheck" title="Show this address on the map"' +
-          ' aria-label="Map Check">🗺<span class="reorder-mapcheck-label"> Map Check</span></button>' +
         '<button type="button" class="reorder-up" title="Move stop earlier" aria-label="Move stop earlier">▲</button>' +
         '<button type="button" class="reorder-down" title="Move stop later" aria-label="Move stop later">▼</button>' +
         '<button type="button" class="reorder-del" title="Remove from route" aria-label="Remove from route">✕</button>';
@@ -1553,12 +1499,6 @@
       if (delBtn) delBtn.addEventListener('click', function (ev) {
         ev.preventDefault(); ev.stopPropagation();
         removeStop(st, id);
-      });
-      // 🗺 Map Check — same click pattern as the ✕ (grip-only drag keeps it safe).
-      var mcBtn = li.querySelector('.reorder-mapcheck');
-      if (mcBtn) mcBtn.addEventListener('click', function (ev) {
-        ev.preventDefault(); ev.stopPropagation();
-        mapCheckStop(st, id);
       });
       // ▲/▼ arrow reordering (2026-08-01 design): moves the li in the DOM and
       // persists through the SAME renumber → syncMap → refreshKennelUi →
