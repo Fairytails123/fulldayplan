@@ -3,1363 +3,1219 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
-  <title>Van Manager - V4</title>
+  <title>Van load plan — The Fairy Tails</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
   <style>
-    :root { 
-      --line: #6d8fb0; 
-      --accent: #2c5282; 
-      --danger: #e53e3e; 
-      --bg: #ffffff; 
-      --success: #2f855a;
-      --warning: #ed8936;
-      --info: #3182ce;
-      --secondary: #9f7aea;
-      --shadow: 0 2px 8px rgba(0,0,0,0.1);
-      --radius: 10px;
+    /* ================================================================
+       Fairy Tails Design System — Van Load Plan restyle (2026-08-01).
+       Visual layer ONLY: every JS hook (ids, .nav-tab[data-plan], .box
+       markup, .route-controls family, .reorder-* family, toast classes)
+       is unchanged — see Routes design handoff/README.md. Mobile-first
+       (≤440px column); one desktop layer at ≥1024px.
+       ================================================================ */
+    :root {
+      /* brand + per-van palette (deep fills carry white text — AA) */
+      --brand: #00AFF1;
+      --ink: #1C1C1E;
+      --sec: #8E8E93;
+      --ter: #AEAEB2;
+      --light: #C7C7CC;
+      --sep: rgba(60,60,67,0.12);
+      --page-bg: #F2F2F7;
+      --card-bg: #FFFFFF;
+      --seg-bg: rgba(118,118,128,0.12);
+      --frost: rgba(249,249,249,0.94);
+      --brand-tint: rgba(0,175,241,0.10);
+      --heading-tint: #006A94;
+      --purple-bg: rgba(175,82,222,0.12);
+      --purple-fg: #8E44C8;
+      --danger: #FF3B30;
+      --danger-bg: rgba(255,59,48,0.08);
+      --success: #34C759;
+      --card-shadow: 0 0.5px 0 rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.04);
+      --tile-shadow: 0 0.5px 0 rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.08);
+      /* legacy variable names kept so any missed var() resolves sensibly */
+      --accent: #0074A6;
+      --line: var(--sep);
+      --warning: #FF9500;
+      --info: #00AFF1;
+      --secondary: #8E44C8;
+      --shadow: var(--card-shadow);
+      --radius: 18px;
     }
-    
-    * { 
+
+    * {
       margin: 0;
       padding: 0;
-      box-sizing: border-box; 
+      box-sizing: border-box;
       -webkit-tap-highlight-color: transparent;
     }
-    
-    html {
-      overflow-x: hidden;
-    }
-    
+
+    html { overflow-x: hidden; }
+
     /* ANDROID FIX: Allow default touch actions on body - MUST be auto */
-    body { 
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; 
-      background: #f6f7f9; 
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+      background: var(--page-bg);
+      color: var(--ink);
       min-height: 100vh;
       width: 100%;
       overflow-y: auto;
       overflow-x: hidden;
       -webkit-overflow-scrolling: touch;
       touch-action: auto;  /* CRITICAL: Must be auto for Android scroll */
+      -webkit-font-smoothing: antialiased;
     }
-    
-    /* Navigation Tabs */
-    .plan-nav { 
-      display: flex; 
-      background: #fff; 
-      padding: 12px 16px 0; 
-      border-bottom: 2px solid #ddd; 
-      gap: 6px;
+
+    [hidden] { display: none !important; }
+    button, input, select { font-family: inherit; }
+    :focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(0,122,255,0.20); }
+    .sr-only {
+      position: absolute; width: 1px; height: 1px; overflow: hidden;
+      clip: rect(0 0 0 0); white-space: nowrap;
+    }
+
+    @keyframes ftPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+    /* ── Sticky frosted header ─────────────────────────────────────── */
+    .app-header {
       position: sticky;
       top: 0;
       z-index: 1000;
-      box-shadow: var(--shadow);
+      background: var(--frost);
+      backdrop-filter: saturate(180%) blur(20px);
+      -webkit-backdrop-filter: saturate(180%) blur(20px);
+      border-bottom: 0.5px solid var(--sep);
+      padding: 10px 16px;
     }
-    
-    .nav-tab { 
-      padding: 12px 24px; 
-      border: 1px solid #ddd; 
-      border-bottom: none; 
-      border-radius: 8px 8px 0 0; 
-      cursor: pointer; 
-      font-weight: 600;
-      background: #f8fafc;
-      transition: all 0.2s ease;
-      font-size: 14px;
-    }
-    
-    .nav-tab:hover:not(.active) { 
-      background: #e2e8f0; 
-    }
-    
-    .nav-tab.active {
-      background: var(--accent);
-      color: #fff;
-      border-color: var(--accent);
-    }
-
-    /* 🚐 Drive — driver-app link tab (added 2026-07-10). Deliberately NOT
-       .nav-tab: the plan-switcher binds click on .nav-tab and would treat
-       this link as a plan tab. Plain anchor, opens the /drive page. */
-    .nav-tab-drive {
-      padding: 12px 24px;
-      border: 1px solid #ddd;
-      border-bottom: none;
-      border-radius: 8px 8px 0 0;
-      font-weight: 600;
-      background: #f8fafc;
-      transition: all 0.2s ease;
-      font-size: 14px;
-      text-decoration: none;
-      color: inherit;
-      margin-left: auto;
-      display: inline-block;
-    }
-
-    .nav-tab-drive:hover {
-      background: #e2e8f0;
-    }
-    
-    /* Main Layout */
-    .page { 
-      max-width: 1200px; 
-      margin: 0 auto; 
-      padding: 16px; 
-      display: grid; 
-      gap: 16px; 
-    }
-    
-    /* Top Controls */
-    .topbar { 
-      background: #fff; 
-      border-radius: var(--radius); 
-      padding: 16px; 
-      display: grid; 
-      gap: 12px;
-      box-shadow: var(--shadow);
-    }
-    
-    .controls { 
-      display: flex; 
-      gap: 10px; 
-      flex-wrap: wrap; 
-      align-items: center; 
-    }
-    
-    .input-group {
+    .app-header-inner {
       display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      max-width: 1240px;
+      margin: 0 auto;
+    }
+    /* flex-basis 0 so the (long) date line never forces the Online pill or
+       Drive button onto a second row — the brand shrinks/ellipsizes instead. */
+    .brand { display: flex; align-items: center; gap: 10px; flex: 1 1 0; min-width: 0; overflow: hidden; }
+    .brand-logo { width: 34px; height: 34px; border-radius: 10px; object-fit: cover; background: #fff; flex: 0 0 auto; }
+    .brand-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+    .brand-title { font-size: 17px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.15; white-space: nowrap; }
+    .brand-sub {
+      font-size: 11px; font-weight: 600; color: var(--sec);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      font-variant-numeric: tabular-nums;
+    }
+    .online-pill {
+      display: inline-flex; align-items: center; gap: 5px;
+      height: 28px; padding: 0 10px; border-radius: 9999px;
+      background: rgba(52,199,89,0.12); color: #248A3D;
+      font-size: 11px; font-weight: 700; flex: 0 0 auto; white-space: nowrap;
+    }
+    .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--success); animation: ftPulse 2s ease-in-out infinite; }
+    .status-dot.offline { background: var(--danger); animation: none; }
+    .online-pill:has(.status-dot.offline) { background: var(--danger-bg); color: var(--danger); }
+
+    /* 🚐 Drive — driver-app link (deliberately NOT .nav-tab: the plan
+       switcher binds click on .nav-tab and would treat it as a plan tab). */
+    .nav-tab-drive {
+      display: inline-flex; align-items: center; gap: 6px;
+      height: 40px; padding: 0 16px; border-radius: 9999px;
+      background: #0074A6; color: #fff;
+      font-size: 14px; font-weight: 700; text-decoration: none;
+      box-shadow: 0 2px 8px rgba(0,116,166,0.28); flex: 0 0 auto; white-space: nowrap;
+    }
+    .nav-tab-drive:hover { background: #0090C8; color: #fff; }
+    .drive-arrow { font-size: 12px; line-height: 1; }
+
+    /* iOS segmented plan control — the three .nav-tab[data-plan] buttons. */
+    .plan-nav {
+      position: relative;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      background: var(--seg-bg);
+      border-radius: 10px;
+      padding: 2px;
+      margin-top: 10px;
+      flex: 1 1 100%;
+    }
+    .seg-thumb {
+      position: absolute; top: 2px; bottom: 2px;
+      width: calc(33.333% - 1.33px);
+      border-radius: 8px; background: #fff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.10);
+      transition: left 200ms ease;
+      left: 2px;
+      pointer-events: none;
+    }
+    .plan-nav.seg-1 .seg-thumb { left: calc(33.333% + 0.66px); }
+    .plan-nav.seg-2 .seg-thumb { left: calc(66.666% - 0.66px); }
+    .nav-tab {
+      position: relative; z-index: 1;
+      height: 36px;
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 8px;
+      font-size: 13px; font-weight: 700;
+      cursor: pointer;
+      color: var(--sec);
+      transition: color 200ms ease;
+      user-select: none; -webkit-user-select: none;
+      white-space: nowrap; min-width: 0; overflow: hidden;
+    }
+    .nav-tab.active { color: var(--ink); }
+
+    /* ── Page shell ────────────────────────────────────────────────── */
+    .page {
+      max-width: 440px;
+      margin: 0 auto;
+      padding: 14px 16px 120px;   /* bottom clears the fixed transmit dock */
+      display: grid;
+      gap: 14px;
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .page > * { min-width: 0; }
+
+    .plan-card, .tray-card {
+      background: var(--card-bg);
+      border-radius: 18px;
+      padding: 14px;
+      box-shadow: var(--card-shadow);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    /* ── Plan card ─────────────────────────────────────────────────── */
+    .plan-row { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+    .plan-card-head { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1 1 auto; }
+    .plan-title { font-size: 17px; font-weight: 700; letter-spacing: -0.02em; }
+    .plan-note { font-size: 13px; font-weight: 500; color: var(--sec); }
+    .plan-actions {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 8px;
-      flex: 1;
-      min-width: 200px;
     }
-    
-    input[type="text"] { 
-      flex: 1; 
-      padding: 12px 14px; 
-      border-radius: 8px; 
-      border: 2px solid #e2e8f0; 
-      font-size: 16px;
-      transition: border-color 0.2s, box-shadow 0.2s;
+    .plan-actions button {
+      appearance: none; border: none;
+      min-height: 44px; border-radius: 10px;
+      font-size: 14px; font-weight: 700; cursor: pointer;
+      transition: opacity 150ms ease;
     }
-    
-    input[type="text"]:focus {
-      outline: none;
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px rgba(44, 82, 130, 0.15);
+    .plan-actions button:active:not(:disabled) { transform: scale(0.97); opacity: 0.7; }
+    .plan-actions button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-share, .btn-fetch { background: var(--brand-tint); color: var(--heading-tint); }
+    .btn-danger { background: var(--danger-bg); color: var(--danger); }
+    .plan-foot {
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      padding-top: 10px; border-top: 0.5px solid var(--sep);
+      font-size: 12px; font-weight: 600; color: var(--sec);
+      font-variant-numeric: tabular-nums;
+      flex-wrap: wrap;
     }
-    
-    /* Buttons */
-    button { 
-      padding: 12px 18px; 
-      border-radius: 8px; 
-      border: 2px solid transparent; 
-      cursor: pointer; 
-      font-weight: 600;
-      font-size: 14px;
-      transition: all 0.2s ease;
-      white-space: nowrap;
+
+    /* Transmit dock — ONE #transmitBtn: fixed frosted bar on mobile,
+       inline plan-card row on desktop. Lives inside the plan card so the
+       Reorder tab (which hides .page) hides it too. */
+    .dock {
+      position: fixed;
+      left: 0; right: 0; bottom: 0;
+      z-index: 900;
+      display: flex; justify-content: center;
+      background: var(--frost);
+      backdrop-filter: saturate(180%) blur(20px);
+      -webkit-backdrop-filter: saturate(180%) blur(20px);
+      border-top: 0.5px solid var(--sep);
     }
-    
-    button:hover:not(:disabled) {
-      transform: translateY(-1px);
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    .dock-inner {
+      width: 100%; max-width: 440px;
+      padding: 10px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+      display: flex; align-items: center; gap: 12px;
     }
-    
-    button:active:not(:disabled) {
-      transform: translateY(0);
-    }
-    
-    button:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-    }
-    
-    .btn-primary { 
-      background: var(--accent); 
-      color: #fff; 
-    }
-    
-    .btn-primary:hover:not(:disabled) {
-      background: #1e4072;
-    }
-    
-    .btn-danger { 
-      background: #fff5f5; 
-      border-color: var(--danger); 
-      color: var(--danger); 
-    }
-    
-    .btn-danger:hover:not(:disabled) {
-      background: var(--danger);
-      color: #fff;
-    }
-    
-    .btn-share { 
-      background: #ebf8ff; 
-      border-color: var(--info); 
-      color: var(--accent); 
-    }
-    
-    .btn-share:hover:not(:disabled) {
-      background: var(--info);
-      color: #fff;
-    }
-    
-    .btn-fetch { 
-      background: #fffaf0; 
-      border-color: var(--warning); 
-      color: #7b341e; 
-    }
-    
-    .btn-fetch:hover:not(:disabled) {
-      background: var(--warning);
-      color: #fff;
-    }
-    
+    .dock-stats { display: flex; flex-direction: column; gap: 1px; flex: 0 0 auto; }
+    .dock-total { font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .dock-sub { font-size: 11px; font-weight: 600; color: var(--sec); }
     .btn-transmit {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: #fff;
-      border: none;
-      padding: 12px 24px;
-      font-size: 15px;
+      appearance: none; border: none;
+      flex: 1 1 auto;
+      min-height: 52px;
+      border-radius: 14px;
+      background: #0074A6; color: #fff;
+      font-size: 16px; font-weight: 700; cursor: pointer;
+      font-variant-numeric: tabular-nums;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      transition: background 200ms ease;
     }
-    
-    .btn-transmit:hover:not(:disabled) {
-      background: linear-gradient(135deg, #5a67d8 0%, #6b46c1 100%);
-      box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
-    }
-    
-    .btn-transmit.success {
-      background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
-    }
-    
-    .btn-transmit.transmitting {
-      background: linear-gradient(135deg, #ed8936 0%, #dd6b20 100%);
-      animation: pulse 1.5s infinite;
-    }
-    
+    .btn-transmit:hover:not(:disabled) { background: #0090C8; }
+    .btn-transmit:active:not(:disabled) { transform: scale(0.98); opacity: 0.8; }
+    .btn-transmit:disabled { opacity: 0.55; cursor: not-allowed; }
+    .btn-transmit.transmitting { background: #8F5000; animation: pulse 1.5s infinite; }
+    .btn-transmit.success { background: #1E7B36; }
+
     @keyframes pulse {
       0%, 100% { opacity: 1; }
       50% { opacity: 0.7; }
     }
-    
-    /* Tray Area */
-    .tray-area { 
-      display: flex; 
-      gap: 12px; 
-      min-height: 90px; 
+
+    /* ── Staging tray card ─────────────────────────────────────────── */
+    .tray-label-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+    .tray-label {
+      font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.05em; color: var(--sec);
     }
-    
-    .tiles-tray { 
-      flex: 1; 
-      display: flex; 
-      gap: 10px; 
-      flex-wrap: wrap; 
-      padding: 12px; 
-      border: 2px dashed #cbd5e0; 
-      border-radius: 8px; 
-      background: #f8fafc;
+    .tray-note { font-size: 12px; font-weight: 600; color: var(--ter); text-align: right; }
+    .tray-note.is-moving { color: #0074A6; }
+    .tray-area { display: flex; gap: 10px; min-height: 68px; }
+    .tiles-tray {
+      flex: 1 1 auto;
+      min-width: 0;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
       align-content: flex-start;
-      min-height: 80px;
-      transition: all 0.2s;
+      padding: 10px 2px 6px;
+      min-height: 68px;
+      border-radius: 13px;
+      outline: 2px dashed transparent;
+      outline-offset: -2px;
+      transition: outline-color 200ms ease;
     }
-    
-    .tiles-tray.drag-over {
-      border-color: var(--accent);
-      background: #ebf8ff;
-    }
-    
+    .tiles-tray.drag-over, .tiles-tray.can-return { outline-color: var(--brand); }
     .tiles-tray:empty::after {
-      content: "Drag dogs here or add new ones above";
-      color: #a0aec0;
-      font-style: italic;
+      content: "Tray is empty — every dog is loaded";
+      color: var(--light);
+      font-size: 13px;
+      font-weight: 500;
       align-self: center;
-      width: 100%;
-      text-align: center;
+      padding: 0 4px;
     }
-    
-    #bin { 
-      width: 80px; 
-      display: flex; 
-      align-items: center; 
-      justify-content: center; 
-      background: #fed7d7; 
-      border: 2px dashed #fc8181; 
-      border-radius: 8px; 
-      color: #c53030; 
-      font-size: 32px;
-      transition: all 0.2s;
+    #bin {
+      flex: 0 0 auto;
+      width: 64px;
+      min-height: 56px;
+      align-self: stretch;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 5px;
+      background: var(--danger-bg);
+      border-radius: 13px;
+      color: var(--danger);
+      transition: background 150ms ease, transform 150ms ease;
     }
-    
-    #bin::after {
-      content: "";
+    .bin-glyph {
+      width: 18px; height: 18px; border-radius: 4px;
+      border: 2px solid var(--danger); border-top-width: 4px;
+      pointer-events: none;
     }
-    
-    #bin.drag-over {
-      background: #c53030;
-      border-style: solid;
-      transform: scale(1.05);
+    .bin-label { font-size: 10px; font-weight: 700; pointer-events: none; }
+    #bin.drag-over { background: var(--danger); color: #fff; transform: scale(1.05); }
+    #bin.drag-over .bin-glyph { border-color: #fff; }
+    .tray-add { display: flex; gap: 8px; }
+    .tray-add input[type="text"] {
+      flex: 1 1 auto; min-width: 0;
+      height: 48px; padding: 0 14px;
+      border-radius: 12px; border: none;
+      background: var(--page-bg);
+      font-size: 16px; font-weight: 500; color: var(--ink);
     }
-    
-    #bin.drag-over::after {
-      content: "";
+    .tray-add input[type="text"]::placeholder { color: var(--ter); }
+    #addTileBtn {
+      appearance: none; border: none;
+      height: 48px; padding: 0 20px;
+      border-radius: 12px;
+      background: #0074A6; color: #fff;
+      font-size: 15px; font-weight: 700; cursor: pointer;
+      flex: 0 0 auto;
     }
-    
-    /* Tiles - for Android: touch-action none to enable long-press drag */
-    .tile, .tile-inbox { 
-      background: #fff; 
-      border-radius: 6px; 
-      display: flex; 
+    #addTileBtn:active { transform: scale(0.97); opacity: 0.7; }
+
+    /* ── Van jump bar (mobile only) ────────────────────────────────── */
+    .jump-bar {
+      position: sticky;
+      top: 106px;               /* refined at runtime from the real header height */
+      z-index: 30;
+      margin: 0 -16px;
+      padding: 8px 16px 10px;
+      background: rgba(242,242,247,0.92);
+      backdrop-filter: saturate(180%) blur(16px);
+      -webkit-backdrop-filter: saturate(180%) blur(16px);
+    }
+    .jump-bar-inner { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+    .jump-chip {
+      appearance: none; border: none;
+      min-height: 46px; border-radius: 12px; cursor: pointer;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+    }
+    .jump-chip:active { transform: scale(0.97); opacity: 0.7; }
+    .jump-code { font-size: 13px; font-weight: 800; letter-spacing: -0.01em; }
+    .jump-count { font-size: 10px; font-weight: 600; opacity: 0.8; font-variant-numeric: tabular-nums; }
+    .jump-chip[data-jump="bv"] { background: #E6F7FE; color: #006A94; }
+    .jump-chip[data-jump="sv"] { background: rgba(52,199,89,0.12); color: #248A3D; }
+    .jump-chip[data-jump="bvx"] { background: rgba(255,149,0,0.14); color: #A85B00; }
+
+    /* ── Van cards ─────────────────────────────────────────────────── */
+    #printArea {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 14px;
+      min-width: 0;
+    }
+    .van-section {
+      background: var(--card-bg);
+      border-radius: 18px;
+      padding: 14px;
+      box-shadow: var(--card-shadow);
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      min-width: 0;
+      scroll-margin-top: 176px;
+    }
+    /* per-van palette hooks */
+    .van-section[data-van="bv"]  { --van-deep: #0074A6; --van-accent: #00AFF1; --van-tint: #F4FBFF; --van-bdg-bg: #E6F7FE; --van-bdg-fg: #006A94; }
+    .van-section[data-van="sv"]  { --van-deep: #1E7B36; --van-accent: #34C759; --van-tint: #F4FCF6; --van-bdg-bg: rgba(52,199,89,0.12); --van-bdg-fg: #248A3D; }
+    .van-section[data-van="bvx"] { --van-deep: #8F5000; --van-accent: #FF9500; --van-tint: #FFFBF4; --van-bdg-bg: rgba(255,149,0,0.14); --van-bdg-fg: #A85B00; }
+
+    .van-head { display: flex; align-items: center; gap: 11px; min-width: 0; }
+    .van-badge-big {
+      width: 38px; height: 38px; border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 800; letter-spacing: -0.02em;
+      background: var(--van-bdg-bg); color: var(--van-bdg-fg);
+      flex: 0 0 auto;
+    }
+    .van-headtext { display: flex; flex-direction: column; gap: 1px; flex: 1 1 auto; min-width: 0; }
+    .van-name { font-size: 16px; font-weight: 700; letter-spacing: -0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .van-sub { font-size: 12px; font-weight: 500; color: var(--sec); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .dog-count {
+      padding: 5px 11px; border-radius: 9999px;
+      font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums;
+      background: var(--van-bdg-bg); color: var(--van-bdg-fg);
+      flex: 0 0 auto; white-space: nowrap;
+    }
+    .dog-count.has-dogs { background: var(--van-bdg-bg); color: var(--van-bdg-fg); }
+
+    /* Departs + Run controls */
+    .selector-row { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+    .departure-selector { display: flex; flex-direction: column; gap: 5px; flex: 1 1 120px; min-width: 0; }
+    .departure-selector label, .runtype-selector label {
+      font-size: 10px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.05em; color: var(--sec);
+    }
+    .departure-selector select {
+      appearance: none; -webkit-appearance: none; -moz-appearance: none;
+      border: none; width: 100%; height: 44px;
+      padding: 0 32px 0 12px; border-radius: 11px;
+      background-color: var(--page-bg); color: var(--ink);
+      font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums;
+      cursor: pointer;
+      background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%238E8E93' stroke-width='1.6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 12px center;
+    }
+    body.next-am-mode .departure-selector { display: flex; }
+
+    /* Run-type (FD/HD) — PM plan only. The REAL <select id="<van>-runtype">
+       stays in the DOM (route_sender.js reads its value; option VALUES are
+       the contract) but is visually hidden; the segmented buttons proxy it. */
+    .runtype-selector { display: flex; flex-direction: column; gap: 5px; flex: 1 1 150px; min-width: 0; position: relative; }
+    .runtype-selector select {
+      position: absolute; width: 1px; height: 1px;
+      opacity: 0; pointer-events: none; bottom: 0; left: 0;
+    }
+    body.next-am-mode .runtype-selector { display: none; }
+    .run-seg {
+      position: relative;
+      display: grid; grid-template-columns: 1fr 1fr;
+      background: var(--seg-bg);
+      border-radius: 11px; padding: 3px;
+    }
+    .run-thumb {
+      position: absolute; top: 3px; bottom: 3px;
+      width: calc(50% - 3px);
+      border-radius: 9px; background: #fff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.10);
+      transition: left 200ms ease;
+      left: 3px;
+      pointer-events: none;
+    }
+    .run-seg.is-hd .run-thumb { left: 50%; }
+    .run-opt {
+      position: relative; z-index: 1;
+      appearance: none; background: transparent; border: none;
+      height: 38px; font-size: 13px; font-weight: 700; cursor: pointer;
+      color: var(--sec); transition: color 200ms ease;
+      border-radius: 9px;
+    }
+    .run-opt.active { color: var(--ink); }
+
+    /* ── Kennel grids ──────────────────────────────────────────────── */
+    .two-cols { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; min-width: 0; }
+    .grid-shell { position: relative; display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+    .grid-shell[data-shell="side"] { padding-left: 13px; }
+    .grid-shell-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+    .gs-title { font-size: 13px; font-weight: 700; letter-spacing: -0.01em; }
+    .gs-door {
+      font-size: 10px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.05em; color: var(--ter);
+    }
+    .grid-shell-cols {
+      display: flex; align-items: center; justify-content: space-between;
+      font-size: 9px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.05em; color: var(--ter);
+    }
+    .kennel-grid {
+      background: var(--sep);
+      border-radius: 14px;
+      padding: 1px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 1px;
+      overflow: hidden;
+      min-width: 0;
+    }
+    .kennel-grid > div { display: grid; gap: 1px; min-width: 0; }
+    /* side-door tab on the outer-left wall; back-doors bar under the rear grid */
+    .van-door--side {
+      position: absolute;
+      left: 0;
+      bottom: 34%;
+      width: 11px; height: 34px;
+      border-radius: 5px 0 0 5px;
+      background: var(--page-bg);
+      border: 1px solid rgba(60,60,67,0.18);
+      border-right: none;
+      pointer-events: none;
+      z-index: 2;
+    }
+    .grid-shell-backdoor {
+      align-self: center;
+      width: 46px; height: 7px;
+      border-radius: 0 0 5px 5px;
+      background: var(--page-bg);
+      border: 1px solid rgba(60,60,67,0.18);
+      border-top: none;
+      margin-top: 1px;
+      pointer-events: none;
+    }
+
+    .box {
+      position: relative;
+      min-height: 104px;
+      background: #fff;
+      display: flex;
       align-items: center;
       justify-content: center;
-      text-align: center; 
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1); 
-      cursor: grab; 
+      padding: 38px 6px 8px;
+      border-radius: 3px;
+      transition: background 150ms ease, outline-color 150ms ease;
+      outline: 2px dashed transparent;
+      outline-offset: -3px;
+      overflow: visible;
+      min-width: 0;
+    }
+    .box.full { background: var(--van-tint); }
+    .box.drag-over, .box.can-take { outline-color: var(--van-accent); }
+    .box.drag-over { background: var(--van-tint); }
+    /* free-kennel label (never a DOM node → hydrate-safe, no drop target) */
+    .box::before {
+      content: "Free";
+      position: absolute;
+      left: 50%; top: 58%;
+      transform: translate(-50%, -50%);
+      font-size: 11px; font-weight: 600;
+      color: var(--light);
+      pointer-events: none;
+    }
+    .box.full::before, .box.drag-over::before { content: ""; }
+    .box.can-take::before { content: "Place here"; color: var(--van-deep); }
+    /* Occupied can-take cells keep the dashed ring only — "Place here" is for
+       empty cells (spec: dc v2 free-label renders inside free boxes alone). */
+    .box.can-take.full::before { content: ""; }
+
+    /* Stop number inputs (hydrate-created) */
+    .stop-input, .stop-input-secondary {
+      position: absolute;
+      top: 5px;
+      border: none;
+      border-radius: 8px;
+      text-align: center;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      padding: 0;
+      margin: 0;
+      line-height: 1;
+      z-index: 5;
+      -webkit-appearance: none; -moz-appearance: none; appearance: none;
+      font-family: inherit;
+    }
+    .stop-input {
+      left: 5px;
+      width: 40px; height: 30px;
+      font-size: 15px;
+      background: var(--page-bg);
+      color: var(--light);
+    }
+    .box.full .stop-input { background: var(--van-deep); color: #fff; }
+    .stop-input::placeholder { color: var(--light); }
+    .box.full .stop-input::placeholder { color: rgba(255,255,255,0.7); }
+    .stop-input-secondary {
+      left: 50px; right: auto;
+      width: 34px; height: 30px;
+      font-size: 14px;
+      background: var(--purple-bg);
+      color: var(--purple-fg);
+    }
+    .stop-input-secondary::placeholder { color: var(--purple-fg); opacity: 0.7; }
+    .stop-input:focus, .stop-input-secondary:focus { outline: none; box-shadow: 0 0 0 2px rgba(0,122,255,0.25); }
+
+    .box-inner {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      pointer-events: auto;
+      justify-content: center;
+      min-width: 0;
+    }
+    .box-inner.two { gap: 3px; }
+    .box-inner.two .tile-inbox { min-height: 30px; font-size: 12px; }
+
+    /* Kennel position tag — ::after so it survives hydrate()'s reset. */
+    .box[data-pos]::after {
+      content: attr(data-pos);
+      position: absolute;
+      top: 6px;
+      right: 7px;
+      z-index: 1;
+      pointer-events: none;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      line-height: 1;
+      color: var(--light);
+    }
+    .box.full[data-pos]::after { color: var(--ter); }
+    /* 2-dog kennels: the position tag moves to the BOTTOM-right so it stays
+       visible over the second tile. (:has() unsupported → stays top-right.) */
+    .box:has(.box-inner.two)[data-pos]::after {
+      top: auto;
+      bottom: 4px;
+      z-index: 101;
+      background: rgba(255,255,255,0.92);
+      padding: 2px 3px;
+      border-radius: 3px;
+    }
+    .box.has-wheel-arch:has(.box-inner.two)[data-pos]::after { bottom: 22px; }
+
+    /* Wheel arches (SV rear) — re-created by hydrate inside the box. */
+    .box.has-wheel-arch { padding-bottom: 24px; position: relative; }
+    .wheel-arch {
+      position: absolute;
+      bottom: 0;
+      width: 40px; height: 17px;
+      background: var(--page-bg);
+      border: 1px solid rgba(60,60,67,0.14);
+      border-radius: 40px 40px 0 0;
+      border-bottom: none;
+      pointer-events: none;
+    }
+    .wheel-arch.left { left: 10px; }
+    .wheel-arch.right { right: 10px; }
+    .wheel-arch.center { left: 50%; transform: translateX(-50%); }
+
+    /* ── Dog tiles ─────────────────────────────────────────────────── */
+    /* touch-action:none enables long-press drag on Android — load-bearing. */
+    .tile, .tile-inbox {
+      background: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      box-shadow: var(--tile-shadow);
+      cursor: grab;
       touch-action: none; /* Enables long-press drag on Android */
       user-select: none;
       -webkit-user-select: none;
       -webkit-touch-callout: none;
       z-index: 100;
-      word-break: break-word; 
-      line-height: 1.1; 
+      word-break: break-word;
+      line-height: 1.15;
       overflow: hidden;
-      transition: box-shadow 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
-      font-weight: 500;
+      transition: box-shadow 0.15s ease, outline-color 0.15s ease, opacity 0.15s ease, background 0.15s ease;
+      font-weight: 600;
+      outline: 2px solid transparent;
+      outline-offset: -2px;
     }
-    
-    /* Touch-active state - immediate feedback when touching tile */
     .tile.touch-active, .tile-inbox.touch-active {
       box-shadow: 0 4px 12px rgba(0,0,0,0.2);
       opacity: 0.9;
     }
-    
-    /* Long-press active state - drag is starting */
     .tile.long-press-active, .tile-inbox.long-press-active {
       box-shadow: 0 6px 16px rgba(0,0,0,0.25);
       opacity: 0.5;
     }
-    
-    /* Hover states - ONLY for mouse devices */
     @media (hover: hover) and (pointer: fine) {
-      .tile:hover, .tile-inbox:hover {
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-      }
+      .tile:hover, .tile-inbox:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
     }
-    
-    .tile { 
-      min-width: 110px; 
-      min-height: 48px; 
-      padding: 8px 10px; 
-      border: 2px solid #e2e8f0;
+    .tile {
+      min-width: 116px;
+      min-height: 56px;
+      padding: 8px 30px 24px 12px;
+      border-radius: 13px;
+      align-items: flex-start;
+      justify-content: flex-start;
+      text-align: left;
+      font-size: 15px;
     }
-    
-    .tile-inbox { 
-      width: 100%; 
-      min-height: 32px;
-      padding: 4px 6px;
-      border: 1px solid #e2e8f0;
-      background: linear-gradient(135deg, #fff 0%, #f7fafc 100%);
-    }
-    
-    /* Layout Cards */
-    .layout-card { 
-      background: #fff; 
-      border-radius: var(--radius); 
-      padding: 20px;
-      box-shadow: var(--shadow);
-    }
-    
-    .van-section { 
-      margin-bottom: 28px; 
-      border-bottom: 2px solid #edf2f7; 
-      padding-bottom: 24px; 
-    }
-    
-    .van-section:last-child {
-      margin-bottom: 0;
-      border-bottom: none;
-      padding-bottom: 0;
-    }
-    
-    .card-title { 
-      font-weight: 700; 
-      margin-bottom: 14px; 
-      display: flex; 
-      justify-content: space-between;
-      align-items: center;
-      font-size: 16px;
-      color: #2d3748;
-      flex-wrap: wrap;
-      gap: 10px;
-    }
-    
-    .dog-count {
-      background: #edf2f7;
-      color: #4a5568;
-      padding: 4px 10px;
-      border-radius: 12px;
-      font-size: 12px;
-      font-weight: 600;
-    }
-    
-    .dog-count.has-dogs {
-      background: #c6f6d5;
-      color: var(--success);
-    }
-    
-    /* Departure Time Selector — visible for both PM and NEXT_AM plans
-       (2026-06-03: PM-mode departure was hidden + AM-only → 3 pm routes
-       went out as "(departs 07:30)". Now always visible, 07:30–16:30 in
-       30-min steps, default set per plan via JS in loadPlan().) */
-    .departure-selector {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      background: #f0fff4;
-      padding: 6px 12px;
-      border-radius: 8px;
-      border: 1px solid #9ae6b4;
-    }
-    
-    .departure-selector label {
+    .tile-inbox {
+      width: 100%;
+      min-height: 40px;
+      padding: 7px 4px;
+      border-radius: 9px;
       font-size: 13px;
-      font-weight: 600;
-      color: #276749;
     }
-    
-    .departure-selector select {
-      padding: 6px 10px;
-      border-radius: 6px;
-      border: 1px solid #68d391;
-      background: #fff;
-      font-size: 13px;
-      font-weight: 600;
-      color: #276749;
-      cursor: pointer;
-    }
-    
-    .departure-selector select:focus {
-      outline: none;
-      border-color: #38a169;
-      box-shadow: 0 0 0 2px rgba(72, 187, 120, 0.3);
-    }
-    
-    body.next-am-mode .departure-selector {
-      display: flex;
+    .tile.is-selected, .tile-inbox.is-selected {
+      outline-color: #0074A6;
+      background: #E6F7FE;
     }
 
-    /* Run-type Selector (Full Day / Half Day) — PM-plan ONLY (2026-06-05).
-       Mirrors .departure-selector but in a warm amber so it reads as a
-       distinct control, and is HIDDEN in Next-Day-AM mode: the full-day vs
-       half-day distinction only applies to same-day PM runs. Sits next to the
-       departure dropdown; the chosen FD/HD is sent with the route. */
-    .runtype-selector {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      background: #fffaf0;
-      padding: 6px 12px;
-      border-radius: 8px;
-      border: 1px solid #f6c177;
-    }
-
-    .runtype-selector label {
-      font-size: 13px;
-      font-weight: 600;
-      color: #975a16;
-    }
-
-    .runtype-selector select {
-      padding: 6px 10px;
-      border-radius: 6px;
-      border: 1px solid #f0ad4e;
-      background: #fff;
-      font-size: 13px;
-      font-weight: 600;
-      color: #975a16;
-      cursor: pointer;
-    }
-
-    .runtype-selector select:focus {
-      outline: none;
-      border-color: #dd6b20;
-      box-shadow: 0 0 0 2px rgba(221, 107, 32, 0.3);
-    }
-
-    /* Next-Day-AM has no full/half-day concept → hide the selector there. */
-    body.next-am-mode .runtype-selector {
-      display: none;
-    }
-
-    /* Keep the Departs + Run dropdowns on ONE row, side by side, even when
-       .card-title switches to flex-direction:column on tablet/mobile (≤900px).
-       Without this wrapper each selector is its own full-width column item, so
-       the Run box wraps UNDER Departs and wastes the space beside it. The
-       wrapper is a single flex item in the column, and lays its two children
-       out in a row (wrapping only if the screen is too narrow to fit both). */
-    .selector-row {
-      display: flex;
-      flex-direction: row;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 10px;
-    }
-
-    /* Grid Layouts */
-    .two-cols { 
-      display: grid; 
-      grid-template-columns: 1fr 1fr; 
-      gap: 20px; 
-    }
-    
-    .kennel-grid { 
-      border: 2px solid var(--line); 
-      background: #fff; 
-      display: grid;
-      border-radius: 6px;
-      overflow: visible;
-    }
-    
-    .box { 
-      border: 2px solid var(--line); 
-      min-height: 105px; 
-      position: relative; 
-      display: flex; 
-      align-items: center; 
-      justify-content: center; 
-      padding: 40px 4px 4px 4px;
-      background: #fff;
-      transition: all 0.2s;
-      overflow: visible;
-    }
-    
-    .box.drag-over {
-      background: #ebf8ff;
-      border-color: var(--accent);
-    }
-    
-    .box.full {
-      background: #f0fff4;
-    }
-    
-    /* Stop Number Inputs */
-    .stop-input { 
-      position: absolute; 
-      top: 3px; 
-      left: 3px; 
-      width: 50px;
-      height: 30px; 
-      border: 2px solid #cbd5e0; 
-      border-radius: 5px; 
-      font-size: 18px; 
-      text-align: center; 
-      z-index: 5;
-      font-weight: 700;
-      background: #fff;
-      color: #2d3748;
-      /* Complete reset */
-      -webkit-appearance: none;
-      -moz-appearance: none;
-      appearance: none;
-      box-sizing: border-box;
-      padding: 2px 4px;
-      margin: 0;
-      line-height: 1;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
-      overflow: visible;
-      text-overflow: clip;
-      white-space: nowrap;
-    }
-    
-    .stop-input:focus {
-      outline: none;
-      border-color: var(--accent);
-      box-shadow: 0 0 0 2px rgba(44, 82, 130, 0.2);
-    }
-    
-    /* Secondary stop input - top right, purple border */
-    .stop-input-secondary {
+    /* ── Second-address (ALT) tile control ─────────────────────────── */
+    /* The ▼ chip and the address tag line are SEPARATE overlays anchored to
+       #tray (never tile children, never positioned tiles) — the invariant
+       that keeps iOS Safari tile-dragging alive. Positioned by JS. */
+    #tray { position: relative; }
+    .alt-toggle {
       position: absolute;
-      top: 3px;
-      right: 3px;
-      left: auto;
-      width: 50px;
-      height: 30px;
-      border: 2px solid var(--secondary);
-      border-radius: 5px;
-      font-size: 18px;
-      text-align: center;
-      z-index: 5;
-      font-weight: 700;
-      background: #faf5ff;
-      color: #553c9a;
-      /* Complete reset */
-      -webkit-appearance: none;
-      -moz-appearance: none;
-      appearance: none;
-      box-sizing: border-box;
-      padding: 2px 4px;
-      margin: 0;
-      line-height: 1;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
-      overflow: visible;
-      text-overflow: clip;
-      white-space: nowrap;
+      width: 28px; height: 28px; line-height: 24px;
+      text-align: center; font-size: 10px; font-weight: 700; cursor: pointer;
+      z-index: 200;   /* above the z:100 tiles (flex items stack) */
+      border-radius: 50%;
+      background: #0074A6; color: #fff;
+      border: 2px solid #fff;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.18);
+      -webkit-user-select: none; user-select: none;
     }
-    
-    .stop-input-secondary:focus {
-      outline: none;
-      border-color: #805ad5;
-      box-shadow: 0 0 0 2px rgba(159, 122, 234, 0.3);
-    }
-    
-    .stop-input-secondary::placeholder {
-      color: #b794f4;
-    }
-    
-    .box-inner { 
-      width: 100%; 
-      height: 100%; 
-      display: flex; 
-      flex-direction: column; 
-      gap: 4px; 
-      pointer-events: auto; 
-      justify-content: center;
-    }
-    
-    .box-inner.two {
-      gap: 3px;
-    }
-    
-    .box-inner.two .tile-inbox {
-      min-height: 28px;
-      font-size: 13px;
-    }
-    
-    /* Wheel Arch Styling */
-    .box.has-wheel-arch {
-      padding-bottom: 32px;
-      position: relative;
-    }
-    
-    .wheel-arch {
+    .alt-toggle::before { content: '\25BC'; }
+    .alt-toggle:hover { background: #0090C8; }
+    .alt-toggle.is-alt { background: #8F5000; }
+    .tile-tag {
       position: absolute;
-      bottom: 4px;
-      width: 50px;
-      height: 24px;
-      background: #fff;
-      border: 2px solid var(--line);
-      border-radius: 50px 50px 0 0;
-      border-bottom: none;
-    }
-    
-    .wheel-arch.left {
-      left: 8px;
-    }
-    
-    .wheel-arch.right {
-      right: 8px;
-    }
-    
-    .wheel-arch.center {
-      left: 50%;
-      transform: translateX(-50%);
-    }
-
-    /* ── Van door markers (side + back) — subtle figures on the van-body
-       boundary ───────────────────────────────────────────────────────
-       Small "door" glyphs hung on the OUTSIDE edge of the .kennel-grid
-       outline (NOT a labelled box, NOT a reserved interior band), so they
-       cost ~no usable kennel space: the front grid keeps its FULL width
-       (the side door sits in the existing ~18px outer-left margin) and the
-       back grid only a thin strip. From the owner's hand-drawn reference:
-       SIDE door on the left wall of the FRONT (cargo) section, BACK door on
-       the rear wall of the BACK section. pointer-events:none → never a drop
-       target / never block a tile drag; children of .kennel-grid but NOT
-       inside a .box → survive hydrate() (mirrors the wheel-arch pattern).
-       BV/BVX (same layout) get identical figures; SV gets the same figures
-       on its own smaller grid. The hover title gives the full name. */
-    .van-door {
-      position: absolute;
-      z-index: 2;
+      z-index: 150;
       pointer-events: none;
-      background: #eef3fa;
-      border: 1.5px solid var(--accent);
-      box-sizing: border-box;
+      font-size: 11px; font-weight: 600;
+      color: var(--ter);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      max-width: 110px;
     }
+    .tile-tag.is-alt-tag { color: #A85B00; }
+    .alt-menu {
+      position: fixed; z-index: 9999; background: #fff;
+      border: 0.5px solid rgba(60,60,67,0.18); border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+      min-width: 170px; font-size: 13px; overflow: hidden;
+    }
+    .alt-menu .alt-menu-head {
+      padding: 7px 12px; font-size: 11px; font-weight: 700; color: var(--sec);
+      text-transform: uppercase; letter-spacing: 0.05em;
+      background: #F9F9F9; border-bottom: 0.5px solid var(--sep);
+    }
+    .alt-menu .alt-opt { padding: 11px 12px; cursor: pointer; white-space: nowrap; font-weight: 600; }
+    .alt-menu .alt-opt:hover { background: var(--page-bg); }
+    .alt-menu .alt-opt.sel { font-weight: 700; color: #0074A6; }
+    .alt-menu .alt-opt.sel::after { content: ' \2713'; }
 
-    /* SIDE door — a slim door panel hung on the OUTSIDE of the left wall. */
-    .kennel-grid[data-door="side"] { position: relative; padding-top: 18px; }   /* top strip for Passenger/Driver labels; no L/R padding → kennels keep full width */
-    .van-door--side {
-      left: -12px;                  /* sits in the outer-left margin, off the kennels */
-      top: 50%;
-      transform: translateY(-50%);
-      width: 13px;
-      height: 32px;
-      border-radius: 3px 0 0 3px;   /* rounded outer (wall) side */
-      border-right: none;           /* opens toward the van interior */
-    }
-    .van-door--side::after {        /* sliding-door handle */
-      content: '';
-      position: absolute;
-      right: 2px; top: 50%;
-      width: 1.5px; height: 12px; margin-top: -6px;
-      background: var(--accent);
-      border-radius: 2px;
-    }
-
-    /* BACK door — a short double-leaf on the rear wall (thin bottom strip). */
-    .kennel-grid[data-door="back"] { position: relative; padding-bottom: 26px; }   /* strip for BACK door marker + BACK label */
-    .van-door--back {
-      bottom: 15px;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 38px;
-      height: 8px;
-      border-radius: 0 0 3px 3px;   /* rounded outer (rear) side */
-      border-top: none;             /* opens toward the van interior */
-    }
-    .van-door--back::after {        /* centre split of the rear double doors */
-      content: '';
-      position: absolute;
-      left: 50%; top: 0; bottom: 1px;
-      width: 1.5px; margin-left: -0.75px;
-      background: var(--accent);
-    }
-
-    @media (max-width: 400px) {
-      .van-door--side { left: -11px; width: 11px; height: 28px; }
-    }
-
-    /* Dragging State - NO transform scale/rotate (causes visual jump) */
-    .is-dragging { 
-      position: fixed; 
-      z-index: 9999 !important; 
-      pointer-events: none; 
-      opacity: 0.85; 
+    /* Dragging clone - NO transform (causes visual jump) */
+    .is-dragging {
+      position: fixed;
+      z-index: 9999 !important;
+      pointer-events: none;
+      opacity: 0.85;
       box-shadow: 0 12px 28px rgba(0,0,0,0.3);
       touch-action: none;
       /* No transform - it causes visual position shift */
     }
-    
-    /* Toast Notifications */
-    .toast-container {
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      z-index: 10000;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-    
-    .toast {
-      padding: 14px 20px;
-      border-radius: 8px;
-      color: #fff;
-      font-weight: 500;
-      box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-      animation: slideIn 0.3s ease, fadeOut 0.3s ease 2.7s forwards;
-      max-width: 320px;
-    }
 
-    /* Long-hold variant (2026-07-19): warnings carrying name lists (the
-       staging-tray nudge) fade at 7.7s instead of 2.7s and get more width —
-       route_reorder.js toast() adds this class and keeps the DOM node for 8s. */
-    .toast.toast-hold {
-      animation: slideIn 0.3s ease, fadeOut 0.3s ease 7.7s forwards;
-      max-width: 480px;
-    }
-    
-    .toast-success { background: var(--success); }
-    .toast-error { background: var(--danger); }
-    .toast-info { background: var(--info); }
-    .toast-warning { background: var(--warning); }
-    
-    @keyframes slideIn {
-      from { transform: translateX(100%); opacity: 0; }
-      to { transform: translateX(0); opacity: 1; }
-    }
-    
-    @keyframes fadeOut {
-      to { opacity: 0; transform: translateX(50%); }
-    }
-    
-    /* Status Bar */
-    .status-bar {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-size: 12px;
-      color: #718096;
-      padding-top: 8px;
-      border-top: 1px solid #edf2f7;
-      margin-top: 8px;
-    }
-    
-    .status-bar .online-indicator {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    
-    .status-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--success);
-    }
-    
-    .status-dot.offline {
-      background: var(--danger);
-    }
-    
-    /* Responsive - Tablet */
-    @media (max-width: 900px) { 
-      .two-cols { grid-template-columns: 1fr; }
-      .controls { flex-direction: column; align-items: stretch; }
-      .input-group { min-width: 100%; }
-      .btn-group { display: flex; flex-wrap: wrap; gap: 8px; }
-      .btn-group button { flex: 1; min-width: calc(50% - 4px); }
-      .card-title { flex-direction: column; align-items: flex-start; }
-    }
-    
-    /* Responsive - Mobile */
-    @media (max-width: 600px) {
-      /* Fix horizontal overflow - ONLY on body, let html scroll vertically */
-      body {
-        overflow-x: hidden;
-        width: 100%;
-        max-width: 100vw;
-      }
-      
-      /* Mobile nav fix (2026-07-16): the tabs used to keep their full
-         desktop width (flex-shrink:0) and the nav scrolled sideways.
-         Now all four fit the screen width: the three plan tabs flex to
-         share the row (wider labels get more room), the long-form words
-         (" Plan" / " Routes", wrapped in .tab-extra) are hidden, and the
-         🚐 Drive link stays compact on the right. overflow-x:auto is
-         kept only as a safety net for extreme cases. */
-      .plan-nav {
-        padding: 8px 8px 0;
-        gap: 4px;
-        overflow-x: auto;
-        -webkit-overflow-scrolling: touch;
-      }
-
-      .nav-tab {
-        flex: 1 1 auto;
-        min-width: 0;
-        padding: 11px 4px;
-        font-size: 13px;
-        text-align: center;
-        white-space: nowrap;
-      }
-
-      .nav-tab-drive {
-        flex: 0 0 auto;
-        padding: 11px 8px;
-        font-size: 13px;
-      }
-
-      .tab-extra { display: none; }
-      
-      .page { 
-        padding: 10px; 
-        gap: 10px;
-        max-width: 100%;
-        box-sizing: border-box;
-      }
-      
-      .topbar, .layout-card { 
-        padding: 12px;
-        max-width: 100%;
-        box-sizing: border-box;
-      }
-      
-      /* Input stays reasonable */
-      input[type="text"] {
-        padding: 12px 14px;
-        font-size: 16px;
-      }
-      
-      /* Smaller buttons - 2 per row */
-      .btn-group { 
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 8px;
-        width: 100%;
-      }
-      
-      .btn-group button { 
-        padding: 10px 12px;
-        font-size: 13px;
-        min-height: 42px;
-        width: 100%;
-      }
-      
-      .btn-transmit {
-        grid-column: 1 / -1;
-        padding: 12px 20px;
-        font-size: 15px;
-        min-height: 46px;
-      }
-      
-      /* Tray */
-      .tray-area { min-height: 100px; }
-      .tiles-tray { 
-        min-height: 90px; 
-        padding: 10px;
-        gap: 10px;
-      }
-      
-      /* Tiles */
-      .tile { 
-        min-width: 90px; 
-        min-height: 46px; 
-        padding: 8px 10px;
-        font-size: 14px;
-      }
-      
-      #bin { 
-        width: 70px; 
-        font-size: 32px;
-      }
-      
-      /* Kennels */
-      .box { 
-        min-height: 95px; 
-        padding-top: 38px; 
-      }
-      
-      .tile-inbox {
-        min-height: 34px;
-        padding: 5px 6px;
-        font-size: 13px;
-      }
-      
-      .box-inner.two .tile-inbox {
-        min-height: 28px;
-        font-size: 12px;
-      }
-      
-      /* Stop inputs - KEEP LARGE to prevent clipping */
-      .stop-input, .stop-input-secondary { 
-        width: 50px !important; 
-        height: 30px !important; 
-        font-size: 18px !important;
-        padding: 2px 4px !important;
-      }
-      
-      /* Van section spacing */
-      .van-section {
-        margin-bottom: 16px;
-        padding-bottom: 16px;
-      }
-      
-      .card-title {
-        font-size: 15px;
-        gap: 10px;
-      }
-      
-      .dog-count {
-        font-size: 12px;
-        padding: 4px 10px;
-      }
-      
-      /* Departure selector */
-      .departure-selector {
-        padding: 6px 10px;
-      }
-
-      .departure-selector select {
-        padding: 8px 10px;
-        font-size: 14px;
-      }
-
-      /* Run-type selector (PM-plan only) */
-      .runtype-selector {
-        padding: 6px 10px;
-      }
-
-      .runtype-selector select {
-        padding: 8px 10px;
-        font-size: 14px;
-      }
-      
-      /* DV (Dispatch Van) retired 2026-06-13 → replaced by BVX, a BV clone.
-         BVX uses BV's standard .two-cols / .kennel-grid layout, so it needs no
-         van-specific mobile overrides (BV/BVX don't use them). */
-      
-      /* Status bar */
-      .status-bar {
-        flex-direction: column;
-        gap: 6px;
-        align-items: flex-start;
-        padding-top: 10px;
-        margin-top: 10px;
-        font-size: 11px;
-      }
-      
-      /* Kennel grid - prevent overflow */
-      .kennel-grid {
-        max-width: 100%;
-      }
-      
-      .two-cols {
-        gap: 12px;
-      }
-    }
-    
-    /* Responsive - Small phones */
-    @media (max-width: 400px) {
-      .plan-nav { padding: 6px 6px 0; gap: 3px; }
-      .nav-tab { padding: 10px 2px; font-size: 12px; }
-      .nav-tab-drive { padding: 10px 6px; font-size: 12px; }
-      .page { padding: 8px; }
-      .topbar, .layout-card { padding: 10px; }
-      
-      .tile { min-width: 80px; min-height: 42px; }
-      .box { min-height: 90px; padding-top: 36px; }
-      
-      /* Stop inputs - still keep readable */
-      .stop-input, .stop-input-secondary { 
-        width: 46px !important; 
-        height: 28px !important; 
-        font-size: 16px !important;
-      }
-    }
-    
-    /* Touch device optimisations */
-    @media (pointer: coarse) {
-      .tile, .tile-inbox {
-        cursor: pointer;
-      }
-      
-      /* Prevent text selection */
-      .tile, .tile-inbox, .box {
-        -webkit-user-select: none;
-        user-select: none;
-      }
-      
-      /* NO transform on touch - causes layout thrash per project docs */
-      button:active {
-        opacity: 0.8;
-      }
-    }
-    
-    /* Print Styles */
-    @media print {
-      body { background: #fff !important; }
-      .plan-nav, .topbar, .toast-container, #reorderView { display: none !important; }
-      .page { max-width: 100%; padding: 0; }
-      .layout-card { box-shadow: none; padding: 10px; }
-      .van-section { page-break-inside: avoid; }
-      .box { border-width: 1px; }
-      .tile-inbox { border: 1px solid #999 !important; }
-    }
-
-    /* Stage 1 — Van Route Automation (additive). Safe to remove block. */
+    /* ── Route controls (start/return + Stage Route) ───────────────── */
     .route-controls {
       display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 8px;
-      margin: 10px 0 4px;
-      padding: 10px 12px;
-      background: #f1f5f9;
-      border-radius: var(--radius);
-      flex-wrap: wrap;
-    }
-    .route-controls .return-toggle {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 13px;
-      cursor: pointer;
-      user-select: none;
-      color: #334155;
-    }
-    .route-controls .return-toggle input[type="checkbox"] {
-      width: 16px;
-      height: 16px;
-      cursor: pointer;
-      margin: 0;
-    }
-    /* Start/Return-from-Centre toggles + custom-address inputs (additive). */
-    .route-controls .route-toggles {
-      display: flex;
       flex-direction: column;
       gap: 6px;
-      flex: 1 1 auto;
-      min-width: 220px;
+      padding-top: 12px;
+      border-top: 0.5px solid var(--sep);
+      min-width: 0;
     }
-    .route-controls .toggle-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
+    .route-controls .route-toggles { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+    .route-controls .toggle-row { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+    .route-controls .return-toggle {
+      display: flex; align-items: center; gap: 10px;
+      min-height: 44px;
+      font-size: 15px; font-weight: 600;
+      cursor: pointer;
+      user-select: none; -webkit-user-select: none;
+      color: var(--ink);
     }
-    .route-controls .toggle-row .return-toggle {
-      min-width: 150px;
+    .route-controls .return-toggle input[type="checkbox"] {
+      width: 22px; height: 22px; margin: 0; cursor: pointer;
+      accent-color: var(--van-accent);
+      flex: 0 0 auto;
     }
     .route-controls .addr-input {
-      flex: 1 1 180px;
-      min-width: 160px;
-      padding: 6px 8px;
-      font-size: 13px;
-      border: 1px solid #cbd5e1;
-      border-radius: 6px;
-      color: #334155;
-      background: #fff;
+      height: 44px; padding: 0 14px;
+      border-radius: 11px; border: none;
+      background: var(--page-bg);
+      font-size: 16px; font-weight: 500; color: var(--ink);
+      min-width: 0; width: 100%;
     }
-    .route-controls .addr-input:focus {
-      outline: 2px solid var(--accent);
-      outline-offset: 0;
-      border-color: var(--accent);
-    }
+    .route-controls .addr-input::placeholder { color: var(--ter); }
     .route-controls .addr-input[hidden] { display: none; }
     .send-route-btn {
       appearance: none;
       border: 0;
       cursor: pointer;
+      width: 100%;
+      min-height: 50px;
+      margin-top: 6px;
       padding: 8px 14px;
-      border-radius: 8px;
-      font-size: 14px;
-      font-weight: 600;
+      border-radius: 12px;
+      font-size: 16px;
+      font-weight: 700;
       color: #fff;
-      background-color: var(--accent);
-      transition: background-color 0.15s ease, transform 0.05s ease, opacity 0.15s ease;
-      min-width: 150px;
+      background-color: var(--van-deep, #0074A6);
+      transition: background-color 0.2s ease, transform 0.05s ease, opacity 0.15s ease;
       text-align: center;
     }
     .send-route-btn:hover:not(:disabled) { filter: brightness(1.08); }
-    .send-route-btn:active:not(:disabled) { transform: translateY(1px); }
+    .send-route-btn:active:not(:disabled) { transform: scale(0.98); opacity: 0.8; }
     .send-route-btn:disabled { cursor: not-allowed; opacity: 0.85; }
-    .send-route-btn.is-sending { background-color: #64748b; }
-    .send-route-btn.is-success { background-color: var(--success); }
-    .send-route-btn.is-failed  { background-color: var(--warning); }
-    @media print { .route-controls { display: none !important; } }
+    .send-route-btn.is-sending { background-color: #8F5000; }
+    .send-route-btn.is-success { background-color: #1E7B36; }
+    .send-route-btn.is-failed  { background-color: #B45309; }
+    .staged-caption {
+      font-size: 12px; font-weight: 600; color: #1E7B36;
+      font-variant-numeric: tabular-nums;
+      text-align: center;
+    }
 
-    /* ===== Second-address (ALT) tile control — added 2026-06-08 ===== */
-    /* A small ▼ overlay on each staging tile opens a First/Second Address menu that
-       sets/clears a trailing " ALT" token on the tile name (reuses the live ALT routing
-       pipeline). CRITICAL (iOS): the draggable TILE itself is left 100% UNCHANGED — no
-       position and no child element is added to it — because modifying the tile broke
-       pointer-event dragging on iOS Safari (the whole tile became immovable). The ▼ is a
-       SEPARATE element anchored to #tray and positioned by JS over each tile's top-right
-       corner, so touching the tile body drags exactly as before; only the tiny ▼ corner
-       opens the menu (on click). */
-    #tray { position: relative; }   /* anchor for the ▼ overlays; #tray is not a drag handle */
-    .alt-toggle {
-      position: absolute;            /* left/top set by JS, anchored to #tray (NOT a tile child) */
-      width: 22px; height: 22px; line-height: 22px;
-      text-align: center; font-size: 11px; font-weight: 700; cursor: pointer;
-      /* z-index MUST be above the tiles: .tile is a flex item with z-index:100, and a flex
-         item with a z-index creates a stacking context even when position:static — so a lower
-         value paints the ▼ UNDER the tile (only visible as the tile lifts into the drag shadow). */
-      z-index: 200;
-      border-radius: 50%; background: #2563eb; color: #fff;
-      box-shadow: 0 1px 3px rgba(0,0,0,.35);
-      -webkit-user-select: none; user-select: none;
+    .plan-hint {
+      margin: 2px 0 0;
+      font-size: 12px; font-weight: 500;
+      color: var(--ter);
+      text-align: center;
     }
-    .alt-toggle::before { content: '\25BC'; }   /* ▼ via CSS so tile.textContent stays clean */
-    .alt-toggle:hover { background: #1d4ed8; }
-    .alt-toggle.is-alt { background: #f59e0b; }   /* amber when the dog is locked to its 2nd address */
-    .alt-menu {
-      position: fixed; z-index: 9999; background: #fff;
-      border: 1px solid #cbd5e1; border-radius: 8px;
-      box-shadow: 0 8px 24px rgba(0,0,0,.18);
-      min-width: 160px; font-size: 13px; overflow: hidden;
-    }
-    .alt-menu .alt-menu-head {
-      padding: 6px 12px; font-size: 11px; font-weight: 700; color: #64748b;
-      background: #f8fafc; border-bottom: 1px solid #e2e8f0;
-    }
-    .alt-menu .alt-opt { padding: 10px 12px; cursor: pointer; white-space: nowrap; }
-    .alt-menu .alt-opt:hover { background: #f1f5f9; }
-    .alt-menu .alt-opt.sel { font-weight: 700; color: #2563eb; }
-    .alt-menu .alt-opt.sel::after { content: ' \2713'; }   /* tick on the chosen option */
 
-    /* ===== Reorder Routes — staging tab (added 2026-06-26) ===== */
-    /* minmax(0,1fr) + min-width:0 (2026-07-31 screen-fit fix): a bare `auto`
-       grid track sizes to its widest item's INTRINSIC width (the Add-Dog
-       form's unwrapped row ≈ 1,545px), which made every section card overflow
-       the viewport's right edge — the whole tab looked shifted right on
-       desktop and was clipped on phones. Pinning the track to the container
-       and letting items shrink restores the centred, screen-fitting layout;
-       the inner flexes (Add-Dog form, tiles ≤600px) already wrap. */
-    #reorderView { max-width: 1200px; margin: 0 auto; padding: 16px; display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr); }
+    /* ── Toasts ────────────────────────────────────────────────────── */
+    .toast-container {
+      position: fixed;
+      left: 50%;
+      transform: translateX(-50%);
+      bottom: 96px;
+      z-index: 10000;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 8px;
+      width: calc(100% - 32px);
+      max-width: 408px;
+      pointer-events: none;
+    }
+    .toast {
+      padding: 13px 16px;
+      border-radius: 14px;
+      background: #1C1C1E;
+      color: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      line-height: 1.3;
+      font-variant-numeric: tabular-nums;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.16);
+      animation: ftToastIn 0.2s ease, ftToastOut 0.3s ease 3.9s forwards;
+      border-left: 3px solid transparent;
+    }
+    /* Long-hold variant: warnings carrying name lists fade at 7.7s instead
+       of 3.9s — route_reorder.js toast() adds this class, DOM held 8s. */
+    .toast.toast-hold { animation: ftToastIn 0.2s ease, ftToastOut 0.3s ease 7.7s forwards; }
+    .toast-success { border-left-color: var(--success); }
+    .toast-error { border-left-color: var(--danger); }
+    .toast-info { border-left-color: var(--info); }
+    .toast-warning { border-left-color: var(--warning); }
+    @keyframes ftToastIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes ftToastOut { to { opacity: 0; } }
+
+    /* ================================================================
+       Reorder Routes tab — base styles (route_reorder.js injects its own
+       supplementary sheet; class names are its contract, do not rename).
+       minmax(0,1fr) + min-width:0 = the 2026-07-31 screen-fit fix: a bare
+       `auto` track sizes to intrinsic width and pushes the tab off-screen.
+       ================================================================ */
+    #reorderView {
+      max-width: 440px;
+      margin: 0 auto;
+      padding: 14px 16px;
+      display: grid;
+      gap: 14px;
+      grid-template-columns: minmax(0, 1fr);
+    }
     #reorderView > * { min-width: 0; }
-    .reorder-head { display: flex; align-items: center; gap: 10px; font-size: 14px; color: #475569; flex-wrap: wrap; }
-    .reorder-poll-dot { width: 10px; height: 10px; border-radius: 50%; background: #cbd5e0; flex: 0 0 auto; }
-    .reorder-poll-dot.is-ok { background: var(--success); animation: reorderPulse 1.6s ease-out; }
+    .reorder-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+    .reorder-headtext { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1 1 auto; }
+    .reorder-title { font-size: 17px; font-weight: 700; letter-spacing: -0.02em; }
+    .reorder-subtitle { font-size: 13px; font-weight: 500; color: var(--sec); }
+    .reorder-live-pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      height: 28px; padding: 0 10px; border-radius: 9999px;
+      background: var(--brand-tint); color: var(--heading-tint);
+      font-size: 11px; font-weight: 700; white-space: nowrap; flex: 0 0 auto;
+    }
+    .reorder-poll-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--light); flex: 0 0 auto; }
+    .reorder-poll-dot.is-ok { background: var(--brand); animation: reorderPulse 1.6s ease-out; }
     .reorder-poll-dot.is-bad { background: var(--danger); }
-    @keyframes reorderPulse { 0% { box-shadow: 0 0 0 0 rgba(47,133,90,0.5); } 100% { box-shadow: 0 0 0 8px rgba(47,133,90,0); } }
-    .reorder-section { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px 16px; }
-    .reorder-section-title { margin: 0 0 12px; font-size: 16px; font-weight: 700; color: #1f2937; }
+    @keyframes reorderPulse { 0% { box-shadow: 0 0 0 0 rgba(0,175,241,0.5); } 100% { box-shadow: 0 0 0 8px rgba(0,175,241,0); } }
+    .reorder-section { min-width: 0; }
+    .reorder-section-title {
+      margin: 0;
+      font-size: 11px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.05em;
+      color: var(--sec);
+    }
     .reorder-slots { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
-    .reorder-empty { color: #94a3b8; font-style: italic; padding: 6px 2px; }
-    .reorder-slot { border: 1px solid #e2e8f0; border-top: 3px solid var(--accent); border-radius: 8px; padding: 12px; background: #fff; min-width: 0; }
-    .reorder-slot-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
-    .van-badge { display: inline-block; padding: 3px 10px; border-radius: 999px; color: #fff; font-weight: 700; font-size: 13px; letter-spacing: .3px; }
-    .van-badge--bv  { background: var(--accent); }
-    .van-badge--bvx { background: var(--secondary); }
-    .van-badge--sv  { background: var(--info); }
-    .reorder-staged-at { color: #64748b; font-size: 12px; }
-    .reorder-updated-flag { background: var(--info); color: #fff; font-size: 11px; padding: 1px 8px; border-radius: 999px; }
-    .reorder-skip { color: #b45309; font-size: 12px; flex-basis: 100%; }
-    .reorder-list { list-style: none; margin: 0 0 10px; padding: 0; }
-    .reorder-tile { display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 10px 12px; margin: 8px 0; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 15px; min-width: 0; flex-wrap: wrap; }
-    .reorder-tile--solo { opacity: .92; }
-    .reorder-pos { flex: 0 0 26px; width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; background: var(--accent); color: #fff; border-radius: 50%; font-weight: 700; font-size: 13px; }
-    .reorder-grip { flex: 0 0 auto; cursor: grab; color: #94a3b8; font-size: 20px; line-height: 1; touch-action: none; user-select: none; -webkit-user-select: none; padding: 0 4px; }
+    .reorder-empty {
+      color: var(--ter); font-size: 13px; font-weight: 500;
+      background: var(--card-bg); border-radius: 18px;
+      box-shadow: var(--card-shadow);
+      padding: 18px 14px; text-align: center;
+    }
+    .reorder-slot {
+      background: var(--card-bg);
+      border-radius: 18px;
+      padding: 14px;
+      box-shadow: var(--card-shadow);
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    /* per-van palette hooks (mirrors .van-section) */
+    .reorder-slot[data-van="bv"]  { --van-deep: #0074A6; --van-accent: #00AFF1; --van-tint: #F4FBFF; --van-bdg-bg: #E6F7FE; --van-bdg-fg: #006A94; }
+    .reorder-slot[data-van="sv"]  { --van-deep: #1E7B36; --van-accent: #34C759; --van-tint: #F4FCF6; --van-bdg-bg: rgba(52,199,89,0.12); --van-bdg-fg: #248A3D; }
+    .reorder-slot[data-van="bvx"] { --van-deep: #8F5000; --van-accent: #FF9500; --van-tint: #FFFBF4; --van-bdg-bg: rgba(255,149,0,0.14); --van-bdg-fg: #A85B00; }
+    .reorder-slot-head { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; min-width: 0; }
+    .van-badge {
+      display: inline-block; padding: 5px 11px; border-radius: 9999px;
+      font-weight: 800; font-size: 12px; letter-spacing: 0.01em;
+    }
+    .van-badge--bv  { background: #E6F7FE; color: #006A94; }
+    .van-badge--bvx { background: rgba(255,149,0,0.14); color: #A85B00; }
+    .van-badge--sv  { background: rgba(52,199,89,0.12); color: #248A3D; }
+    .reorder-van-name { font-size: 15px; font-weight: 700; }
+    .reorder-staged-at { color: var(--sec); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .reorder-updated-flag { background: var(--brand-tint); color: var(--heading-tint); font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 9999px; }
+    .reorder-skip { color: #A85B00; font-size: 12px; font-weight: 600; flex-basis: 100%; }
+    .reorder-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+    .reorder-tile {
+      display: flex; align-items: center; gap: 8px;
+      min-height: 52px; padding: 10px 10px 10px 14px;
+      background: var(--page-bg);
+      border-radius: 13px;
+      font-size: 15px;
+      min-width: 0;
+      flex-wrap: wrap;
+    }
+    .reorder-tile--solo { opacity: 0.92; }
+    .reorder-pos {
+      flex: 0 0 28px; width: 28px; height: 28px;
+      display: inline-flex; align-items: center; justify-content: center;
+      background: var(--van-deep, #0074A6); color: #fff;
+      border-radius: 50%;
+      font-weight: 700; font-size: 13px; font-variant-numeric: tabular-nums;
+    }
+    .reorder-grip {
+      flex: 0 0 auto; cursor: grab; color: var(--light);
+      font-size: 18px; line-height: 1;
+      touch-action: none; user-select: none; -webkit-user-select: none;
+      padding: 0 4px;
+    }
     .reorder-grip:active { cursor: grabbing; }
-    .reorder-name { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+    .reorder-name { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; min-width: 0; }
     .reorder-marks { flex: 0 0 auto; }
-    .reorder-placeholder { height: 52px; margin: 8px 0; border: 2px dashed var(--accent); border-radius: 8px; background: #ebf8ff; list-style: none; }
+    .reorder-up, .reorder-down {
+      flex: 0 0 auto;
+      appearance: none; border: none;
+      width: 38px; height: 38px; border-radius: 10px;
+      background: var(--seg-bg); color: var(--ink);
+      font-size: 13px; cursor: pointer;
+      transition: opacity 150ms ease;
+    }
+    .reorder-up:active:not(:disabled), .reorder-down:active:not(:disabled) { transform: scale(0.94); }
+    .reorder-up:disabled, .reorder-down:disabled { opacity: 0.35; cursor: default; }
+    .reorder-share {
+      flex: 0 0 auto;
+      padding: 3px 9px; border-radius: 9999px;
+      background: var(--purple-bg); color: var(--purple-fg);
+      font-size: 11px; font-weight: 700; white-space: nowrap;
+    }
+    .reorder-seq-label {
+      font-size: 11px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.05em;
+      color: var(--sec);
+    }
+    .reorder-placeholder { height: 52px; border: 2px dashed var(--brand); border-radius: 13px; background: var(--brand-tint); list-style: none; }
     .reorder-tile.is-dragging { background: #fff; }
-    .reorder-send { width: 100%; margin-top: 4px; }
-    @media (min-width: 900px) { .reorder-slots { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+    .reorder-send { width: 100%; margin-top: 0; background-color: var(--van-deep, #0074A6); }
 
-    /* ── Kennel dropdowns + live van mockup (Reorder tab, 2026-07-31) ──
-       Per-dog <select> on each tile (compact, code-only labels) + a
-       collapsible per-van kennel mockup above the stop list. Light-theme
-       sibling of the /drive app's VAN KENNELS board; kept small per the
-       house subtle-UI rule — no bulky labels, tooltips carry the words. */
-    .reorder-kennels { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px; }
-    .reorder-kennel { font-size: 12px; font-weight: 600; padding: 3px 2px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: #334155; max-width: 92px; }
-    .reorder-kennel.is-un { border-color: #f59e0b; background: #fffbeb; }
-    .reorder-kennel-who { font-size: 10px; color: #64748b; max-width: 52px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .reorder-kboard { border: 1px solid #e2e8f0; border-radius: 8px; background: #f8fafc; padding: 8px 10px; margin-bottom: 10px; font-size: 12px; }
-    .reorder-kb-head { display: flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; -webkit-user-select: none; }
-    .reorder-kb-title { font-weight: 700; color: #1f2937; }
-    .reorder-kb-count { color: #64748b; }
-    .reorder-kb-un { color: #b45309; background: #fef3c7; border-radius: 999px; padding: 1px 8px; font-weight: 600; }
-    .reorder-kb-caret { margin-left: auto; color: #94a3b8; transition: transform .15s; }
+    /* Kennel dropdowns + van mockup (Reorder tab) */
+    .reorder-kennels { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px; }
+    .reorder-kennel {
+      appearance: none; -webkit-appearance: none;
+      font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums;
+      height: 34px; padding: 0 8px;
+      border: none; border-radius: 9px;
+      background: #fff; color: var(--ink);
+      box-shadow: 0 0.5px 0 rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.06);
+      max-width: 96px; cursor: pointer;
+    }
+    .reorder-kennel.is-un { background: rgba(255,149,0,0.14); color: #A85B00; }
+    .reorder-kennel-who { font-size: 11px; font-weight: 600; color: var(--sec); max-width: 52px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .reorder-kboard { min-width: 0; }
+    .reorder-kb-head {
+      display: flex; align-items: center; gap: 8px;
+      cursor: pointer; user-select: none; -webkit-user-select: none;
+      flex-wrap: wrap;
+    }
+    .reorder-kb-title {
+      font-weight: 700; font-size: 11px;
+      text-transform: uppercase; letter-spacing: 0.05em;
+      color: var(--sec);
+    }
+    .reorder-kb-count { color: var(--ter); font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .reorder-kb-un { color: #A85B00; background: rgba(255,149,0,0.14); border-radius: 9999px; padding: 1px 8px; font-weight: 700; font-size: 11px; }
+    .reorder-kb-caret { margin-left: auto; color: var(--ter); transition: transform 0.15s; }
     .reorder-kboard.collapsed .reorder-kb-caret { transform: rotate(-90deg); }
     .reorder-kboard.collapsed .reorder-kb-body { display: none; }
-    .reorder-kb-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; margin-top: 8px; }
-    .reorder-kb-doorlbl { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: #94a3b8; margin-bottom: 4px; text-align: center; }
-    .reorder-kb-row { display: grid; gap: 4px; margin-bottom: 4px; }
-    .reorder-kb-box { position: relative; border: 1px dashed #cbd5e1; border-radius: 6px; min-height: 36px; padding: 3px 5px 3px; background: #fff; overflow: hidden; }
-    .reorder-kb-box.is-occ { border-style: solid; border-color: var(--accent); background: #eef2ff; }
-    .reorder-kb-pos { display: block; font-size: 9px; font-weight: 800; letter-spacing: .05em; color: #94a3b8; line-height: 1.2; }
-    .reorder-kb-box.is-occ .reorder-kb-pos { color: var(--accent); }
-    .reorder-kb-dog { display: block; font-size: 11px; font-weight: 600; color: #1e293b; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .reorder-kb-dog em { font-style: normal; font-weight: 700; color: #fff; background: var(--accent); border-radius: 50%; padding: 0 4px; font-size: 9px; margin-left: 3px; }
-    .reorder-kb-box.has-arch::after { content: ''; position: absolute; right: 4px; bottom: 2px; width: 11px; height: 5px; border: 1px solid #94a3b8; border-bottom: none; border-radius: 10px 10px 0 0; opacity: .7; pointer-events: none; }
+    .reorder-kboard.collapsed .reorder-kb-note { display: none; }
+    .reorder-kb-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; margin-top: 7px; }
+    .reorder-kb-note { display: block; margin-top: 6px; font-size: 11px; font-weight: 500; color: var(--ter); }
+    .reorder-kb-doorlbl {
+      font-size: 9px; font-weight: 700;
+      letter-spacing: 0.05em; text-transform: uppercase;
+      color: var(--ter);
+      margin-bottom: 5px;
+    }
+    .reorder-kb-grid > .reorder-kb-rows, .reorder-kb-grid { min-width: 0; }
+    .reorder-kb-row { display: grid; gap: 1px; }
+    .reorder-kb-grid { background: var(--sep); border-radius: 10px; padding: 1px; overflow: hidden; display: flex; flex-direction: column; gap: 1px; }
+    .reorder-kb-grid .reorder-kb-doorlbl { background: #fff; margin: 0; padding: 5px 6px 3px; text-align: center; }
+    .reorder-kb-box {
+      position: relative;
+      min-height: 46px;
+      padding: 4px 3px;
+      background: #fff;
+      overflow: hidden;
+      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+      min-width: 0;
+    }
+    .reorder-kb-box.is-occ { background: var(--van-tint, #F4FBFF); }
+    .reorder-kb-pos { display: block; font-size: 9px; font-weight: 700; letter-spacing: 0.05em; color: var(--light); line-height: 1.2; }
+    .reorder-kb-box.is-occ .reorder-kb-pos { color: var(--ter); }
+    .reorder-kb-dog { display: block; font-size: 9px; font-weight: 600; color: var(--ink); line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+    .reorder-kb-dog em {
+      font-style: normal; font-weight: 700; color: #fff;
+      background: var(--van-deep, #0074A6); border-radius: 5px;
+      padding: 0 4px; font-size: 9px; margin-left: 3px;
+      font-variant-numeric: tabular-nums;
+    }
+    .reorder-kb-box.has-arch::after {
+      content: '';
+      position: absolute; right: 4px; bottom: 0;
+      width: 14px; height: 6px;
+      border: 1px solid var(--ter); border-bottom: none;
+      border-radius: 10px 10px 0 0;
+      opacity: 0.7; pointer-events: none;
+    }
     @media (max-width: 600px) {
       .reorder-tile { flex-wrap: wrap; }
       .reorder-kennels { order: 5; }
-      .reorder-kb-body { grid-template-columns: 1fr; }
     }
-  
-    /* ── Kennel position labels (added 2026-07-02) ───────────────────
-       Staff annotations from the owner's hand-marked reference so each
-       kennel's location is obvious: each .box carries a data-pos (e.g.
-       STP = Side Top Passenger) shown as a small tag in the box TOP-RIGHT
-       corner via an ::after pseudo-element (NOT a DOM node → survives
-       hydrate()'s innerHTML reset, can never be a drop target or block a
-       tile drag). z-index:1 so the rare 2-dog secondary stop input keeps
-       that corner. The SIDE grid gets Passenger/Driver labels, the BACK
-       grid a BACK label — pointer-events:none child <div>s (like the
-       van-door markers) → hydrate-safe, never drop targets. Additive. */
-    .box[data-pos]::after {
-      content: attr(data-pos);
-      position: absolute;
-      top: 4px;
-      right: 5px;
-      z-index: 1;
-      pointer-events: none;
-      font-size: 11px;
-      font-weight: 800;
-      letter-spacing: 0.4px;
-      line-height: 1;
-      color: #64748b;
-      background: rgba(255, 255, 255, 0.82);
-      padding: 2px 3px;
-      border-radius: 3px;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+
+    /* ── Desktop layer (≥1024px) ───────────────────────────────────── */
+    @media (min-width: 1024px) {
+      .app-header { padding: 12px 24px; }
+      .app-header-inner { flex-wrap: nowrap; gap: 20px; }
+      /* one row: brand · segmented control · (gap) · Online + Drive */
+      .brand { order: 0; flex: 1 1 0; }
+      .plan-nav { order: 1; margin-top: 0; flex: 0 0 420px; }
+      .online-pill { order: 2; height: 30px; margin-left: auto; }
+      .nav-tab-drive { order: 3; }
+      .page { max-width: 1240px; padding: 18px 24px 24px; gap: 16px; }
+      .plan-card, .tray-card { padding: 16px; }
+      .plan-row { flex-direction: row; align-items: center; flex-wrap: wrap; gap: 12px; }
+      .plan-actions { display: flex; flex: 0 0 auto; }
+      .plan-actions button { padding: 0 18px; }
+      .dock { position: static; background: none; border: 0; backdrop-filter: none; -webkit-backdrop-filter: none; display: block; flex: 0 0 auto; }
+      .dock-inner { padding: 0; max-width: none; width: auto; }
+      .dock-stats { display: none; }
+      .btn-transmit { min-height: 44px; border-radius: 10px; font-size: 15px; padding: 0 24px; }
+      .jump-bar { display: none; }
+      /* Staging tray, desktop twin: wrapping tiles left, fixed 280px column
+         on the right — Add row stacked above a full-width labelled Bin button.
+         display:contents lifts #tray/#bin out of .tray-area into this grid;
+         both keep their own boxes, so the #tray/#bin drag hit-tests are
+         unaffected (nothing hit-tests .tray-area itself). */
+      .tray-card {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 280px;
+        grid-template-rows: auto auto 1fr;
+        grid-template-areas: "label label" "tiles add" "tiles bin";
+        column-gap: 16px; row-gap: 10px;
+      }
+      .tray-label-row { grid-area: label; }
+      .tray-area { display: contents; }
+      .tiles-tray { grid-area: tiles; }
+      .tray-add { grid-area: add; align-self: start; }
+      #bin {
+        grid-area: bin; align-self: start;
+        width: 100%; min-height: 44px;
+        flex-direction: row; gap: 8px;
+      }
+      #bin .bin-label { font-size: 13px; }
+      #bin .bin-label::after { content: " selected dog"; }
+      .tray-add input[type="text"] { height: 44px; font-size: 15px; }
+      #addTileBtn { height: 44px; }
+      #printArea { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; align-items: start; }
+      .van-section { scroll-margin-top: 0; }
+      .departure-selector select { height: 42px; font-size: 15px; }
+      .run-opt { height: 34px; font-size: 12px; }
+      .route-controls .return-toggle { min-height: 40px; font-size: 14px; }
+      .route-controls .return-toggle input[type="checkbox"] { width: 20px; height: 20px; }
+      .route-controls .addr-input { height: 42px; font-size: 14px; }
+      .send-route-btn { min-height: 46px; font-size: 15px; }
+      .toast-container { bottom: 28px; max-width: 560px; width: auto; min-width: 320px; }
+      #reorderView { max-width: 1240px; padding: 18px 24px 24px; gap: 16px; }
+      .reorder-slots { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
     }
-    /* 2-dog kennels: the purple secondary stop-# input takes the top-right
-       corner, so move the position tag to the BOTTOM-right to keep it visible.
-       (:has() unsupported on very old browsers → tag simply stays top-right,
-       i.e. the prior behaviour — graceful, no regression.) */
-    .box:has(.box-inner.two)[data-pos]::after {
-      top: auto;
-      bottom: 4px;
-      z-index: 101;                        /* above the z:100 tile flex-items so the tag shows OVER the 2nd dog */
-      background: rgba(255, 255, 255, 0.92);
+    @media (min-width: 1240px) {
+      .reorder-slots { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     }
-    .van-label {
-      position: absolute;
-      z-index: 3;
-      pointer-events: none;
-      font-weight: 800;
-      letter-spacing: 0.6px;
-      text-transform: uppercase;
-      color: #64748b;
-      font-size: 11px;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+
+    /* ── Reduced motion ────────────────────────────────────────────── */
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        transition: none !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+      }
+      /* toasts rely on the fadeOut ANIMATION to disappear — keep them one
+         frame, they are removed from the DOM by JS timers anyway */
     }
-    .van-label--pass { top: 3px; left: 8px; }
-    .van-label--drv  { top: 3px; right: 8px; }
-    .van-label--back {
-      left: 0; right: 0; bottom: 1px;
-      text-align: center;
-      font-size: 12px;
-      letter-spacing: 3px;
-    }
-    @media (max-width: 400px) {
-      .box[data-pos]::after { font-size: 10px; padding: 1px 2px; }
-      .van-label { font-size: 10px; letter-spacing: 0.3px; }
+
+    /* ── Print ─────────────────────────────────────────────────────── */
+    @media print {
+      body { background: #fff !important; }
+      .app-header, .plan-card, .tray-card, .jump-bar, .dock,
+      .toast-container, #reorderView, .route-controls, .plan-hint { display: none !important; }
+      .page { max-width: 100%; padding: 0; }
+      #printArea { grid-template-columns: 1fr; gap: 10px; }
+      .van-section { box-shadow: none; padding: 10px; page-break-inside: avoid; }
+      .box { border: 1px solid #999; border-radius: 0; }
+      .box::before { content: "" !important; }
+      .tile-inbox { border: 1px solid #999 !important; box-shadow: none; }
     }
   </style>
 </head>
 <body>
-  <div class="toast-container" id="toastContainer"></div>
+  <div class="toast-container" id="toastContainer" role="status" aria-live="polite"></div>
   
-  <div class="plan-nav">
-    <div class="nav-tab active" data-plan="PM">🌆 PM<span class="tab-extra"> Plan</span></div>
-    <div class="nav-tab" data-plan="NEXT_AM">📅 Next Day AM</div>
-    <div class="nav-tab" data-plan="REORDER">🔄 Reorder<span class="tab-extra"> Routes</span></div>
-    <a class="nav-tab-drive" href="drive/" target="_blank" rel="noopener">🚐 Drive</a>
-  </div>
-  
+  <header class="app-header">
+    <div class="app-header-inner">
+      <div class="brand">
+        <img class="brand-logo" src="logo.png" alt="The Fairy Tails K9 Centre" />
+        <div class="brand-text">
+          <span class="brand-title">Van load plan</span>
+          <span class="brand-sub" id="brandDate">The Fairy Tails</span>
+        </div>
+      </div>
+      <span class="online-pill">
+        <span class="status-dot" id="statusDot"></span>
+        <span id="onlineStatus">Online</span>
+      </span>
+      <a class="nav-tab-drive" href="drive/" target="_blank" rel="noopener" title="Open the driver app">Drive <span class="drive-arrow" aria-hidden="true">→</span></a>
+      <div class="plan-nav">
+        <div class="seg-thumb" aria-hidden="true"></div>
+        <div class="nav-tab active" data-plan="PM" role="button" tabindex="0">PM</div>
+        <div class="nav-tab" data-plan="NEXT_AM" role="button" tabindex="0">Next day AM</div>
+        <div class="nav-tab" data-plan="REORDER" role="button" tabindex="0">Reorder</div>
+      </div>
+    </div>
+  </header>
+
   <div class="page">
-    <div class="topbar">
-      <div class="controls">
-        <div class="input-group">
-          <input id="tileText" type="text" placeholder="Enter dog name..." maxlength="50" />
-          <button id="addTileBtn" type="button" class="btn-primary">+ Add Dog</button>
+    <section class="plan-card">
+      <div class="plan-row">
+        <div class="plan-card-head">
+          <span class="plan-title" id="planTitle">PM plan · today</span>
+          <span class="plan-note" id="planNote">Drop-offs after daycare. Vans leave at 15:00 unless you change the time.</span>
+          <span class="sr-only" id="currentLabel">PM Plan</span>
         </div>
-        <div class="btn-group">
-          <button id="transmitBtn" class="btn-transmit" title="Transmit plan to Telegram">🚀 Transmit Plan</button>
-          <button id="shareBtn" class="btn-share">☁️ Share</button>
-          <button id="fetchBtn" class="btn-fetch">📥 Fetch</button>
-          <button id="clearBtn" class="btn-danger">🗑 Clear</button>
+        <div class="plan-actions">
+          <button id="shareBtn" class="btn-share">Share</button>
+          <button id="fetchBtn" class="btn-fetch">Fetch</button>
+          <button id="clearBtn" class="btn-danger">Clear</button>
         </div>
+        <div class="dock">
+          <div class="dock-inner">
+            <div class="dock-stats">
+              <span class="dock-total" id="dockTotal">0 dogs</span>
+              <span class="dock-sub">3 vans ready</span>
+            </div>
+            <button id="transmitBtn" class="btn-transmit" title="Transmit plan to Telegram">Transmit plan</button>
+          </div>
+        </div>
+      </div>
+      <div class="plan-foot">
+        <span id="planStats">0 dogs placed · 40 kennels free</span>
+        <span id="syncTime">Never synced</span>
+      </div>
+    </section>
+
+    <section class="tray-card">
+      <div class="tray-label-row">
+        <span class="tray-label">Staging tray</span>
+        <span class="tray-note" id="trayNote"></span>
       </div>
       <div class="tray-area">
         <div class="tiles-tray" id="tray"></div>
-        <div id="bin">🗑</div>
+        <div id="bin" role="button" tabindex="0" aria-label="Remove the selected dog from the plan" title="Remove the selected dog from the plan"><span class="bin-glyph" aria-hidden="true"></span><span class="bin-label">Bin</span></div>
       </div>
-      <div class="status-bar">
-        <div class="online-indicator">
-          <span class="status-dot" id="statusDot"></span>
-          <span id="onlineStatus">Online</span>
-        </div>
-        <div id="syncTime">Cloud: Never synced</div>
+      <div class="tray-add">
+        <input id="tileText" type="text" placeholder="Add a dog by name" aria-label="Add a dog by name" maxlength="50" />
+        <button id="addTileBtn" type="button">Add</button>
+      </div>
+    </section>
+
+    <div class="jump-bar" id="jumpBar">
+      <div class="jump-bar-inner">
+        <button type="button" class="jump-chip" data-jump="bv"><span class="jump-code">BV</span><span class="jump-count" id="jump-bv-count">0 dogs</span></button>
+        <button type="button" class="jump-chip" data-jump="sv"><span class="jump-code">SV</span><span class="jump-count" id="jump-sv-count">0 dogs</span></button>
+        <button type="button" class="jump-chip" data-jump="bvx"><span class="jump-code">BVX</span><span class="jump-count" id="jump-bvx-count">0 dogs</span></button>
       </div>
     </div>
 
-    <div class="layout-card" id="printArea">
+    <div id="printArea">
       
       <div class="van-section" data-van="bv">
-        <div class="card-title">
-          <span>🚐 Big Van (BV)</span>
-          <div class="selector-row">
+        <div class="van-head">
+          <span class="van-badge-big" aria-hidden="true">BV</span>
+          <div class="van-headtext">
+            <span class="van-name">Big van</span>
+            <span class="van-sub">Transit · 15 kennels</span>
+          </div>
+          <span class="dog-count" id="bv-count">0 dogs</span>
+        </div>
+        <div class="selector-row">
           <div class="departure-selector" data-van="bv">
-            <label>Departs:</label>
+            <label for="bv-departure">Departs</label>
             <select id="bv-departure">
               <option value="07:30">07:30</option>
               <option value="08:00">08:00</option>
@@ -1383,21 +1239,24 @@
             </select>
           </div>
           <div class="runtype-selector" data-van="bv">
-            <label>Run:</label>
-            <select id="bv-runtype">
+            <label>Run</label>
+            <select id="bv-runtype" tabindex="-1" aria-hidden="true">
               <option value="FD">FD</option>
               <option value="HD">HD</option>
             </select>
+            <div class="run-seg" data-run-seg="bv">
+              <div class="run-thumb" aria-hidden="true"></div>
+              <button type="button" class="run-opt" data-run="FD">Full day</button>
+              <button type="button" class="run-opt" data-run="HD">Half day</button>
+            </div>
           </div>
-          </div>
-          <span id="currentLabel" style="color: var(--accent);">PM Plan</span>
-          <span class="dog-count" id="bv-count">0 dogs</span>
         </div>
         <div class="two-cols">
-          <div class="kennel-grid" data-door="side">
-            <div class="van-door van-door--side" title="Side door" aria-label="Side door"></div>
-            <div class="van-label van-label--pass" aria-hidden="true">Passenger Side</div>
-            <div class="van-label van-label--drv" aria-hidden="true">Driver Side</div>
+          <div class="grid-shell" data-shell="side">
+            <div class="grid-shell-head"><span class="gs-title">Side section</span><span class="gs-door">Side door</span></div>
+            <div class="grid-shell-cols" aria-hidden="true"><span>Passenger</span><span>Driver</span></div>
+            <div class="van-door--side" title="Side door" aria-hidden="true"></div>
+            <div class="kennel-grid" data-door="side">
             <div style="display:grid; grid-template-columns:repeat(3,1fr)">
               <div class="box" data-box="bv-c1" data-pos="STP"></div>
               <div class="box" data-box="bv-c2" data-pos="STM"></div>
@@ -1411,10 +1270,12 @@
               <div class="box" data-box="bv-c6" data-pos="SBP"></div>
               <div class="box" data-box="bv-c7" data-pos="SBD"></div>
             </div>
+            </div>
           </div>
-          <div class="kennel-grid" data-door="back">
-            <div class="van-door van-door--back" title="Back door" aria-label="Back door"></div>
-            <div class="van-label van-label--back" aria-hidden="true">BACK</div>
+          <div class="grid-shell" data-shell="back">
+            <div class="grid-shell-head"><span class="gs-title">Rear section</span><span class="gs-door">Back doors</span></div>
+            <div class="grid-shell-cols" aria-hidden="true"><span>Passenger</span><span>Driver</span></div>
+            <div class="kennel-grid" data-door="back">
             <div style="display:grid; grid-template-columns:repeat(3,1fr)">
               <div class="box" data-box="bv-b1" data-pos="BTP"></div>
               <div class="box" data-box="bv-b2" data-pos="BTM"></div>
@@ -1429,6 +1290,8 @@
               <div class="box" data-box="bv-b7" data-pos="BBP"></div>
               <div class="box" data-box="bv-b8" data-pos="BBD"></div>
             </div>
+            </div>
+            <div class="grid-shell-backdoor" title="Back doors" aria-hidden="true"></div>
           </div>
         </div>
         <div class="route-controls" data-van-route="bv">
@@ -1436,14 +1299,14 @@
             <div class="toggle-row">
               <label class="return-toggle">
                 <input type="checkbox" class="start-trip-cb" checked>
-                <span>Start from Centre</span>
+                <span>Start from the centre</span>
               </label>
               <input type="text" class="addr-input start-address-input" placeholder="Enter start address" aria-label="Custom start address for Big Van" hidden>
             </div>
             <div class="toggle-row">
               <label class="return-toggle">
                 <input type="checkbox" class="return-trip-cb" checked>
-                <span>Return to Centre</span>
+                <span>Return to the centre</span>
               </label>
               <input type="text" class="addr-input end-address-input" placeholder="Enter end address" aria-label="Custom end address for Big Van" hidden>
             </div>
@@ -1451,15 +1314,22 @@
           <button type="button" class="send-route-btn" data-van="BV" aria-label="Stage optimised route for Big Van to driver">
             <span class="send-route-btn__label">📍 Stage Route</span>
           </button>
+          <span class="staged-caption" hidden></span>
         </div>
       </div>
 
       <div class="van-section" data-van="sv">
-        <div class="card-title">
-          <span>🚗 Small Van (SV)</span>
-          <div class="selector-row">
+        <div class="van-head">
+          <span class="van-badge-big" aria-hidden="true">SV</span>
+          <div class="van-headtext">
+            <span class="van-name">Small van</span>
+            <span class="van-sub">Renault · 10 kennels</span>
+          </div>
+          <span class="dog-count" id="sv-count">0 dogs</span>
+        </div>
+        <div class="selector-row">
           <div class="departure-selector" data-van="sv">
-            <label>Departs:</label>
+            <label for="sv-departure">Departs</label>
             <select id="sv-departure">
               <option value="07:30">07:30</option>
               <option value="08:00">08:00</option>
@@ -1483,20 +1353,24 @@
             </select>
           </div>
           <div class="runtype-selector" data-van="sv">
-            <label>Run:</label>
-            <select id="sv-runtype">
+            <label>Run</label>
+            <select id="sv-runtype" tabindex="-1" aria-hidden="true">
               <option value="FD">FD</option>
               <option value="HD">HD</option>
             </select>
+            <div class="run-seg" data-run-seg="sv">
+              <div class="run-thumb" aria-hidden="true"></div>
+              <button type="button" class="run-opt" data-run="FD">Full day</button>
+              <button type="button" class="run-opt" data-run="HD">Half day</button>
+            </div>
           </div>
-          </div>
-          <span class="dog-count" id="sv-count">0 dogs</span>
         </div>
         <div class="two-cols">
-          <div class="kennel-grid" data-door="side">
-            <div class="van-door van-door--side" title="Side door" aria-label="Side door"></div>
-            <div class="van-label van-label--pass" aria-hidden="true">Passenger Side</div>
-            <div class="van-label van-label--drv" aria-hidden="true">Driver Side</div>
+          <div class="grid-shell" data-shell="side">
+            <div class="grid-shell-head"><span class="gs-title">Side section</span><span class="gs-door">Side door</span></div>
+            <div class="grid-shell-cols" aria-hidden="true"><span>Passenger</span><span>Driver</span></div>
+            <div class="van-door--side" title="Side door" aria-hidden="true"></div>
+            <div class="kennel-grid" data-door="side">
             <div style="display:grid; grid-template-columns:repeat(3,1fr)">
               <div class="box" data-box="sv-c1" data-pos="STP"></div>
               <div class="box" data-box="sv-c2" data-pos="STM"></div>
@@ -1506,10 +1380,12 @@
               <div class="box" data-box="sv-c4" data-pos="SBP"></div>
               <div class="box" data-box="sv-c5" data-pos="SBD"></div>
             </div>
+            </div>
           </div>
-          <div class="kennel-grid" data-door="back">
-            <div class="van-door van-door--back" title="Back door" aria-label="Back door"></div>
-            <div class="van-label van-label--back" aria-hidden="true">BACK</div>
+          <div class="grid-shell" data-shell="back">
+            <div class="grid-shell-head"><span class="gs-title">Rear section</span><span class="gs-door">Back doors</span></div>
+            <div class="grid-shell-cols" aria-hidden="true"><span>Passenger</span><span>Driver</span></div>
+            <div class="kennel-grid" data-door="back">
             <div style="display:grid; grid-template-columns:repeat(3,1fr)">
               <div class="box" data-box="sv-b1" data-pos="BTP"></div>
               <div class="box" data-box="sv-b2" data-pos="BTM"></div>
@@ -1523,6 +1399,8 @@
                 <div class="wheel-arch left"></div>
               </div>
             </div>
+            </div>
+            <div class="grid-shell-backdoor" title="Back doors" aria-hidden="true"></div>
           </div>
         </div>
         <div class="route-controls" data-van-route="sv">
@@ -1530,14 +1408,14 @@
             <div class="toggle-row">
               <label class="return-toggle">
                 <input type="checkbox" class="start-trip-cb" checked>
-                <span>Start from Centre</span>
+                <span>Start from the centre</span>
               </label>
               <input type="text" class="addr-input start-address-input" placeholder="Enter start address" aria-label="Custom start address for Small Van" hidden>
             </div>
             <div class="toggle-row">
               <label class="return-toggle">
                 <input type="checkbox" class="return-trip-cb" checked>
-                <span>Return to Centre</span>
+                <span>Return to the centre</span>
               </label>
               <input type="text" class="addr-input end-address-input" placeholder="Enter end address" aria-label="Custom end address for Small Van" hidden>
             </div>
@@ -1545,6 +1423,7 @@
           <button type="button" class="send-route-btn" data-van="SV" aria-label="Stage optimised route for Small Van to driver">
             <span class="send-route-btn__label">📍 Stage Route</span>
           </button>
+          <span class="staged-caption" hidden></span>
         </div>
       </div>
 
@@ -1552,11 +1431,17 @@
            BVX is an EXACT clone of the BV (Big Van) section above (same 15-box
            two-grid kennel layout, styling, controls), occupying DV's former slot. -->
       <div class="van-section" data-van="bvx">
-        <div class="card-title">
-          <span>🚐 Big Van Xray (BVX)</span>
-          <div class="selector-row">
+        <div class="van-head">
+          <span class="van-badge-big" aria-hidden="true">BVX</span>
+          <div class="van-headtext">
+            <span class="van-name">Big van X-ray</span>
+            <span class="van-sub">Transit · 15 kennels</span>
+          </div>
+          <span class="dog-count" id="bvx-count">0 dogs</span>
+        </div>
+        <div class="selector-row">
           <div class="departure-selector" data-van="bvx">
-            <label>Departs:</label>
+            <label for="bvx-departure">Departs</label>
             <select id="bvx-departure">
               <option value="07:30">07:30</option>
               <option value="08:00">08:00</option>
@@ -1580,20 +1465,24 @@
             </select>
           </div>
           <div class="runtype-selector" data-van="bvx">
-            <label>Run:</label>
-            <select id="bvx-runtype">
+            <label>Run</label>
+            <select id="bvx-runtype" tabindex="-1" aria-hidden="true">
               <option value="FD">FD</option>
               <option value="HD">HD</option>
             </select>
+            <div class="run-seg" data-run-seg="bvx">
+              <div class="run-thumb" aria-hidden="true"></div>
+              <button type="button" class="run-opt" data-run="FD">Full day</button>
+              <button type="button" class="run-opt" data-run="HD">Half day</button>
+            </div>
           </div>
-          </div>
-          <span class="dog-count" id="bvx-count">0 dogs</span>
         </div>
         <div class="two-cols">
-          <div class="kennel-grid" data-door="side">
-            <div class="van-door van-door--side" title="Side door" aria-label="Side door"></div>
-            <div class="van-label van-label--pass" aria-hidden="true">Passenger Side</div>
-            <div class="van-label van-label--drv" aria-hidden="true">Driver Side</div>
+          <div class="grid-shell" data-shell="side">
+            <div class="grid-shell-head"><span class="gs-title">Side section</span><span class="gs-door">Side door</span></div>
+            <div class="grid-shell-cols" aria-hidden="true"><span>Passenger</span><span>Driver</span></div>
+            <div class="van-door--side" title="Side door" aria-hidden="true"></div>
+            <div class="kennel-grid" data-door="side">
             <div style="display:grid; grid-template-columns:repeat(3,1fr)">
               <div class="box" data-box="bvx-c1" data-pos="STP"></div>
               <div class="box" data-box="bvx-c2" data-pos="STM"></div>
@@ -1607,10 +1496,12 @@
               <div class="box" data-box="bvx-c6" data-pos="SBP"></div>
               <div class="box" data-box="bvx-c7" data-pos="SBD"></div>
             </div>
+            </div>
           </div>
-          <div class="kennel-grid" data-door="back">
-            <div class="van-door van-door--back" title="Back door" aria-label="Back door"></div>
-            <div class="van-label van-label--back" aria-hidden="true">BACK</div>
+          <div class="grid-shell" data-shell="back">
+            <div class="grid-shell-head"><span class="gs-title">Rear section</span><span class="gs-door">Back doors</span></div>
+            <div class="grid-shell-cols" aria-hidden="true"><span>Passenger</span><span>Driver</span></div>
+            <div class="kennel-grid" data-door="back">
             <div style="display:grid; grid-template-columns:repeat(3,1fr)">
               <div class="box" data-box="bvx-b1" data-pos="BTP"></div>
               <div class="box" data-box="bvx-b2" data-pos="BTM"></div>
@@ -1625,6 +1516,8 @@
               <div class="box" data-box="bvx-b7" data-pos="BBP"></div>
               <div class="box" data-box="bvx-b8" data-pos="BBD"></div>
             </div>
+            </div>
+            <div class="grid-shell-backdoor" title="Back doors" aria-hidden="true"></div>
           </div>
         </div>
         <div class="route-controls" data-van-route="bvx">
@@ -1632,14 +1525,14 @@
             <div class="toggle-row">
               <label class="return-toggle">
                 <input type="checkbox" class="start-trip-cb" checked>
-                <span>Start from Centre</span>
+                <span>Start from the centre</span>
               </label>
               <input type="text" class="addr-input start-address-input" placeholder="Enter start address" aria-label="Custom start address for BVX" hidden>
             </div>
             <div class="toggle-row">
               <label class="return-toggle">
                 <input type="checkbox" class="return-trip-cb" checked>
-                <span>Return to Centre</span>
+                <span>Return to the centre</span>
               </label>
               <input type="text" class="addr-input end-address-input" placeholder="Enter end address" aria-label="Custom end address for BVX" hidden>
             </div>
@@ -1647,9 +1540,11 @@
           <button type="button" class="send-route-btn" data-van="BVX" aria-label="Stage optimised route for BVX to driver">
             <span class="send-route-btn__label">📍 Stage Route</span>
           </button>
+          <span class="staged-caption" hidden></span>
         </div>
       </div>
     </div>
+    <p class="plan-hint">Drag a dog between kennels — or tap it, then tap its new kennel. Dogs left in the tray never ride.</p>
   </div>
 
   <!-- Reorder Routes — staging tab (added 2026-06-26). JS (route_reorder.js) builds the sections/cards. -->
@@ -1813,6 +1708,11 @@
       let dragId = null;
       let startX, startY;
       let transmitComplete = false;
+      // Tap-to-select layer (2026-08-01 redesign): the selected tile id, and a
+      // short click-suppression window so the click synthesised after a drag
+      // never doubles as a selection tap.
+      let selTid = null;
+      let suppressClickUntil = 0;
 
       // ==================== TOAST NOTIFICATIONS ====================
       function showToast(message, type = 'info') {
@@ -1821,7 +1721,7 @@
         toast.className = `toast toast-${type}`;
         toast.textContent = message;
         container.appendChild(toast);
-        setTimeout(() => toast.remove(), 3000);
+        setTimeout(() => toast.remove(), 4200);
       }
 
       // ==================== ONLINE STATUS ====================
@@ -2048,7 +1948,7 @@
         
         transmitBtn.disabled = true;
         transmitBtn.classList.add('transmitting');
-        transmitBtn.textContent = '📡 Sending to Telegram...';
+        transmitBtn.textContent = 'Sending…';
         
         try {
           const response = await fetch(SCRIPT_URL, {
@@ -2083,7 +1983,7 @@
             transmitComplete = true;
             transmitBtn.classList.remove('transmitting');
             transmitBtn.classList.add('success');
-            transmitBtn.textContent = `✅ ${validDogs.length} dogs sent to Telegram`;
+            transmitBtn.textContent = `Sent · ${validDogs.length} dogs`;
             
             let successMsg = `${planLabel}: ${validDogs.length} dogs sent to Telegram for review!`;
             if (invalidDogs.length > 0) {
@@ -2110,7 +2010,7 @@
           console.error('Transmit error:', error);
           transmitBtn.disabled = false;
           transmitBtn.classList.remove('transmitting');
-          transmitBtn.textContent = '🚀 Transmit Plan';
+          transmitBtn.textContent = 'Transmit plan';
           showToast(`Failed: ${error.message}`, 'error');
         }
       }
@@ -2118,7 +2018,7 @@
       // ==================== CLOUD OPERATIONS ====================
       async function cloudFetch() {
         fetchBtn.disabled = true;
-        fetchBtn.textContent = "📥 Fetching...";
+        fetchBtn.textContent = "Fetching…";
         try {
           const res = await fetch(`${SCRIPT_URL}?planId=${currentPlan}`, {
             method: 'GET',
@@ -2134,7 +2034,7 @@
             state = JSON.parse(cloud.state);
             // Migrate old stops format if needed
             migrateStopsFormat();
-            syncTimeEl.textContent = `Cloud: ${cloud.time}`;
+            syncTimeEl.textContent = `Synced ${cloud.time}`;
             localSave();
             hydrate();
             showToast('Plan fetched from cloud!', 'success');
@@ -2146,7 +2046,7 @@
           showToast('Fetch failed. Check your connection.', 'error');
         } finally {
           fetchBtn.disabled = false;
-          fetchBtn.textContent = "📥 Fetch";
+          fetchBtn.textContent = "Fetch";
         }
       }
 
@@ -2164,7 +2064,7 @@
 
       async function cloudShare() {
         shareBtn.disabled = true;
-        shareBtn.textContent = "☁️ Sharing...";
+        shareBtn.textContent = "Sharing…";
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), SHARE_TIMEOUT_MS);
         try {
@@ -2190,7 +2090,7 @@
             } catch (ignore) {}
           }
           if (backendError) throw new Error(backendError);
-          syncTimeEl.textContent = `Cloud: ${time}`;
+          syncTimeEl.textContent = `Synced ${time}`;
           showToast(`${currentPlan.replace('_', ' ')} plan shared to cloud!`, 'success');
         } catch(e) {
           console.error("Share Error:", e);
@@ -2201,7 +2101,7 @@
         } finally {
           clearTimeout(timer);
           shareBtn.disabled = false;
-          shareBtn.textContent = "☁️ Share";
+          shareBtn.textContent = "Share";
         }
       }
       
@@ -2234,7 +2134,7 @@
         transmitComplete = false;
         transmitBtn.disabled = false;
         transmitBtn.classList.remove('success', 'transmitting');
-        transmitBtn.textContent = '🚀 Transmit Plan';
+        transmitBtn.textContent = 'Transmit plan';
         
         // Apply saved departure (migrating legacy "07:30 am" → "07:30") or
         // fall back to this plan's default (PM=15:00 all vans;
@@ -2273,6 +2173,7 @@
         localSave();
 
         hydrate();
+        uiAfterPlanLoad();   // 2026-08-01 redesign: seg thumb, plan copy, run-type proxies
       }
 
       document.querySelectorAll('.departure-selector select').forEach(select => {
@@ -2532,7 +2433,8 @@
       
       function finishDrag(clientX, clientY) {
         isDragging = false;
-        
+        suppressClickUntil = Date.now() + 400;   // the post-drag click is not a selection tap
+
         // Clean up visual feedback
         if (dragSourceElement) {
           dragSourceElement.classList.remove('touch-active', 'long-press-active');
@@ -2555,15 +2457,21 @@
           });
           
           if (bin) {
+            const binned = (state.tiles[dragId] && state.tiles[dragId].text) || 'Dog';
             delete state.tiles[dragId];
-            showToast('Dog removed', 'info');
+            showToast(binned + ' removed from today’s plan', 'info');
           } else if (box) {
             const boxId = box.dataset.box;
             if (!state.placements[boxId]) state.placements[boxId] = [];
             if (state.placements[boxId].length < 2) {
               state.placements[boxId].push(dragId);
+              const movedTile = state.tiles[dragId];
+              if (movedTile) {
+                showToast(movedTile.text + ' → ' + boxId.split('-')[0].toUpperCase() +
+                  (box.dataset.pos ? ' · ' + box.dataset.pos : ''), 'success');
+              }
             } else {
-              showToast('Box is full (max 2 dogs)', 'warning');
+              showToast('That kennel already has two dogs', 'warning');
             }
           }
           
@@ -2682,11 +2590,14 @@
         const tile = document.createElement('div');
         tile.className = className;
         tile.textContent = state.tiles[tid].text;
-        
+        // Every tile carries its id (2026-08-01 redesign): the Android
+        // document-level drag delegation always needed it; the tap-to-select
+        // layer now uses it on every platform. Inert on the desktop drag path.
+        tile.setAttribute('data-tile-id', tid);
+
         if (isAndroid) {
-          // ANDROID: Mark tile as draggable (whole tile is draggable via long-press)
-          tile.setAttribute('data-tile-id', tid);
-          // Touch events handled at document level
+          // ANDROID: whole tile is draggable via long-press;
+          // touch events handled at document level.
         } else {
           // WINDOWS/DESKTOP: Pointer events on whole tile
           wirePointerEvents(tile, tid);
@@ -2813,11 +2724,22 @@
         const btn = document.createElement('div');
         btn.className = 'alt-toggle' + (isAltLocked(state.tiles[tid] && state.tiles[tid].text) ? ' is-alt' : '');
         btn.title = 'Pick-up address (1st / 2nd)';
-        // The ▼ is a SEPARATE overlay (not a tile child), so it only needs a click handler;
+        btn.setAttribute('role', 'button');
+        btn.setAttribute('tabindex', '0');
+        btn.setAttribute('aria-label', 'Pick-up address (1st / 2nd) for ' +
+          stripAlt((state.tiles[tid] && state.tiles[tid].text) || ''));
+        // The ▼ is a SEPARATE overlay (not a tile child), so it only needs click/key handlers;
         // it is never in the tile's drag path, so it cannot block dragging.
         btn.addEventListener('click', function (e) {
           e.stopPropagation();
           openAltMenu(tid, btn);
+        });
+        btn.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            e.stopPropagation();
+            openAltMenu(tid, btn);
+          }
         });
         return btn;
       }
@@ -2826,16 +2748,43 @@
       // positioned over the tile's top-right corner. Keeping the tile itself untouched is
       // what preserves iOS Safari dragging. Called from hydrate right after the tile is
       // appended (its offsetLeft/Top/Width are then laid out, relative to the positioned #tray).
+      //
+      // Re-placement (2026-08-01): tiles appended LATER in the same hydrate, a
+      // fitText pass, or the web-font swap can re-wrap the tray AFTER this
+      // tile's rAF ran, leaving the overlay on a stale spot. Every overlay's
+      // place() is kept in altOverlayPlacers (reset each hydrate) and re-run
+      // on late layout settles, fonts.ready and window resize.
+      let altOverlayPlacers = [];
+      function replaceAltOverlays() {
+        altOverlayPlacers.forEach(function (fn) { try { fn(); } catch (e) {} });
+      }
+      window.addEventListener('resize', replaceAltOverlays);
+      if (document.fonts && document.fonts.ready && document.fonts.ready.then) {
+        document.fonts.ready.then(function () { requestAnimationFrame(replaceAltOverlays); });
+      }
       function decorateStagingTile(tileEl, tid) {
         if (!tileEl || !state.tiles[tid] || !tileEl.parentNode) return;
         const btn = makeAltToggle(tid);
         tileEl.parentNode.appendChild(btn);
+        // Address tag line ("1st address" / "2nd address") — like the ▼, a
+        // SEPARATE #tray-anchored overlay, never a tile child (iOS drag).
+        const locked = isAltLocked(state.tiles[tid].text);
+        const tag = document.createElement('span');
+        tag.className = 'tile-tag' + (locked ? ' is-alt-tag' : '');
+        tag.textContent = locked ? '2nd address' : '1st address';
+        tileEl.parentNode.appendChild(tag);
         const place = function () {
-          btn.style.left = (tileEl.offsetLeft + tileEl.offsetWidth - 23) + 'px';
-          btn.style.top  = (tileEl.offsetTop + 1) + 'px';
+          btn.style.left = (tileEl.offsetLeft + tileEl.offsetWidth - 22) + 'px';
+          btn.style.top  = (tileEl.offsetTop - 6) + 'px';
+          tag.style.left = (tileEl.offsetLeft + 12) + 'px';
+          tag.style.top  = (tileEl.offsetTop + tileEl.offsetHeight - 22) + 'px';
+          tag.style.maxWidth = Math.max(40, tileEl.offsetWidth - 20) + 'px';
         };
         place();
         requestAnimationFrame(place);   // re-place after layout/fitText settles
+        altOverlayPlacers.push(place);
+        setTimeout(place, 250);         // late settles: other tiles' fitText, font swap
+        setTimeout(place, 700);
       }
 
       function handleDragEnter(e) {
@@ -2849,7 +2798,8 @@
       // ==================== UI RENDERING ====================
       function hydrate() {
         tray.innerHTML = '';
-        
+        altOverlayPlacers = [];   // the ▼/tag overlays were just destroyed with the tray
+
         const vanCounts = { bv: 0, sv: 0, bvx: 0 };
         
         document.querySelectorAll('.box').forEach(box => {
@@ -2875,6 +2825,7 @@
           stopPrimary.type = 'text';
           stopPrimary.maxLength = 3;
           stopPrimary.placeholder = '#';
+          stopPrimary.setAttribute('aria-label', 'Stop number for ' + (box.dataset.pos || boxId));
           stopPrimary.value = stopObj.primary || '';
           stopPrimary.oninput = () => {
             setStopValue(boxId, 'primary', stopPrimary.value);
@@ -2887,9 +2838,10 @@
             stopSecondary.className = 'stop-input-secondary';
             stopSecondary.type = 'text';
             stopSecondary.maxLength = 3;
-            stopSecondary.placeholder = '#2';
+            stopSecondary.placeholder = '↑';
             stopSecondary.value = stopObj.secondary || '';
-            stopSecondary.title = 'Stop number for second dog (leave empty if same as first)';
+            stopSecondary.title = 'Second dog’s stop (blank = same stop)';
+            stopSecondary.setAttribute('aria-label', 'Second dog’s stop (blank = same stop)');
             stopSecondary.oninput = () => {
               setStopValue(boxId, 'secondary', stopSecondary.value);
             };
@@ -2942,13 +2894,22 @@
             requestAnimationFrame(() => fitText(textEl));
           }
         });
+
+        // 2026-08-01 redesign: re-apply the tap-selection highlight to the
+        // rebuilt tiles and refresh the derived counters (footer/dock/jump bar).
+        refreshSelectionUi();
+        updateDerivedStats();
       }
 
       function fitText(node, isExport = false) {
         if (!node.clientWidth || !node.clientHeight) return;
-        
-        const maxSize = isExport ? 160 : 100;
-        let lo = 10, hi = maxSize, best = 14;
+
+        // Design-system caps (2026-08-01): tray tiles target 15px, kennel
+        // tiles 13px (12px when two share, via CSS) — fitText only ever
+        // SHRINKS below those for long names, never inflates past them.
+        const designCap = node.classList && node.classList.contains('tile') ? 15 : 13;
+        const maxSize = isExport ? 160 : designCap;
+        let lo = 9, hi = maxSize, best = Math.min(13, designCap);
         
         while (lo <= hi) {
           const mid = Math.floor((lo + hi) / 2);
@@ -2979,7 +2940,7 @@
         input.value = '';
         localSave();
         hydrate();
-        showToast(`Added: ${text}`, 'success');
+        showToast(`${text} added to the staging tray`, 'success');
         input.focus();
       };
       
@@ -3017,7 +2978,7 @@
           transmitComplete = false;
           transmitBtn.disabled = false;
           transmitBtn.classList.remove('success', 'transmitting');
-          transmitBtn.textContent = '🚀 Transmit Plan';
+          transmitBtn.textContent = 'Transmit plan';
           
           showToast('Local data cleared', 'info');
         }
@@ -3055,6 +3016,276 @@
         console.log('- Drag: Touch/click anywhere on tile');
       }
 
+      // ==================== TAP-TO-SELECT + UI ENHANCEMENTS (2026-08-01 redesign) ====================
+      // Additive presentation layer for the Fairy Tails Design System restyle.
+      // Every move routes through the SAME primitives the drag engine uses
+      // (saveUndoState / state.placements / localSave / hydrate), so the
+      // 2-per-kennel cap, undo and persistence hold by construction. Nothing
+      // here touches payloads, endpoints or the protected drag engines.
+
+      // Lifted from the RouteSender.init inline hook (2026-07-31) so the tap
+      // layer and the Reorder write-back share ONE move implementation.
+      // Mirrors finishDrag's semantics; refuses rather than half-applies.
+      function moveTileToBoxHost(tileId, boxId) {
+        if (!state.tiles || !state.tiles[tileId]) return false;
+        var arr = state.placements[boxId] || [];
+        if (arr.indexOf(tileId) !== -1) return false;   // already there
+        if (arr.length >= 2) return false;              // box full — leave the grid alone
+        saveUndoState();
+        Object.keys(state.placements).forEach(function (k) {
+          state.placements[k] = (state.placements[k] || []).filter(function (t) { return t !== tileId; });
+        });
+        (state.placements[boxId] = state.placements[boxId] || []).push(tileId);
+        localSave();
+        hydrate();
+        return true;
+      }
+
+      function isPlacedTile(tid) {
+        return Object.keys(state.placements).some(function (k) {
+          return (state.placements[k] || []).indexOf(tid) !== -1;
+        });
+      }
+
+      function refreshSelectionUi() {
+        if (selTid && !state.tiles[selTid]) selTid = null;
+        document.querySelectorAll('.tile.is-selected, .tile-inbox.is-selected').forEach(function (el) {
+          el.classList.remove('is-selected');
+        });
+        document.querySelectorAll('.box.can-take').forEach(function (el) { el.classList.remove('can-take'); });
+        tray.classList.toggle('can-return', !!selTid && isPlacedTile(selTid));
+        var note = document.getElementById('trayNote');
+        if (note) {
+          if (selTid) {
+            note.textContent = 'Moving ' + state.tiles[selTid].text + ' — tap a kennel';
+          } else {
+            var waiting = tray.querySelectorAll('.tile').length;
+            note.textContent = waiting ? (waiting + (waiting === 1 ? ' dog waiting' : ' dogs waiting')) : '';
+          }
+          note.classList.toggle('is-moving', !!selTid);
+        }
+        if (!selTid) return;
+        var el = document.querySelector('[data-tile-id="' + selTid + '"]');
+        if (el) el.classList.add('is-selected');
+        document.querySelectorAll('.box').forEach(function (box) {
+          var ids = state.placements[box.dataset.box] || [];
+          if (ids.indexOf(selTid) !== -1) return;
+          if (ids.length < 2) box.classList.add('can-take');
+        });
+      }
+
+      function tapPlaceInBox(box) {
+        var boxId = box.dataset.box;
+        var ids = state.placements[boxId] || [];
+        if (ids.indexOf(selTid) !== -1) { selTid = null; refreshSelectionUi(); return; }
+        var text = state.tiles[selTid].text;
+        if (moveTileToBoxHost(selTid, boxId)) {
+          selTid = null;
+          showToast(text + ' → ' + boxId.split('-')[0].toUpperCase() +
+            (box.dataset.pos ? ' · ' + box.dataset.pos : ''), 'success');
+          refreshSelectionUi();
+        } else {
+          showToast('That kennel already has two dogs', 'warning');
+        }
+      }
+
+      function tapReturnToTray() {
+        if (!isPlacedTile(selTid)) { selTid = null; refreshSelectionUi(); return; }
+        var text = state.tiles[selTid].text;
+        saveUndoState();
+        Object.keys(state.placements).forEach(function (k) {
+          state.placements[k] = (state.placements[k] || []).filter(function (t) { return t !== selTid; });
+        });
+        selTid = null;
+        localSave();
+        hydrate();
+        showToast(text + ' returned to the staging tray', 'info');
+      }
+
+      function tapBinSelected() {
+        var text = state.tiles[selTid].text;
+        saveUndoState();
+        Object.keys(state.placements).forEach(function (k) {
+          state.placements[k] = (state.placements[k] || []).filter(function (t) { return t !== selTid; });
+        });
+        delete state.tiles[selTid];
+        selTid = null;
+        localSave();
+        hydrate();
+        showToast(text + ' removed from today’s plan', 'info');
+      }
+
+      document.addEventListener('click', function (e) {
+        if (isDragging || Date.now() < suppressClickUntil) return;
+        var t = e.target;
+        if (!t || !t.closest) return;
+        if (t.closest('#reorderView') || t.closest('.alt-toggle') || t.closest('.alt-menu')) return;
+        var tileEl = t.closest('.tile, .tile-inbox');
+        if (tileEl) {
+          var tid = tileEl.getAttribute('data-tile-id');
+          if (!tid || !state.tiles[tid]) return;
+          selTid = (selTid === tid) ? null : tid;
+          refreshSelectionUi();
+          return;
+        }
+        if (!selTid || !state.tiles[selTid]) return;
+        if (t.closest('input, select, textarea, a, button')) return;
+        if (t.closest('#bin')) { tapBinSelected(); return; }
+        var box = t.closest('.box');
+        if (box) { tapPlaceInBox(box); return; }
+        if (t.closest('#tray')) { tapReturnToTray(); return; }
+      });
+
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && selTid) { selTid = null; refreshSelectionUi(); }
+      });
+
+      // Keyboard path for the Bin (role=button): Enter/Space bins the selected
+      // dog — same guard as the click path, so an empty selection is a no-op.
+      document.getElementById('bin').addEventListener('keydown', function (e) {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        if (!selTid || !state.tiles[selTid]) return;
+        tapBinSelected();
+      });
+
+      // ---- derived counts (plan-card footer, dock, jump bar) ----
+      function updateDerivedStats() {
+        var total = 0;
+        var perVan = { bv: 0, sv: 0, bvx: 0 };
+        Object.keys(state.placements).forEach(function (boxId) {
+          var n = (state.placements[boxId] || []).filter(function (id) { return !!state.tiles[id]; }).length;
+          total += n;
+          var v = boxId.split('-')[0];
+          if (perVan[v] != null) perVan[v] += n;
+        });
+        var boxes = document.querySelectorAll('.box').length;
+        var occupied = document.querySelectorAll('.box.full').length;
+        var stats = document.getElementById('planStats');
+        if (stats) stats.textContent = total + ' dog' + (total === 1 ? '' : 's') + ' placed · ' + (boxes - occupied) + ' kennels free';
+        var dockTotal = document.getElementById('dockTotal');
+        if (dockTotal) dockTotal.textContent = total + ' dog' + (total === 1 ? '' : 's');
+        ['bv', 'sv', 'bvx'].forEach(function (v) {
+          var el = document.getElementById('jump-' + v + '-count');
+          if (el) el.textContent = perVan[v] + ' dog' + (perVan[v] === 1 ? '' : 's');
+        });
+      }
+
+      // ---- segmented nav thumb + plan title/note ----
+      function setSegPosition(plan) {
+        var nav = document.querySelector('.plan-nav');
+        if (!nav) return;
+        nav.classList.remove('seg-1', 'seg-2');
+        if (plan === 'NEXT_AM') nav.classList.add('seg-1');
+        else if (plan === 'REORDER') nav.classList.add('seg-2');
+      }
+
+      function updatePlanCopy() {
+        var title = document.getElementById('planTitle');
+        var note = document.getElementById('planNote');
+        if (!title || !note) return;
+        if (currentPlan === 'NEXT_AM') {
+          var d = new Date(Date.now() + 86400000);
+          var stamp = '';
+          try {
+            stamp = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }).format(d);
+          } catch (err) {}
+          title.textContent = 'Next day AM' + (stamp ? ' · ' + stamp : '');
+          note.textContent = 'Morning pick-ups. Small van leaves at 07:30, big vans at 08:30.';
+        } else {
+          title.textContent = 'PM plan · today';
+          note.textContent = 'Drop-offs after daycare. Vans leave at 15:00 unless you change the time.';
+        }
+      }
+
+      // ---- run-type segmented proxy (the REAL <select> stays the value source;
+      //      option VALUES 'FD'/'HD' are the pipeline contract — never sent from here) ----
+      function syncRunSegs() {
+        ['bv', 'sv', 'bvx'].forEach(function (v) {
+          var sel = document.getElementById(v + '-runtype');
+          var seg = document.querySelector('.run-seg[data-run-seg="' + v + '"]');
+          if (!sel || !seg) return;
+          var isHd = sel.value === 'HD';
+          seg.classList.toggle('is-hd', isHd);
+          seg.querySelectorAll('.run-opt').forEach(function (btn) {
+            var active = (btn.dataset.run === 'HD') === isHd;
+            btn.classList.toggle('active', active);
+            btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+          });
+        });
+      }
+      document.querySelectorAll('.run-seg .run-opt').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          var seg = btn.closest('.run-seg');
+          var sel = seg && document.getElementById(seg.dataset.runSeg + '-runtype');
+          if (!sel || sel.value === btn.dataset.run) return;
+          sel.value = btn.dataset.run;
+          sel.dispatchEvent(new Event('change'));   // fires the existing persist listener
+          syncRunSegs();
+        });
+      });
+
+      function uiAfterPlanLoad() {
+        setSegPosition(currentPlan);
+        updatePlanCopy();
+        syncRunSegs();
+      }
+
+      // Reorder tab shows no plan; keep the segmented thumb in step. These
+      // listeners run AFTER each tab's own onclick (property handlers fire
+      // in registration order), so loadPlan has already switched the plan.
+      document.querySelectorAll('.nav-tab').forEach(function (tab) {
+        tab.addEventListener('click', function () {
+          if (tab.dataset.plan === 'REORDER') setSegPosition('REORDER');
+        });
+        tab.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); tab.click(); }
+        });
+      });
+
+      // ---- header date + jump bar ----
+      (function () {
+        var el = document.getElementById('brandDate');
+        if (el) {
+          try {
+            el.textContent = new Intl.DateTimeFormat('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })
+              .format(new Date()) + ' · The Fairy Tails';
+          } catch (err) {}
+        }
+        var header = document.querySelector('.app-header');
+        var jumpBar = document.getElementById('jumpBar');
+        function setJumpTop() {
+          if (header && jumpBar) jumpBar.style.top = (header.offsetHeight - 1) + 'px';
+        }
+        setJumpTop();
+        window.addEventListener('resize', setJumpTop);
+        document.querySelectorAll('.jump-chip').forEach(function (chip) {
+          chip.addEventListener('click', function () {
+            var sec = document.querySelector('.van-section[data-van="' + chip.dataset.jump + '"]');
+            var noMotion = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+            if (sec) sec.scrollIntoView({ behavior: noMotion ? 'auto' : 'smooth', block: 'start' });
+          });
+        });
+      })();
+
+      // ---- persistent "Staged HH:MM" caption under each Stage Route button ----
+      // route_sender.js ships byte-identical; its transient ✅ is-success state
+      // is observed here and echoed as a caption that persists until reload.
+      document.querySelectorAll('.route-controls .send-route-btn').forEach(function (btn) {
+        var caption = btn.parentNode && btn.parentNode.querySelector('.staged-caption');
+        if (!caption) return;
+        new MutationObserver(function () {
+          if (btn.classList.contains('is-success')) {
+            var now = new Date();
+            var hh = (now.getHours() < 10 ? '0' : '') + now.getHours();
+            var mm = (now.getMinutes() < 10 ? '0' : '') + now.getMinutes();
+            caption.textContent = 'Staged ' + hh + ':' + mm + ' · restage';
+            caption.title = 'Tap Stage Route again to restage with the current load';
+            caption.hidden = false;
+          }
+        }).observe(btn, { attributes: true, attributeFilter: ['class'] });
+      });
+
       // Stage 1 — Van Route Automation bootstrap (additive).
       // Hands the route_sender module read-only accessors for state and currentPlan,
       // plus two write hooks (added 2026-05-30) so the module can drop the
@@ -3072,21 +3303,10 @@
           // into a kennel box, mirroring finishDrag's semantics (undo state,
           // remove-from-everywhere, max 2 per box) — used when staff change a
           // dog's kennel on the Reorder tab so the seed grid follows the final
-          // word. Refuses (returns false) rather than half-applies.
-          moveTileToBox: function (tileId, boxId) {
-            if (!state.tiles || !state.tiles[tileId]) return false;
-            var arr = state.placements[boxId] || [];
-            if (arr.indexOf(tileId) !== -1) return false;   // already there
-            if (arr.length >= 2) return false;              // box full — leave the grid alone
-            saveUndoState();
-            Object.keys(state.placements).forEach(function (k) {
-              state.placements[k] = (state.placements[k] || []).filter(function (t) { return t !== tileId; });
-            });
-            (state.placements[boxId] = state.placements[boxId] || []).push(tileId);
-            localSave();
-            hydrate();
-            return true;
-          }
+          // word. Refuses (returns false) rather than half-applies. Since the
+          // 2026-08-01 redesign the implementation lives in moveTileToBoxHost,
+          // shared with the tap-to-select layer.
+          moveTileToBox: function (tileId, boxId) { return moveTileToBoxHost(tileId, boxId); }
         });
       }
     })();
