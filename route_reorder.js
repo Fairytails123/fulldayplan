@@ -969,6 +969,62 @@
       });
   }
 
+  // OFFICE-NOTE (2026-08-02): debounced persist of ctx.dm via the C5
+  // saveMessage action — the scheduleKpSave/doKpSave discipline exactly.
+  // Strict one-way priority (order save > kennel save > note save) so no two
+  // savers can mutually defer forever; a stale rev refusal re-polls, same as
+  // the kennel path.
+  var NOTE_SAVE_DEBOUNCE_MS = 900;
+  function scheduleNoteSave(st) {
+    st.pendingNoteSave = true;
+    var sEl = st.card && st.card.querySelector('.reorder-note-state');
+    if (sEl) { sEl.hidden = false; sEl.textContent = 'saving…'; }
+    if (st.noteSaveTimer) clearTimeout(st.noteSaveTimer);
+    st.noteSaveTimer = setTimeout(function () { doNoteSave(st); }, NOTE_SAVE_DEBOUNCE_MS);
+  }
+  function doNoteSave(st) {
+    if (st.pendingSave || st.pendingKpSave || st.kpInFlight) {
+      if (st.noteSaveTimer) clearTimeout(st.noteSaveTimer);
+      st.noteSaveTimer = setTimeout(function () { doNoteSave(st); }, 500);
+      return;
+    }
+    var note = st.card && st.card.querySelector('.reorder-note-input');
+    if (!note) { st.pendingNoteSave = false; return; }
+    var dm = String(note.value || '').replace(/\s+/g, ' ').trim().slice(0, 500);
+    st.noteInFlight = true;
+    postStore({ action: 'saveMessage', token: TOKEN, slot_key: st.record.slot_key, dm: dm,
+                rev: st.record.rev, last_reordered_by: deviceId() })
+      .then(function (res) {
+        st.noteInFlight = false;
+        st.pendingNoteSave = false;
+        var sEl = st.card && st.card.querySelector('.reorder-note-state');
+        if (res && res.ok) {
+          if (res.rev != null) { st.record.rev = res.rev; st.renderedRev = res.rev; }
+          if (st.record.ctx) st.record.ctx.dm = dm;
+          if (sEl) { sEl.textContent = 'saved ✓'; setTimeout(function () { sEl.hidden = true; }, 1800); }
+        } else if (res && res.stale) {
+          if (sEl) sEl.hidden = true;
+          st.renderedRev = null;
+          toast('That route changed on another device — reloaded', 'warning');
+          poll();
+        } else {
+          if (sEl) sEl.hidden = true;
+          st.renderedRev = null;
+          toast('Could not save the driver note — reloaded', 'error');
+          poll();
+        }
+      })
+      .catch(function () {
+        st.noteInFlight = false;
+        st.pendingNoteSave = false;
+        var sEl2 = st.card && st.card.querySelector('.reorder-note-state');
+        if (sEl2) sEl2.hidden = true;
+        st.renderedRev = null;
+        toast('Could not save the driver note — reloaded', 'error');
+        poll();
+      });
+  }
+
   function ctxPointOr(p, fallback) {
     if (Array.isArray(p) && p.length >= 2 && isFinite(Number(p[0])) && isFinite(Number(p[1]))) {
       return [Number(p[0]), Number(p[1])];
@@ -1439,6 +1495,11 @@
       '<div class="reorder-kboard" hidden></div>' +
       '<div class="reorder-seq-label">Route sequence</div>' +
       '<ol class="reorder-list"></ol>' +
+      '<div class="reorder-note">' +
+        '<label class="reorder-note-label">Note to driver<span class="reorder-note-state" hidden></span></label>' +
+        '<textarea class="reorder-note-input" maxlength="500" rows="2"' +
+          ' placeholder="Optional — shows as an Office note in the driver’s app until they acknowledge it"></textarea>' +
+      '</div>' +
       '<div class="reorder-slot-foot">' +
         '<button type="button" class="reorder-mapbtn" title="See this route on a map">🗺 Check on map</button>' +
         '<button type="button" class="reorder-reverse" title="Reverse the stop order">🔁 Reverse order</button>' +
@@ -1469,6 +1530,13 @@
     });
     var fullBtn = card.querySelector('.reorder-mapfull');
     if (fullBtn) fullBtn.addEventListener('click', function () { toggleFullscreen(rec.slot_key); });
+    // OFFICE-NOTE (2026-08-02): free-text note to the driver, persisted as
+    // ROUTE_CTX.dm via the C5 saveMessage action (debounced, rev-guarded).
+    var noteEl = card.querySelector('.reorder-note-input');
+    if (noteEl) noteEl.addEventListener('input', function () {
+      var stN = slots[rec.slot_key];
+      if (stN) scheduleNoteSave(stN);
+    });
     return card;
   }
 
@@ -1483,6 +1551,17 @@
     if (at) {
       var dep = (rec.ctx && rec.ctx.t) ? ' · departs ' + rec.ctx.t : '';
       at.textContent = 'Staged ' + fmtTime(rec.staged_at) + dep + (rec.last_reordered_by ? ' · edited' : '');
+    }
+    // OFFICE-NOTE: follow server truth on poll — but never clobber live typing
+    // or a save still in flight on this device.
+    var noteSync = card.querySelector('.reorder-note-input');
+    if (noteSync) {
+      var stNote = slots[rec.slot_key];
+      var noteBusy = stNote && (stNote.pendingNoteSave || stNote.noteInFlight);
+      if (document.activeElement !== noteSync && !noteBusy) {
+        var dmNow = String((rec.ctx && rec.ctx.dm) || '');
+        if (noteSync.value !== dmNow) noteSync.value = dmNow;
+      }
     }
     var skip = card.querySelector('.reorder-skip');
     if (skip) {
@@ -2189,11 +2268,19 @@
     // o read from the DOM above — the send must reflect what staff see, not
     // the staged order. The original construction below is kept VERBATIM as
     // the fallback and runs whenever the module is missing or built nothing.
+    // OFFICE-NOTE (2026-08-02): the send reflects what staff SEE — the note
+    // textarea's current text wins over the (possibly still-debouncing) staged
+    // ctx.dm, exactly as the DOM drag order o overrides ctx.o below.
+    var noteNow = (function () {
+      var el = st.card.querySelector('.reorder-note-input');
+      return el ? String(el.value || '') : String(ctx.dm || '');
+    })();
     var payload = null;
     if (typeof window !== 'undefined' && window.FT_PAYLOAD && FT_PAYLOAD.buildFinal) {
       var dctx = {};
       Object.keys(ctx).forEach(function (k) { dctx[k] = ctx[k]; });
       dctx.o = o;
+      dctx.dm = noteNow;
       payload = FT_PAYLOAD.buildFinal(dctx, { nowIso: new Date().toISOString() });
     }
     if (!payload) {
@@ -2235,6 +2322,12 @@
       return { dog: e.d, address: e.a, lat: Number(e.lat), lng: Number(e.lng) };
     });
     if (extra.length) payload.extra_stops = extra;
+
+    // OFFICE-NOTE (2026-08-02): the Reorder tab's note to the driver rides the
+    // FINAL send only; key ABSENT when empty. noteNow = the textarea's current
+    // text (falls back to ctx.dm). Mirrors FT_PAYLOAD.buildFinal — keep in step.
+    var dm = String(noteNow || '').trim();
+    if (dm) payload.driver_message = dm.slice(0, 500);
     } // P5c: end of the verbatim fallback construction (a module-built payload skips it)
 
     setBtn(btn, 'sending');
