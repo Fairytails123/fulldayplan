@@ -200,6 +200,13 @@
     });
     if (extra.length) payload.extra_stops = extra;
 
+    // OFFICE-NOTE (2026-08-02, DESIGN-office-note.md): the Reorder tab's
+    // free-text note to the driver (ROUTE_CTX.dm) rides the FINAL send only.
+    // Key ABSENT when empty (extra_stops idiom); W1 sanitises + re-caps at
+    // its single write point.
+    var dm = String(ctx.dm || '').trim();
+    if (dm) payload.driver_message = dm.slice(0, 500);
+
     return payload;
   }
 
