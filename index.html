@@ -965,6 +965,28 @@
     .reorder-tile.is-dragging { background: #fff; }
     .reorder-send { width: 100%; margin-top: 0; background-color: var(--van-deep, #0074A6); }
 
+    /* Note to driver (Office note, 2026-08-02) — rides ROUTE_CTX.dm to the
+       driver app's banner on the next Send Final Route. */
+    .reorder-note { display: flex; flex-direction: column; gap: 4px; }
+    .reorder-note-label {
+      font-size: 11px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.05em;
+      color: var(--sec);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .reorder-note-state { font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--sec); }
+    .reorder-note-input {
+      appearance: none; -webkit-appearance: none;
+      width: 100%; min-height: 44px; resize: vertical;
+      font: inherit; font-size: 13px; line-height: 1.45;
+      padding: 9px 12px; border: none; border-radius: 10px;
+      background: #fff; color: var(--ink);
+      box-shadow: 0 0.5px 0 rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.06);
+      outline: none;
+    }
+    .reorder-note-input:focus { box-shadow: 0 0 0 2px var(--van-deep, #0074A6); }
+    .reorder-note-input::placeholder { color: var(--sec); font-weight: 500; }
+
     /* Kennel dropdowns + van mockup (Reorder tab) */
     .reorder-kennels { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px; }
     .reorder-kennel {
