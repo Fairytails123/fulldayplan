@@ -15,12 +15,19 @@
    - Cross-origin requests (n8n webhooks, Apps Script): never intercepted — straight to
      the network, so live data + taps are untouched. */
 
-var CACHE = 'ftdrive-shell-v0_3';
-var SHELL = ['./', './index.html', './kennels.js', './manifest.webmanifest'];
+/* v0_4 (2026-08-02): cache-name bump for the UX redesign — busts the cached
+   manifest (theme flipped light) and pre-caches the new logo asset. */
+var CACHE = 'ftdrive-shell-v0_4';
+var SHELL = ['./', './index.html', './kennels.js', './manifest.webmanifest', './logo.png'];
 
 self.addEventListener('install', function (e) {
   self.skipWaiting();
-  e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(SHELL).catch(function () {}); }));
+  /* Per-entry adds, not addAll: addAll is atomic, so one missing asset (e.g. a
+     decorative logo not yet deployed) would silently void the ENTIRE shell
+     precache — index.html/kennels.js must cache even if a png 404s. */
+  e.waitUntil(caches.open(CACHE).then(function (c) {
+    return Promise.all(SHELL.map(function (u) { return c.add(u).catch(function () {}); }));
+  }));
 });
 
 self.addEventListener('activate', function (e) {
