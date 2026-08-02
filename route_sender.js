@@ -342,7 +342,7 @@
     return 0;
   }
 
-  function applyReturnedStops(van, stops, sentPeriod) {
+  function applyReturnedStops(van, stops, sentPeriod, opts) {
     if (!Array.isArray(stops) || !stops.length) return 0;
     if (typeof hostSetStopValue !== 'function') return 0;
     // Don't write into the wrong plan if the user switched tabs mid-send.
@@ -408,6 +408,17 @@
         unmatched.push(s.name);
       }
     });
+
+    // Overlay mode (2026-08-02, store→grid alignment): stale stop numbers on
+    // this van's tiles that matched NO routed dog are cleared — a dog pulled
+    // off the route must not keep last stage's number. Guarded on applied>0
+    // so a grid that matched nothing (wrong plan/day) is never blanked.
+    if (opts && opts.clearUnmatched && applied) {
+      slots.forEach(function (slot) {
+        if (claimed[slot.tileId]) return;
+        try { hostSetStopValue(slot.boxId, slot.slot, ''); } catch (e) {}
+      });
+    }
 
     if (applied && typeof hostHydrate === 'function') {
       try { hostHydrate(); } catch (e) { console.warn('[RouteSender] hydrate failed:', e); }
