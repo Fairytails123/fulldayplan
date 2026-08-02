@@ -2037,6 +2037,7 @@
             syncTimeEl.textContent = `Synced ${cloud.time}`;
             localSave();
             hydrate();
+            scheduleStoreOverlay(currentPlan);   // 2026-08-02: fetched snapshot → align to the staged store
             showToast('Plan fetched from cloud!', 'success');
           } else {
             showToast('No cloud data found for this plan.', 'warning');
@@ -2117,6 +2118,26 @@
       }
 
       // ==================== PLAN MANAGEMENT ====================
+      // Load-Plan ↔ staged-store alignment (2026-08-02, Kam): after a plan
+      // loads or is fetched, overlay the grid READ-SIDE from the ReorderQueue
+      // (stop order + kennel positions — the store is the always-current
+      // shared truth; the cloud snapshot is only as fresh as the last manual
+      // Share). Deferred a tick so the boot-time call runs AFTER
+      // RouteSender.init has wired the write-back hooks. Never writes the
+      // cloud store.
+      let storeOverlayTimer = null;
+      function scheduleStoreOverlay(planId) {
+        if (storeOverlayTimer) clearTimeout(storeOverlayTimer);
+        storeOverlayTimer = setTimeout(function () {
+          storeOverlayTimer = null;
+          try {
+            if (window.RouteReorder && window.RouteReorder.overlayFromStore) {
+              window.RouteReorder.overlayFromStore(planId);
+            }
+          } catch (e) { console.warn('Store overlay failed:', e); }
+        }, 60);
+      }
+
       function loadPlan(p) {
         currentPlan = p;
         document.getElementById('currentLabel').textContent = p.replace('_', ' ') + ' Plan';
@@ -2174,6 +2195,7 @@
 
         hydrate();
         uiAfterPlanLoad();   // 2026-08-01 redesign: seg thumb, plan copy, run-type proxies
+        scheduleStoreOverlay(p);   // 2026-08-02: align to the staged store
       }
 
       document.querySelectorAll('.departure-selector select').forEach(select => {
