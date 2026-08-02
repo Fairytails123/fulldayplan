@@ -1115,10 +1115,25 @@
       .send-route-btn { min-height: 46px; font-size: 15px; }
       .toast-container { bottom: 28px; max-width: 560px; width: auto; min-width: 320px; }
       #reorderView { max-width: 1240px; padding: 18px 24px 24px; gap: 16px; }
-      .reorder-slots { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
-    }
-    @media (min-width: 1240px) {
-      .reorder-slots { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      /* Desktop van cards: CENTRED at every count (2026-08-02, Kam — the old
+         fixed repeat(2/3, 1fr) grid left one or two staged cards hugging the
+         left with a dead right zone). Flex, not grid: auto-fit sizes its
+         repeat count from the MAX track width, so three vans wrapped 2+1 with
+         an off-side orphan. Shrinkable 430px cards instead: one = a centred
+         single, two = a centred pair, three = one full centred row (~386px
+         each inside the 1240 shell). Explicit min-width keeps the 2026-07-31
+         intrinsic-width overflow trap closed. */
+      .reorder-slots {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        align-items: flex-start;
+        gap: 16px;
+      }
+      /* Basis small enough that THREE fit one line (wrap containers wrap
+         before they shrink); grow up to the 430 sweet spot for pairs/singles. */
+      .reorder-slots > .reorder-slot { flex: 1 1 360px; max-width: 430px; min-width: 0; }
+      .reorder-slots > .reorder-empty { flex: 1 1 100%; max-width: none; }
     }
 
     /* ── Reduced motion ────────────────────────────────────────────── */
