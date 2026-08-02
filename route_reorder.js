@@ -24,7 +24,7 @@
  * re-geocoded client-side, so the map shows exactly the points RouteXL optimised on.
  * "⛶ Full screen" blows the same map up to fill the desktop/mobile viewport (a CSS
  * overlay, not the Fullscreen API — iOS Safari only grants that to <video>); Escape
- * or "✕ Close" returns it to the card.
+ * or "✕ Exit" returns it to the card.
  *
  * Backend contract (all on the EXISTING Apps Script web app the page already
  * uses for Share/Fetch):
@@ -63,7 +63,11 @@
     { key: 'PM',       title: '🌆 Today — PM' },
     { key: 'NEXT_AM',  title: '📅 Next Day — AM' }
   ];
-  var VAN_ORDER = ['BV', 'BVX', 'SV'];
+  var VAN_ORDER = ['BV', 'SV', 'BVX'];
+  // Deep per-van fills (AA on white text) — the JS-side twin of the CSS
+  // --van-deep custom property, for Leaflet inline styles (polyline, tethers).
+  var VAN_DEEP = { BV: '#0074A6', SV: '#1E7B36', BVX: '#8F5000' };
+  function vanDeepOf(van) { return VAN_DEEP[String(van || '').toUpperCase()] || '#0074A6'; }
 
   // "Add Dog" — section → route defaults used ONLY when creating a brand-new slot
   // (an add to a van+route that has nothing staged). period + run_type + a sensible
@@ -175,14 +179,20 @@
   // DOM directly rather than calling the inline IIFE's showToast (different scope).
   function toast(msg, type) {
     var c = document.querySelector('.toast-container');
-    if (!c) { c = document.createElement('div'); c.className = 'toast-container'; document.body.appendChild(c); }
+    if (!c) {
+      c = document.createElement('div');
+      c.className = 'toast-container';
+      c.setAttribute('role', 'status');
+      c.setAttribute('aria-live', 'polite');
+      document.body.appendChild(c);
+    }
     var t = document.createElement('div');
     t.className = 'toast toast-' + (type || 'info');
     // Warnings hold ~8 s (2026-07-19): they carry name lists (staging-tray
-    // nudge) that can't be read inside the default 3 s / 2.7 s CSS fade.
+    // nudge) that can't be read inside the default 4.2 s / 3.9 s CSS fade.
     // .toast-hold overrides the baked-in fadeOut (CSS in index_v6.html).
-    var hold = (type === 'warning') ? 8000 : 3000;
-    if (hold > 3000) t.className += ' toast-hold';
+    var hold = (type === 'warning') ? 8000 : 4200;
+    if (hold > 4200) t.className += ' toast-hold';
     t.textContent = msg;
     c.appendChild(t);
     setTimeout(function () { if (t.parentNode) t.parentNode.removeChild(t); }, hold);
@@ -223,75 +233,87 @@
   function ensureStyles() {
     if (document.getElementById('reorder-extra-styles')) return;
     var css =
-      '.reorder-section-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 12px;}' +
+      // 2026-08-01 redesign: this injected sheet is restyled to the Fairy
+      // Tails Design System. Class names are contracts (tests + this module's
+      // own lookups) -- colours/radii only. Structural rules (fullscreen
+      // overlay, drop marks, .reorder-main sizing) carried over verbatim.
+      '.reorder-section-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 10px;}' +
       '.reorder-section-head .reorder-section-title{margin:0;}' +
-      '.reorder-clear-section{flex:0 0 auto;border:1px solid #fecaca;background:#fff5f5;color:#b91c1c;' +
-        'font-size:12px;font-weight:600;padding:5px 10px;border-radius:8px;cursor:pointer;line-height:1.2;}' +
-      '.reorder-clear-section:hover:not(:disabled){background:#fee2e2;}' +
+      '.reorder-clear-section{flex:0 0 auto;border:none;background:rgba(255,59,48,0.08);color:#FF3B30;' +
+        'font-size:12px;font-weight:700;padding:6px 12px;border-radius:9999px;cursor:pointer;line-height:1.2;}' +
+      '.reorder-clear-section:hover:not(:disabled){background:rgba(255,59,48,0.16);}' +
       '.reorder-clear-section:disabled{opacity:.4;cursor:default;}' +
-      '.reorder-tile .reorder-del{flex:0 0 auto;align-self:flex-start;width:24px;height:24px;display:inline-flex;' +
-        'align-items:center;justify-content:center;margin-left:2px;border:none;border-radius:50%;background:#fee2e2;' +
-        'color:#b91c1c;font-size:14px;font-weight:700;line-height:1;cursor:pointer;padding:0;}' +
-      '.reorder-tile .reorder-del:hover{background:#fecaca;color:#7f1d1d;}' +
-      '.reorder-sent-flag{background:var(--success);color:#fff;font-size:11px;padding:1px 8px;border-radius:999px;}' +
-      '.reorder-day{background:#eef2ff;color:#3730a3;font-size:11px;font-weight:700;padding:1px 8px;border-radius:999px;letter-spacing:.3px;}' +
+      '.reorder-tile .reorder-del{flex:0 0 auto;width:28px;height:28px;display:inline-flex;' +
+        'align-items:center;justify-content:center;border:none;border-radius:50%;background:rgba(255,59,48,0.08);' +
+        'color:#FF3B30;font-size:13px;font-weight:700;line-height:1;cursor:pointer;padding:0;}' +
+      '.reorder-tile .reorder-del:hover{background:rgba(255,59,48,0.16);}' +
+      '.reorder-sent-flag{background:#1E7B36;color:#fff;font-size:11px;font-weight:700;padding:3px 9px;border-radius:9999px;}' +
+      '.reorder-section-note{font-size:12px;font-weight:600;color:#8E8E93;padding:2px 4px 0;}' +
+      '.reorder-day{background:rgba(118,118,128,0.12);color:#1C1C1E;font-size:11px;font-weight:700;padding:3px 9px;border-radius:9999px;letter-spacing:.02em;font-variant-numeric:tabular-nums;}' +
       // ---- Add Dog panel ----
-      '.reorder-add{background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:14px 16px;}' +
-      '.reorder-add-head{font-weight:700;font-size:15px;margin:0 0 10px;color:#0f172a;}' +
+      '.reorder-add{background:#fff;border-radius:18px;padding:14px;box-shadow:0 0.5px 0 rgba(0,0,0,0.04),0 1px 3px rgba(0,0,0,0.04);}' +
+      '.reorder-add-head{font-weight:700;font-size:15px;letter-spacing:-0.01em;margin:0 0 10px;color:#1C1C1E;}' +
       '.reorder-add-form{display:flex;flex-wrap:wrap;gap:8px;align-items:center;}' +
-      '.reorder-add-form input,.reorder-add-form select{font-size:14px;padding:8px 10px;border:1px solid #cbd5e1;' +
-        'border-radius:8px;background:#fff;color:#0f172a;min-height:38px;box-sizing:border-box;}' +
+      '.reorder-add-form input,.reorder-add-form select{font-size:16px;font-weight:500;padding:0 12px;border:none;' +
+        'border-radius:11px;background:#F2F2F7;color:#1C1C1E;min-height:44px;box-sizing:border-box;}' +
+      '.reorder-add-form select{font-weight:600;font-size:14px;}' +
       '.reorder-add-name{flex:1 1 140px;min-width:120px;}' +
       '.reorder-add-addr{flex:2 1 240px;min-width:160px;}' +
       '.reorder-add-van,.reorder-add-route{flex:0 0 auto;cursor:pointer;}' +
-      '.reorder-add-btn{flex:0 0 auto;border:none;border-radius:8px;background:#2563eb;color:#fff;font-size:14px;' +
-        'font-weight:600;padding:9px 16px;cursor:pointer;min-height:38px;}' +
-      '.reorder-add-btn:hover{background:#1d4ed8;}' +
+      '.reorder-add-btn{flex:0 0 auto;border:none;border-radius:11px;background:#0074A6;color:#fff;font-size:14px;' +
+        'font-weight:700;padding:0 16px;cursor:pointer;min-height:44px;}' +
+      '.reorder-add-btn:hover{background:#0090C8;}' +
       // ---- staging tiles ----
       '.reorder-staging{display:flex;flex-direction:column;gap:8px;margin-top:12px;}' +
       '.reorder-stage-tile{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;' +
-        'padding:10px 12px;border-radius:10px;border:1px solid #e2e8f0;background:#fff;}' +
-      '.reorder-stage--checking{border-color:#cbd5e1;background:#f8fafc;}' +
-      '.reorder-stage--valid{border-color:#bbf7d0;background:#f0fdf4;}' +
-      '.reorder-stage--invalid{border-color:#fecaca;background:#fff5f5;}' +
+        'padding:10px 12px;border-radius:13px;background:#F2F2F7;}' +
+      '.reorder-stage--checking{background:#F2F2F7;}' +
+      '.reorder-stage--valid{background:rgba(52,199,89,0.12);}' +
+      '.reorder-stage--invalid{background:rgba(255,59,48,0.08);}' +
       '.reorder-stage-main{display:flex;flex-direction:column;gap:1px;min-width:0;flex:1 1 200px;}' +
-      '.reorder-stage-name{font-weight:700;font-size:14px;color:#0f172a;}' +
-      '.reorder-stage-meta{font-size:11px;color:#64748b;font-weight:600;}' +
-      '.reorder-stage-addr{font-size:12px;color:#475569;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;}' +
+      '.reorder-stage-name{font-weight:700;font-size:14px;color:#1C1C1E;}' +
+      '.reorder-stage-meta{font-size:11px;color:#8E8E93;font-weight:600;}' +
+      '.reorder-stage-addr{font-size:12px;color:#8E8E93;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%;}' +
       '.reorder-stage-side{display:flex;align-items:center;gap:10px;flex:0 0 auto;flex-wrap:wrap;justify-content:flex-end;}' +
-      '.reorder-stage-status{font-size:12px;font-weight:600;}' +
-      '.reorder-stage--valid .reorder-stage-status{color:#15803d;}' +
-      '.reorder-stage--invalid .reorder-stage-status{color:#b91c1c;}' +
-      '.reorder-stage--checking .reorder-stage-status{color:#64748b;}' +
+      '.reorder-stage-status{font-size:12px;font-weight:700;}' +
+      '.reorder-stage--valid .reorder-stage-status{color:#248A3D;}' +
+      '.reorder-stage--invalid .reorder-stage-status{color:#FF3B30;}' +
+      '.reorder-stage--checking .reorder-stage-status{color:#8E8E93;}' +
       '.reorder-stage-actions{display:flex;gap:6px;align-items:center;}' +
-      '.reorder-stage-add{border:none;border-radius:8px;background:var(--success,#16a34a);color:#fff;font-size:12px;' +
-        'font-weight:700;padding:6px 12px;cursor:pointer;}' +
-      '.reorder-stage-recheck{border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#334155;font-size:12px;' +
-        'font-weight:600;padding:6px 10px;cursor:pointer;}' +
-      '.reorder-stage-x{border:none;border-radius:50%;width:24px;height:24px;background:#fee2e2;color:#b91c1c;' +
+      '.reorder-stage-add{border:none;border-radius:9px;background:#1E7B36;color:#fff;font-size:12px;' +
+        'font-weight:700;padding:8px 12px;cursor:pointer;}' +
+      '.reorder-stage-recheck{border:none;border-radius:9px;background:#fff;color:#1C1C1E;font-size:12px;' +
+        'font-weight:600;padding:8px 10px;cursor:pointer;box-shadow:0 0.5px 0 rgba(0,0,0,0.04),0 1px 3px rgba(0,0,0,0.06);}' +
+      '.reorder-stage-x{border:none;border-radius:50%;width:26px;height:26px;background:rgba(255,59,48,0.08);color:#FF3B30;' +
         'font-size:13px;font-weight:700;cursor:pointer;line-height:1;padding:0;}' +
-      '.reorder-stage-x:hover{background:#fecaca;}' +
-      // ---- per-card foot (Map + Reverse on row 1, Send full-width on row 2) ----
-      '.reorder-slot-foot{display:flex;gap:8px;align-items:stretch;margin-top:4px;flex-wrap:wrap;}' +
-      '.reorder-slot-foot .reorder-send{flex:1 1 100%;}' +
-      '.reorder-reverse,.reorder-mapbtn{flex:1 1 0;min-width:120px;min-height:38px;border-radius:8px;' +
-        'font-size:13px;font-weight:700;padding:0 12px;cursor:pointer;}' +
-      '.reorder-reverse{border:1px solid #c7d2fe;background:#eef2ff;color:#3730a3;}' +
-      '.reorder-reverse:hover{background:#e0e7ff;}' +
-      '.reorder-mapbtn{border:1px solid #bae6fd;background:#f0f9ff;color:#075985;}' +
-      '.reorder-mapbtn:hover{background:#e0f2fe;}' +
-      '.reorder-mapbtn.is-open{background:#0284c7;border-color:#0284c7;color:#fff;}' +
+      '.reorder-stage-x:hover{background:rgba(255,59,48,0.16);}' +
+      // ---- per-card foot (Map + Reverse row; Send is a separate card child) ----
+      '.reorder-slot-foot{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;}' +
+      '.reorder-slot-foot .reorder-send{grid-column:1/-1;}' +
+      '.reorder-reverse,.reorder-mapbtn{min-width:0;min-height:46px;border:none;border-radius:11px;' +
+        'font-size:14px;font-weight:700;padding:0 12px;cursor:pointer;transition:background 200ms ease;}' +
+      '.reorder-reverse{background:rgba(0,175,241,0.10);color:#006A94;}' +
+      '.reorder-reverse:hover{background:rgba(0,175,241,0.18);}' +
+      '.reorder-mapbtn{background:rgba(0,175,241,0.10);color:#006A94;}' +
+      '.reorder-mapbtn:hover{background:rgba(0,175,241,0.18);}' +
+      '.reorder-mapbtn.is-open{background:var(--van-deep,#0074A6);color:#fff;}' +
       // ---- map panel ----
-      '.reorder-mapwrap{margin:4px 0 10px;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;background:#f8fafc;}' +
-      '.reorder-map{height:300px;width:100%;background:#e8eef3;}' +
-      '@media (max-width:600px){.reorder-map{height:260px;}}' +
+      '.reorder-mapwrap{border:0.5px solid rgba(60,60,67,0.18);border-radius:12px;overflow:hidden;background:#F8FBFE;}' +
+      '.reorder-map{height:260px;width:100%;background:#E8EEF3;}' +
+      '@media (max-width:600px){.reorder-map{height:280px;}}' +
       '.reorder-mapbar{display:flex;align-items:center;justify-content:space-between;gap:8px;' +
-        'padding:6px 10px;font-size:12px;color:#475569;border-top:1px solid #e2e8f0;background:#fff;}' +
-      '.reorder-mapnote{flex:1 1 auto;min-width:0;color:#b45309;font-weight:600;}' +
+        'padding:7px 8px 7px 12px;font-size:11px;font-weight:600;color:#8E8E93;border-top:0.5px solid rgba(60,60,67,0.12);background:#F8FBFE;}' +
+      '.reorder-mapnote{flex:1 1 auto;min-width:0;color:#A85B00;font-weight:600;}' +
+      // Full-screen header title "<pill> <Van> route map" — hidden inline,
+      // swaps in for the note when the map fills the screen (spec: dc v2).
+      '.reorder-maptitle{display:none;align-items:center;gap:8px;flex:1 1 auto;min-width:0;' +
+        'font-size:13px;font-weight:700;color:#1C1C1E;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}' +
+      '.reorder-mapwrap.is-full .reorder-maptitle{display:flex;}' +
+      '.reorder-mapwrap.is-full .reorder-mapnote{display:none;}' +
       '.reorder-mapbtns{flex:0 0 auto;display:flex;gap:6px;align-items:center;}' +
-      '.reorder-mapfit,.reorder-mapfull{flex:0 0 auto;border:1px solid #cbd5e1;background:#fff;color:#334155;' +
-        'font-size:12px;font-weight:600;padding:6px 10px;border-radius:6px;cursor:pointer;min-height:32px;}' +
-      '.reorder-mapfit:hover,.reorder-mapfull:hover{background:#f1f5f9;}' +
+      '.reorder-mapfit,.reorder-mapfull{flex:0 0 auto;border:0.5px solid rgba(60,60,67,0.18);background:#fff;color:#006A94;' +
+        'font-size:11px;font-weight:700;padding:0 11px;border-radius:8px;cursor:pointer;min-height:32px;}' +
+      '.reorder-mapfit:hover,.reorder-mapfull:hover{background:#F2F2F7;}' +
       // ---- full-screen overlay ----
       // A CSS overlay, NOT the Fullscreen API: iOS Safari refuses requestFullscreen on
       // anything but <video>, so the API would silently do nothing on half the devices.
@@ -300,17 +322,17 @@
         'border:0;border-radius:0;display:flex;flex-direction:column;background:#fff;}' +
       '.reorder-mapwrap.is-full .reorder-map{flex:1 1 auto;height:auto;min-height:0;}' +
       // bar to the TOP in full screen so Close is always reachable (thumb-friendly on mobile)
-      '.reorder-mapwrap.is-full .reorder-mapbar{order:-1;border-top:0;border-bottom:1px solid #e2e8f0;' +
-        'padding:10px 12px;padding-top:calc(10px + env(safe-area-inset-top,0px));}' +
-      '.reorder-mapwrap.is-full .reorder-mapfull{background:#0284c7;border-color:#0284c7;color:#fff;}' +
+      '.reorder-mapwrap.is-full .reorder-mapbar{order:-1;border-top:0;border-bottom:0.5px solid rgba(60,60,67,0.12);' +
+        'padding:10px 12px;padding-top:calc(10px + env(safe-area-inset-top,0px));background:rgba(249,249,249,0.94);}' +
+      '.reorder-mapwrap.is-full .reorder-mapfull{background:var(--van-deep,#0074A6);border-color:var(--van-deep,#0074A6);color:#fff;min-height:36px;}' +
       'body.reorder-map-open{overflow:hidden;}' +
-      // numbered stop markers — mirror the .reorder-pos tile badge so map == list
+      // numbered stop markers -- mirror the .reorder-pos tile badge so map == list
       '.reorder-pin{background:transparent;border:0;}' +
       '.reorder-pin span{display:flex;align-items:center;justify-content:center;width:26px;height:26px;' +
-        'border-radius:50%;background:var(--accent,#2b6cb0);color:#fff;font-weight:700;font-size:13px;' +
-        'border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4);}' +
-      '.reorder-pin--start span{background:var(--success,#2f855a);font-size:14px;}' +
-      '.reorder-pin--end span{background:#b91c1c;font-size:14px;}' +
+        'border-radius:50%;background:var(--van-deep,#0074A6);color:#fff;font-weight:700;font-size:13px;' +
+        'font-variant-numeric:tabular-nums;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4);}' +
+      '.reorder-pin--start span{background:#1E7B36;font-size:14px;}' +
+      '.reorder-pin--end span{background:#1C1C1E;font-size:14px;}' +
       '.reorder-pop{font-size:13px;line-height:1.45;}' +
       '.reorder-pop b{display:block;margin-bottom:2px;}' +
       // stop numbers pop when the ORDER changes, so a reorder is visibly acknowledged
@@ -318,7 +340,7 @@
       '.reorder-map.is-repinned .reorder-pin span{animation:reorderPinPop .36s ease-out;}' +
       // direction arrow along each leg of the route
       '.reorder-arrow{background:transparent;border:0;}' +
-      '.reorder-arrow i{display:block;width:0;height:0;border-left:6px solid #0284c7;' +
+      '.reorder-arrow i{display:block;width:0;height:0;border-left:6px solid var(--van-deep,#0074A6);' +
         'border-top:4.5px solid transparent;border-bottom:4.5px solid transparent;' +
         'filter:drop-shadow(0 0 1px #fff) drop-shadow(0 0 1px #fff);}' +
       // ---- per-tile address line + Map Check button (2026-07-19) ----
@@ -329,12 +351,12 @@
       // green under the pointer; a different-section card is refused (red, plus
       // a "not allowed" cursor) because a move there would change the dog's
       // departure time/day.
-      '.reorder-slot.is-drop-target{outline:2px dashed #16a34a;outline-offset:2px;background:#f0fdf4;}' +
-      '.reorder-slot.is-drop-blocked{outline:2px dashed #dc2626;outline-offset:2px;background:#fef2f2;' +
+      '.reorder-slot.is-drop-target{outline:2px dashed #34C759;outline-offset:2px;background:#F4FCF6;}' +
+      '.reorder-slot.is-drop-blocked{outline:2px dashed #FF3B30;outline-offset:2px;background:rgba(255,59,48,0.04);' +
         'cursor:not-allowed;}' +
       '.reorder-slot.is-drop-source{opacity:0.97;}' +
       // Sizing rationale (2026-07-31, kennel dropdowns): basis 150px (NOT auto)
-      // so the wrap decision uses a compact hypothetical size — controls stay
+      // so the wrap decision uses a compact hypothetical size -- controls stay
       // on one line whenever they fit and the name/address GROW into the
       // leftover (ellipsis beyond); basis auto made long-address tiles wrap
       // their controls even when shrinking would fit. The min-width floor
@@ -342,19 +364,20 @@
       // wraps instead (flex-wrap since the same date).
       '.reorder-tile .reorder-main{flex:1 1 150px;min-width:min(150px,55%);display:flex;flex-direction:column;gap:2px;}' +
       '.reorder-tile .reorder-main .reorder-name{flex:none;}' +
-      '.reorder-tile .reorder-addr{font-size:12px;color:#475569;overflow:hidden;text-overflow:ellipsis;' +
+      '.reorder-tile .reorder-addr{font-size:12px;color:#8E8E93;overflow:hidden;text-overflow:ellipsis;' +
         'white-space:nowrap;max-width:100%;}' +
-      '.reorder-tile .reorder-mapcheck{flex:0 0 auto;border:1px solid #bae6fd;background:#f0f9ff;color:#075985;' +
-        'font-size:12px;font-weight:700;padding:5px 9px;border-radius:8px;cursor:pointer;min-height:30px;' +
+      '.reorder-tile .reorder-mapcheck{flex:0 0 auto;border:none;background:rgba(0,175,241,0.10);color:#006A94;' +
+        'font-size:12px;font-weight:700;padding:0 9px;border-radius:9px;cursor:pointer;min-height:34px;' +
         'line-height:1.1;white-space:nowrap;}' +
-      '.reorder-tile .reorder-mapcheck:hover{background:#e0f2fe;}' +
+      '.reorder-tile .reorder-mapcheck:hover{background:rgba(0,175,241,0.18);}' +
       // Phones (review 2026-07-19): the full label starves the name/address
-      // column at 320-390px — collapse the button to the 🗺 icon (the title/
+      // column at 320-390px -- collapse the button to the map icon (the title/
       // aria-label keep it discoverable) and tighten the tile gap.
       '@media (max-width:600px){' +
         '.reorder-tile{gap:6px;}' +
         '.reorder-tile .reorder-mapcheck-label{display:none;}' +
-        '.reorder-tile .reorder-mapcheck{padding:5px 8px;}' +
+        '.reorder-tile .reorder-mapcheck{padding:0 8px;}' +
+        '.reorder-up,.reorder-down{width:34px;height:34px;}' +
       '}';
     var el = document.createElement('style');
     el.id = 'reorder-extra-styles';
@@ -369,8 +392,11 @@
     view.innerHTML = '';
     var head = document.createElement('div');
     head.className = 'reorder-head';
-    head.innerHTML = '<span class="reorder-poll-dot" id="reorderPollDot"></span>' +
-      '<span id="reorderStatus">Drag stops to reorder, then Send Final Route — syncs across devices</span>';
+    head.innerHTML = '<div class="reorder-headtext">' +
+        '<span class="reorder-title">Staged routes</span>' +
+        '<span class="reorder-subtitle" id="reorderStatus">Reorder the stops, check the map, then send to the driver — syncs across devices</span>' +
+      '</div>' +
+      '<span class="reorder-live-pill"><span class="reorder-poll-dot" id="reorderPollDot"></span>Live</span>';
     view.appendChild(head);
     view.appendChild(buildAddPanel());
     SECTIONS.forEach(function (sec) {
@@ -802,9 +828,11 @@
           var opt = document.createElement('option');
           opt.value = code;
           opt.title = kennelWords(code);
-          if (others.length >= 2) { opt.disabled = true; opt.textContent = code + ' (full)'; }
-          else if (others.length === 1) { opt.textContent = code + ' · ' + firstNameOf(others[0].name); }
-          else { opt.textContent = code; }
+          // Visible label "CODE · side/rear" (spec); occupant hint / full marker kept.
+          var side = code.charAt(0) === 'S' ? 'side' : 'rear';
+          if (others.length >= 2) { opt.disabled = true; opt.textContent = code + ' · ' + side + ' (full)'; }
+          else if (others.length === 1) { opt.textContent = code + ' · ' + side + ' · ' + firstNameOf(others[0].name); }
+          else { opt.textContent = code + ' · ' + side; }
           sel.appendChild(opt);
         });
         sel.value = d.code || '';
@@ -842,7 +870,7 @@
     var un = r.dogs.filter(function (d) { return !d.code; });
     board.innerHTML =
       '<div class="reorder-kb-head" role="button" tabindex="0" title="Show/hide the van kennel layout">' +
-        '<span class="reorder-kb-title">🚐 Van kennels</span>' +
+        '<span class="reorder-kb-title">Kennel layout</span>' +
         '<span class="reorder-kb-count">' + r.dogs.length + ' dog' + (r.dogs.length === 1 ? '' : 's') +
           ' · ' + kennelCodesFor(r.layout).length + ' kennels</span>' +
         (un.length ? '<span class="reorder-kb-un" title="' +
@@ -851,9 +879,10 @@
         '<span class="reorder-kb-caret">▾</span>' +
       '</div>' +
       '<div class="reorder-kb-body">' +
-        kbGrid(r.layout.side, 'Side door', r.layout, occ) +
-        kbGrid(r.layout.back, 'Back door', r.layout, occ) +
-      '</div>';
+        kbGrid(r.layout.side, 'Side · side door', r.layout, occ) +
+        kbGrid(r.layout.back, 'Rear · back doors', r.layout, occ) +
+      '</div>' +
+      '<span class="reorder-kb-note">Kennel positions follow the load plan — badge numbers show each kennel’s stop</span>';
     board.hidden = false;
     board.classList.toggle('collapsed', collapsed);
     var head = board.querySelector('.reorder-kb-head');
@@ -1088,7 +1117,7 @@
   // The panel is deliberately small so it sits inline with the stops, but a driver
   // checking a 15-stop route wants the whole screen. "⛶ Full screen" blows the SAME
   // map up to fill the viewport (no second map, no reload — just a resize), on desktop
-  // and mobile alike. Escape or "✕ Close" returns it to the card.
+  // and mobile alike. Escape or "✕ Exit" returns it to the card.
   //
   // Implemented as a CSS overlay rather than the Fullscreen API on purpose: iOS Safari
   // only grants requestFullscreen() to <video>, so the API is a silent no-op on iPhones
@@ -1103,7 +1132,7 @@
     if (on) {
       wrap.classList.add('is-full');
       document.body.classList.add('reorder-map-open');   // stop the page scrolling behind
-      if (btn) { btn.textContent = '✕ Close'; btn.title = 'Back to the route card'; }
+      if (btn) { btn.textContent = '✕ Exit'; btn.title = 'Back to the route card'; }
       fullscreenSlot = st.record.slot_key;
     } else {
       wrap.classList.remove('is-full');
@@ -1154,7 +1183,7 @@
       if (plot.end) line.push(plot.end);
 
       if (line.length > 1) {
-        L.polyline(line, { color: '#0284c7', weight: 3, opacity: 0.75, dashArray: '1 6', lineCap: 'round' })
+        L.polyline(line, { color: vanDeepOf(st.record && st.record.van), weight: 3, opacity: 0.55, lineCap: 'round' })
           .addTo(st.mapLayer);
         addArrows(L, st.map, st.mapLayer, line);
       }
@@ -1163,7 +1192,7 @@
       var placed = spreadPins(L, st.map, plot.stops);
       placed.forEach(function (p, i) {
         if (!p.tether) return;
-        L.polyline([p.tether, p.pin], { color: '#64748b', weight: 1, opacity: 0.6, interactive: false })
+        L.polyline([p.tether, p.pin], { color: vanDeepOf(st.record && st.record.van), weight: 1, opacity: 0.35, interactive: false })
           .addTo(st.mapLayer);
       });
 
@@ -1274,7 +1303,7 @@
     var wrap = st.card && st.card.querySelector('.reorder-mapwrap');
     var btn = st.card && st.card.querySelector('.reorder-mapbtn');
     if (wrap) wrap.hidden = true;
-    if (btn) { btn.classList.remove('is-open'); btn.textContent = '🗺 Check on Map'; }
+    if (btn) { btn.classList.remove('is-open'); btn.textContent = '🗺 Check on map'; }
   }
 
   function toggleMap(slotKey) {
@@ -1375,10 +1404,18 @@
     var card = document.createElement('div');
     card.className = 'reorder-slot';
     card.setAttribute('data-slot', rec.slot_key);
+    // Per-van palette hook for the design-system CSS (2026-08-01 redesign).
+    card.setAttribute('data-van', String(rec.van).toLowerCase());
+    var VAN_NAMES = { BV: 'Big van', BVX: 'Big van X-ray', SV: 'Small van' };
+    var vanName = VAN_NAMES[String(rec.van).toUpperCase()] || '';
     var vanCls = 'van-badge--' + String(rec.van).toLowerCase();
+    // Child order follows the design: head → kennel board → stop list →
+    // Map/Reverse row → map panel → Send. All lookups are class-based, so
+    // the order is presentation-only.
     card.innerHTML =
       '<div class="reorder-slot-head">' +
         '<span class="van-badge ' + vanCls + '">' + escapeHtml(rec.van) + '</span>' +
+        (vanName ? '<span class="reorder-van-name">' + escapeHtml(vanName) + '</span>' : '') +
         '<span class="reorder-day" hidden></span>' +
         '<span class="reorder-staged-at"></span>' +
         '<span class="reorder-updated-flag" hidden>updated</span>' +
@@ -1386,10 +1423,17 @@
         '<span class="reorder-skip" hidden></span>' +
       '</div>' +
       '<div class="reorder-kboard" hidden></div>' +
+      '<div class="reorder-seq-label">Route sequence</div>' +
       '<ol class="reorder-list"></ol>' +
+      '<div class="reorder-slot-foot">' +
+        '<button type="button" class="reorder-mapbtn" title="See this route on a map">🗺 Check on map</button>' +
+        '<button type="button" class="reorder-reverse" title="Reverse the stop order">🔁 Reverse order</button>' +
+      '</div>' +
       '<div class="reorder-mapwrap" hidden>' +
         '<div class="reorder-map"></div>' +
         '<div class="reorder-mapbar">' +
+          '<span class="reorder-maptitle"><span class="van-badge ' + vanCls + '">' + escapeHtml(rec.van) + '</span>' +
+            escapeHtml(vanName ? vanName + ' route map' : 'Route map') + '</span>' +
           '<span class="reorder-mapnote"></span>' +
           '<span class="reorder-mapbtns">' +
             '<button type="button" class="reorder-mapfit" title="Zoom to fit the whole route">⤢ Fit</button>' +
@@ -1397,12 +1441,8 @@
           '</span>' +
         '</div>' +
       '</div>' +
-      '<div class="reorder-slot-foot">' +
-        '<button type="button" class="reorder-mapbtn" title="See this route on a map">🗺 Check on Map</button>' +
-        '<button type="button" class="reorder-reverse" title="Reverse the stop order">🔁 Reverse</button>' +
-        '<button type="button" class="send-route-btn reorder-send">' +
-          '<span class="send-route-btn__label">📍 Send Final Route</span></button>' +
-      '</div>';
+      '<button type="button" class="send-route-btn reorder-send">' +
+        '<span class="send-route-btn__label">📍 Send Final Route</span></button>';
     card.querySelector('.reorder-send').addEventListener('click', function () { sendFinal(rec.slot_key); });
     var rev = card.querySelector('.reorder-reverse');
     if (rev) rev.addEventListener('click', function () { reverseRoute(rec.slot_key); });
@@ -1426,7 +1466,10 @@
       day.hidden = !stamp;
     }
     var at = card.querySelector('.reorder-staged-at');
-    if (at) at.textContent = 'staged ' + fmtTime(rec.staged_at) + (rec.last_reordered_by ? ' · edited' : '');
+    if (at) {
+      var dep = (rec.ctx && rec.ctx.t) ? ' · departs ' + rec.ctx.t : '';
+      at.textContent = 'Staged ' + fmtTime(rec.staged_at) + dep + (rec.last_reordered_by ? ' · edited' : '');
+    }
     var skip = card.querySelector('.reorder-skip');
     if (skip) {
       if (rec.skipped && rec.skipped.length) {
@@ -1473,6 +1516,8 @@
       var isGroom = members.some(function (m) { return gg[normNm(m)]; });
       var isAlt = members.some(function (m) { return aa[normNm(m)]; });
       var marks = (isGroom ? '✂️' : '') + (isAlt ? '📍' : '');
+      // "Same house" pill (design): two dogs sharing one stop.
+      var dogCount = members.filter(function (m) { return !isSalonName(m); }).length;
       var li = document.createElement('li');
       li.className = 'reorder-tile' + (solo ? ' reorder-tile--solo' : '');
       li.setAttribute('data-stop-id', id);
@@ -1482,9 +1527,12 @@
         '<span class="reorder-main"><span class="reorder-name"></span>' +
           '<span class="reorder-addr" hidden></span></span>' +
         '<span class="reorder-marks">' + marks + '</span>' +
+        (dogCount > 1 ? '<span class="reorder-share">Same house</span>' : '') +
         '<span class="reorder-kennels"></span>' +
         '<button type="button" class="reorder-mapcheck" title="Show this address on the map"' +
           ' aria-label="Map Check">🗺<span class="reorder-mapcheck-label"> Map Check</span></button>' +
+        '<button type="button" class="reorder-up" title="Move stop earlier" aria-label="Move stop earlier">▲</button>' +
+        '<button type="button" class="reorder-down" title="Move stop later" aria-label="Move stop later">▼</button>' +
         '<button type="button" class="reorder-del" title="Remove from route" aria-label="Remove from route">✕</button>';
       var nameEl = li.querySelector('.reorder-name');
       nameEl.textContent = members.join(' & ') || '—';
@@ -1512,6 +1560,19 @@
         ev.preventDefault(); ev.stopPropagation();
         mapCheckStop(st, id);
       });
+      // ▲/▼ arrow reordering (2026-08-01 design): moves the li in the DOM and
+      // persists through the SAME renumber → syncMap → refreshKennelUi →
+      // scheduleSave path as a grip-drag / Reverse. DOM order stays the truth.
+      var upBtn = li.querySelector('.reorder-up');
+      if (upBtn) upBtn.addEventListener('click', function (ev) {
+        ev.preventDefault(); ev.stopPropagation();
+        moveStopBy(st, li, -1);
+      });
+      var downBtn = li.querySelector('.reorder-down');
+      if (downBtn) downBtn.addEventListener('click', function (ev) {
+        ev.preventDefault(); ev.stopPropagation();
+        moveStopBy(st, li, 1);
+      });
       ol.appendChild(li);
       // The Grooming Salon is derived state, not a dog: it belongs to whichever
       // runs carry grooming dogs, so it must not be dragged between vans (the
@@ -1519,6 +1580,7 @@
       // it sits in the route is exactly what staff need to adjust.
       wireGrip(st, li.querySelector('.reorder-grip'), members.every(isSalonName));
     });
+    renumber(ol);   // sets the ▲/▼ end-of-list disabled states on first render
     // Tiles were rebuilt (fresh stage, a remote reorder, or a failed-save rollback)
     // — an open map must follow. No-op when the map is closed.
     syncMap(st);
@@ -1533,10 +1595,36 @@
     });
   }
   function renumber(ol) {
-    [].slice.call(ol.querySelectorAll('.reorder-tile')).forEach(function (li, i) {
+    var tiles = [].slice.call(ol.querySelectorAll('.reorder-tile'));
+    tiles.forEach(function (li, i) {
       var pos = li.querySelector('.reorder-pos');
       if (pos) pos.textContent = i + 1;
+      // ▲/▼ end-of-list states ride every renumber (drag, arrows, Reverse, ✕).
+      var up = li.querySelector('.reorder-up');
+      var down = li.querySelector('.reorder-down');
+      if (up) up.disabled = (i === 0);
+      if (down) down.disabled = (i === tiles.length - 1);
     });
+  }
+
+  // ▲/▼ arrow move — mirrors reverseRoute's persistence path exactly.
+  function moveStopBy(st, li, dir) {
+    if (!st || st.dragging) return;
+    var ol = li.parentNode;
+    if (!ol) return;
+    if (dir < 0) {
+      var prev = li.previousElementSibling;
+      if (!prev) return;
+      ol.insertBefore(li, prev);
+    } else {
+      var next = li.nextElementSibling;
+      if (!next) return;
+      ol.insertBefore(next, li);
+    }
+    renumber(ol);
+    syncMap(st);            // map follows the new order immediately
+    refreshKennelUi(st);    // mockup stop numbers follow too
+    scheduleSave(st);
   }
 
   // ---- vertical grip-drag engine (pointer events) ---------------
@@ -2181,6 +2269,30 @@
       if (mount && empty) empty.style.display = has ? 'none' : '';
       var clr = document.querySelector('.reorder-clear-section[data-section="' + sec.key + '"]');
       if (clr) clr.disabled = !has;   // Clear route only active when the section has routes
+      // Per-section footer note naming vans with nothing staged (Kam 2026-08-02:
+      // note only — no dimmed placeholder cards; three sections would triple them).
+      var note = document.querySelector('.reorder-section-note[data-section="' + sec.key + '"]');
+      if (!note && mount && mount.parentNode) {
+        note = document.createElement('div');
+        note.className = 'reorder-section-note';
+        note.setAttribute('data-section', sec.key);
+        mount.parentNode.appendChild(note);
+      }
+      if (note) {
+        if (!has) { note.hidden = true; }
+        else {
+          var staged = {};
+          Array.prototype.forEach.call(mount.children, function (c) {
+            var v = (c.getAttribute('data-van') || '').toUpperCase();
+            if (v) staged[v] = true;
+          });
+          var missing = VAN_ORDER.filter(function (v) { return !staged[v]; });
+          note.hidden = false;
+          note.textContent = missing.length
+            ? missing.join(' and ') + (missing.length === 1 ? ' has' : ' have') + ' no staged route yet'
+            : 'All three routes are staged';
+        }
+      }
     });
   }
   function vanFromKey(key) { var p = String(key).split('__'); return p[1] || key; }
