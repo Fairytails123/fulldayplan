@@ -2566,5 +2566,13 @@
   window.RouteReorder = { enter: enter, exit: exit, toast: toast,
     // Store→grid alignment (2026-08-02): called by the page on plan load /
     // Fetch (deferred a tick so RouteSender.init has wired the hooks).
-    overlayFromStore: overlayFromStore };
+    overlayFromStore: overlayFromStore,
+    // Staged-store read (2026-08-04) — exported so route_sender.js can CONFIRM
+    // a stage actually landed instead of trusting the n8n response. Exported
+    // rather than duplicated deliberately: REORDER_URL + TOKEN already have
+    // three copies in the tree (here, index_v6.html, apps\drive\ui\index.html)
+    // and the house rule is to count N before adding another. `loadStaged` is
+    // a doGet — it takes NO script lock — so polling it adds no lock pressure
+    // to the very contention this confirmation exists to survive.
+    getStaged: getStaged };
 })();
