@@ -793,6 +793,9 @@
     .send-route-btn.is-sending { background-color: #8F5000; }
     .send-route-btn.is-success { background-color: #1E7B36; }
     .send-route-btn.is-failed  { background-color: #B45309; }
+    /* B34 (2026-08-04): a van latched out because ANOTHER van is staging.
+       Deliberately muted, not alarming — it is a queue, not a fault. */
+    .send-route-btn.is-waiting { background-color: #6B7280; opacity: 0.7; }
     .staged-caption {
       font-size: 12px; font-weight: 600; color: #1E7B36;
       font-variant-numeric: tabular-nums;
