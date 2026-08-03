@@ -2176,6 +2176,13 @@
     if (st.saveTimer) { clearTimeout(st.saveTimer); st.saveTimer = null; }
     if (st.kpSaveTimer) { clearTimeout(st.kpSaveTimer); st.kpSaveTimer = null; }
     st.pendingKpSave = false;         // a queued kennel save must not fire at a cleared slot
+    // Same for the driver note (2026-08-03): without this a queued note save
+    // POSTs at a slot that no longer exists, and — because the reconcile guards
+    // now also watch pendingNoteSave — a note left pending would pin this slot
+    // out of reconcile permanently. doNoteSave's defer loop self-reschedules, so
+    // the timer must be cleared as well as the flag.
+    if (st.noteSaveTimer) { clearTimeout(st.noteSaveTimer); st.noteSaveTimer = null; }
+    st.pendingNoteSave = false;
     postStore({ action: 'clearSlot', token: TOKEN, slot_key: slotKey })
       .then(function (r) {
         if (r && r.ok) {
@@ -2387,6 +2394,8 @@
     if (st.record) cleared[st.record.slot_key] = Date.now();   // tombstone: block a stale in-flight poll re-adding this card
     if (st.kpSaveTimer) { clearTimeout(st.kpSaveTimer); st.kpSaveTimer = null; }
     st.pendingKpSave = false;                                  // a queued kennel save must not fire for a removed card
+    if (st.noteSaveTimer) { clearTimeout(st.noteSaveTimer); st.noteSaveTimer = null; }
+    st.pendingNoteSave = false;                                // ditto the driver note (2026-08-03) — see clearOneSlot
     destroyMap(st);                                            // release the Leaflet instance with its card
     if (st.card && st.card.parentNode) st.card.parentNode.removeChild(st.card);
     if (st.record) delete slots[st.record.slot_key];
