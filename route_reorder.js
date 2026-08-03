@@ -933,7 +933,11 @@
     st.kpSaveTimer = setTimeout(function () { doKpSave(st); }, SAVE_DEBOUNCE_MS);
   }
   function doKpSave(st) {
-    if (st.pendingSave) {                  // an order save is queued/in flight — let it land first
+    if (st.pendingSave || st.noteInFlight) {
+      // An order save is queued/in flight, or a driver-note POST is mid-air
+      // (it bumps the same rev) — let it land first. Note defer is on
+      // noteInFlight ONLY, never pendingNoteSave: doNoteSave yields to
+      // pendingKpSave, so waiting on the un-sent note debounce would deadlock.
       if (st.kpSaveTimer) clearTimeout(st.kpSaveTimer);
       st.kpSaveTimer = setTimeout(function () { doKpSave(st); }, 400);
       return;
@@ -2024,7 +2028,23 @@
     refreshKennelUi(src);
     refreshKennelUi(dst);
 
-    postStore({
+    // A kennel or driver-note POST in flight on EITHER card bumps that card's
+    // rev, so a moveStop fired across it arrives with a stale from_rev/to_rev,
+    // the server refuses it, and the rollback below snaps the dog back to the
+    // van it came from (2026-08-03, the cross-van face of the S2 bug — the same
+    // collision that made a plain reorder undo itself). Wait for the in-flight
+    // write to land and adopt its rev first.
+    //   Defer on IN-FLIGHT flags ONLY, never on pendingKpSave/pendingNoteSave:
+    // both savers yield to pendingSave, which is already true on both cards
+    // here, so waiting on their un-sent debounces would deadlock. An in-flight
+    // POST always settles (both .then and .catch clear its flag), so this
+    // always drains.
+    var fire = function () {
+      if (src.kpInFlight || src.noteInFlight || dst.kpInFlight || dst.noteInFlight) {
+        setTimeout(fire, 400);
+        return;
+      }
+      postStore({
       action: 'moveStop', token: TOKEN,
       from_slot_key: src.record.slot_key, to_slot_key: dst.record.slot_key,
       from_rev: src.record.rev, to_rev: dst.record.rev,
@@ -2068,6 +2088,8 @@
       rollback(src); rollback(dst);
       toast('Could not move — reverted', 'error');
     });
+    };
+    fire();
   }
 
   // ---- save (debounced, optimistic, rollback) -------------------
@@ -2079,9 +2101,12 @@
     st.saveTimer = setTimeout(function () { doSave(st); }, SAVE_DEBOUNCE_MS);
   }
   function doSave(st) {
-    if (st.kpInFlight) {
-      // A kennel-positions POST is mid-air; both writes bump rev, so let it land
-      // and adopt its rev first. One-way defer only (doKpSave waits on
+    if (st.kpInFlight || st.noteInFlight) {
+      // A kennel-positions or driver-note POST is mid-air; all three writes bump
+      // the SAME rev, so let it land and adopt its rev first (a note POST that
+      // lands second would otherwise make THIS save refuse as stale → visible
+      // undo / ✕-delete re-add, the 2026-08-03 S2 bug). Defer to IN-FLIGHT
+      // posts only, never to pending debounces (doKpSave/doNoteSave wait on
       // pendingSave) — never both ways, or they would defer forever.
       if (st.saveTimer) clearTimeout(st.saveTimer);
       st.saveTimer = setTimeout(function () { doSave(st); }, 400);
@@ -2416,7 +2441,7 @@
     Object.keys(slots).forEach(function (key) {
       if (keys[key]) return;
       var st = slots[key];
-      if (st.dragging || st.pendingSave || st.pendingKpSave) { st.staleRemove = true; return; }
+      if (st.dragging || st.pendingSave || st.pendingKpSave || st.pendingNoteSave || st.noteInFlight) { st.staleRemove = true; return; }
       destroyMap(st);
       if (st.card && st.card.parentNode) st.card.parentNode.removeChild(st.card);
       delete slots[key];
@@ -2443,6 +2468,7 @@
             record: rec, card: null, stopsById: {}, renderedRev: null,
             dragging: false, pendingSave: false, saveTimer: null, staleRemove: false,
             pendingKpSave: false, kpSaveTimer: null, kpInFlight: false,
+            pendingNoteSave: false, noteSaveTimer: null, noteInFlight: false,
             map: null, mapLayer: null, mapBounds: null, mapOpen: false
           };
           st.card = buildCard(rec);
@@ -2450,7 +2476,7 @@
           renderTiles(st, rec);
           updateCardMeta(st.card, rec);
           st.renderedRev = rec.rev;
-        } else if (!st.dragging && !st.pendingSave && !st.pendingKpSave) {
+        } else if (!st.dragging && !st.pendingSave && !st.pendingKpSave && !st.pendingNoteSave && !st.noteInFlight) {
           // safe to refresh from server
           st.record = rec;
           if (st.card.parentNode !== mount) mount.appendChild(st.card);
