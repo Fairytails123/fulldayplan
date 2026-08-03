@@ -71,16 +71,30 @@
 
   /* ---------------------------------------------------------------- primitives */
 
-  /* stage2_fuzzy_match.js:63-70 — lower-case, NFKD, strip everything but
-     letters/numbers/space/'/-, collapse whitespace, trim. NB: a CURLY apostrophe
-     (U+2019) is NOT folded to a straight one — NFKD leaves it and the character
-     class strips it, so "O’Brien" → "obrien" while "O'Brien" → "o'brien". That
-     is live behaviour in BOTH stage2 and white_board.js (curly-apostrophe drift
-     therefore exact-misses — known, surfaced loudly as not_found/unmatched). */
+  /* stage2_fuzzy_match.js:63-70 — lower-case, NFKD, FOLD curly apostrophes to a
+     straight one, strip everything but letters/numbers/space/'/-, collapse
+     whitespace, trim.
+
+     ⚠️ The apostrophe fold was ADDED 2026-08-03 (bug S1) and every copy of this
+     grammar folds identically. Before it, NFKD left a curly apostrophe alone and
+     the character class then stripped it, so "O’Brien" → "obrien" while
+     "O'Brien" → "o'brien": the two spellings of the SAME name never compared
+     equal. Since route↔master matching went EXACT on 2026-06-16 that silently
+     produced "not on the master sheet" for any dog whose name carried a curly
+     apostrophe (found live: Echo O’Malley, latent ~7 weeks). U+02BC was worse —
+     it is a \p{Letter}, so it survived the strip as itself.
+
+     Folding is the SAFE direction: it can only make two spellings of one name
+     agree, never merge two different names. It also leaves the straight-apostrophe
+     key unchanged, so ctx.c / ctx.ad coordinate keys already stored against the
+     straight spelling still resolve. The whole normalise/normKey family must fold
+     together — see shared\tests\_trace_normalise_family.mjs, which enforces
+     cross-copy equivalence over all six sites. */
   function normalise(s) {
     return String(s || '')
       .toLowerCase()
       .normalize('NFKD')
+      .replace(/[‘’ʼ′]/g, "'")
       .replace(/[^\p{Letter}\p{Number}\s'-]/gu, '')
       .replace(/\s+/g, ' ')
       .trim();
