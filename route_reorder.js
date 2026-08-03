@@ -131,6 +131,7 @@
     return String(s == null ? '' : s)
       .toLowerCase()
       .normalize('NFKD')
+      .replace(/[‘’ʼ′]/g, "'")
       .replace(/[^\p{Letter}\p{Number}\s'-]/gu, '')
       .replace(/\s+/g, ' ')
       .trim();
