@@ -30,7 +30,30 @@
   // Timing constants — match the plan's state machine.
   var SUCCESS_HOLD_MS = 3000;
   var FAILURE_HOLD_MS = 4000;
-  var REQUEST_TIMEOUT_MS = 30000;
+
+  // ----------------------------------------------------------------
+  // Double-click / re-stage storm guard (2026-08-04) — see B34.
+  // ----------------------------------------------------------------
+  // REQUEST_TIMEOUT_MS was 30,000 and was the BUG, not the protection: the
+  // button disabled itself on click (correct) but the 30 s abort re-enabled
+  // it while 889 was still running, so the operator was actively invited to
+  // click again mid-job. On 2026-08-03 that produced six presses in three
+  // minutes; each press is TWO POSTs (the Stage — Save node retries once), and
+  // every one takes the Apps Script script lock, so the presses starved each
+  // other out and five of six stages never landed.
+  //
+  // The ceiling below must exceed the WORST possible 889 stage run, measured
+  // 2026-08-03: sheet reads ~5 s + Fuzzy Match Dogs up to 25 s (the grooming
+  // feed's own timeout) + coords ~2 s + RouteXL ~2 s + Format Route ~1 s +
+  // Stage — Save up to 42 s (20 s timeout + 2 s wait + 20 s retry) ≈ 77 s.
+  // 120 s leaves headroom. It is a CEILING, not the normal wait: the store
+  // confirmation below releases the button the moment the route really lands
+  // (typically 5–20 s), so a healthy stage feels exactly as it does today.
+  var REQUEST_TIMEOUT_MS = 120000;
+  var STAGE_CEILING_MS   = 120000;  // hard stop; keep >= REQUEST_TIMEOUT_MS
+  var STORE_POLL_MS      = 4000;    // how often to ask the store "did it land?"
+  var STORE_POLL_DELAY_MS = 3000;   // grace before the first poll (fastest observed stage: 3.5 s)
+  var RETRY_COOLDOWN_MS  = 15000;   // after a FAILED stage, before re-arming
 
   // Button labels.
   // Reorder Routes (2026-06-26): this per-van button now STAGES the optimised
@@ -40,6 +63,50 @@
   var LABEL_SENDING = '⏳ Staging route…';      // ⏳ …
   var LABEL_SUCCESS = '✅ Staged';              // ✅ see the Reorder Routes tab
   var LABEL_FAILED  = '⚠️ Failed — retry'; // ⚠️ —
+  var LABEL_WAITING = '⏳ Please wait…';        // another van is staging
+  var LABEL_NOTLANDED = '⚠️ Not staged — retry';
+
+  // ----------------------------------------------------------------
+  // Fleet-wide staging latch (2026-08-04, owner decision).
+  // ----------------------------------------------------------------
+  // Only ONE stage may be in flight at a time, across ALL vans. Two vans
+  // staging concurrently is the same script-lock contention that broke
+  // 2026-08-03; serialising them removes the hazard rather than narrowing it.
+  // `stagingBtn` is the button that owns the latch — it keeps its own
+  // ⏳/✅/⚠️ label while the others simply read "please wait".
+  var stagingInFlight = false;
+  var stagingBtn = null;
+
+  function allStageButtons() {
+    try { return Array.prototype.slice.call(document.querySelectorAll('.send-route-btn')); }
+    catch (e) { return []; }
+  }
+
+  // Latch/unlatch every OTHER van's button. The owning button is driven by
+  // setButtonState as before, so its existing state machine is untouched.
+  function setFleetLatch(on, owner) {
+    stagingInFlight = !!on;
+    stagingBtn = on ? (owner || null) : null;
+    allStageButtons().forEach(function (b) {
+      if (b === owner) return;
+      var lbl = b.querySelector('.send-route-btn__label') || b;
+      if (on) {
+        if (b.dataset.rsIdleLabel === undefined) b.dataset.rsIdleLabel = lbl.textContent;
+        b.disabled = true;
+        b.classList.add('is-waiting');
+        lbl.textContent = LABEL_WAITING;
+      } else {
+        b.disabled = false;
+        b.classList.remove('is-waiting');
+        if (b.dataset.rsIdleLabel !== undefined) {
+          lbl.textContent = b.dataset.rsIdleLabel;
+          delete b.dataset.rsIdleLabel;
+        } else {
+          lbl.textContent = LABEL_IDLE;
+        }
+      }
+    });
+  }
 
   // Closures supplied by the host page at init time.
   var hostGetState = null;
@@ -245,7 +312,7 @@
 
   function setButtonState(btn, st) {
     if (!btn) return;
-    btn.classList.remove('is-sending', 'is-success', 'is-failed');
+    btn.classList.remove('is-sending', 'is-success', 'is-failed', 'is-waiting');
     var labelEl = btn.querySelector('.send-route-btn__label') || btn;
     if (st === 'sending') {
       btn.disabled = true;
@@ -283,6 +350,73 @@
     }).catch(function (err) {
       clearTimeout(t);
       throw err;
+    });
+  }
+
+  // ----------------------------------------------------------------
+  // Stage confirmation — ask the STORE, not the response (2026-08-04, B34)
+  // ----------------------------------------------------------------
+  // Neither end of the pipeline can currently tell the operator whether a
+  // stage landed, in EITHER direction:
+  //   - the Apps Script returns a lock timeout as HTTP 200 + {error:…}, so
+  //     n8n's Stage — Save node reports success;
+  //   - 889's "Respond to Van Manager" derives `ok` from Fuzzy Match Dogs /
+  //     Build RouteXL Request / Format Route and never references Stage — Save.
+  // So `ok:true` does NOT mean staged, and a lost/slow response does NOT mean
+  // not staged (on 2026-08-03 exec 309727 wrote the row while this page was
+  // showing red). The ReorderQueue is the only authority, so ask it.
+  //
+  // Matching is by VAN + freshness, never by rebuilding the slot key: the
+  // section grammar (period + run_type → HALF_DAY/PM/NEXT_AM) lives in the
+  // Apps Script (reorderSection_) and duplicating it here would add another
+  // copy of a shared grammar for no gain. A slot whose staged_at is at or
+  // after this click can only have come from this click — the fleet latch
+  // guarantees no other stage is in flight.
+  function readStore() {
+    try {
+      if (window.RouteReorder && typeof window.RouteReorder.getStaged === 'function') {
+        return window.RouteReorder.getStaged();
+      }
+    } catch (e) {}
+    return Promise.reject(new Error('store reader unavailable'));
+  }
+
+  function slotLanded(data, van, sinceMs) {
+    if (!data || !Array.isArray(data.slots)) return false;
+    var want = String(van || '').toUpperCase();
+    for (var i = 0; i < data.slots.length; i++) {
+      var s = data.slots[i] || {};
+      var ctx = s.ctx || {};
+      if (String(ctx.v || s.van || '').toUpperCase() !== want) continue;
+      if (s.status === 'CLEARED') continue;
+      var t = Date.parse(s.staged_at || s.updated_at || '');
+      // 1 s of slack: staged_at is stamped from the payload's own timestamp,
+      // which is generated a few ms BEFORE this click's reference time.
+      if (!isNaN(t) && t >= (sinceMs - 1000)) return true;
+    }
+    return false;
+  }
+
+  // Polls the store until the van's slot appears, or `ceilingMs` elapses.
+  // Resolves true (landed) / false (did not). NEVER rejects — an unreachable
+  // store must not be reported to the operator as a failed stage.
+  function awaitStageLanded(van, sinceMs, ceilingMs) {
+    var deadline = Date.now() + ceilingMs;
+    return new Promise(function (resolve) {
+      var stopped = false;
+      function attempt() {
+        if (stopped) return;
+        readStore().then(function (data) {
+          if (stopped) return;
+          if (slotLanded(data, van, sinceMs)) { stopped = true; resolve(true); return; }
+          next();
+        }).catch(function () { if (!stopped) next(); });
+      }
+      function next() {
+        if (Date.now() >= deadline) { stopped = true; resolve(false); return; }
+        setTimeout(attempt, STORE_POLL_MS);
+      }
+      setTimeout(attempt, STORE_POLL_DELAY_MS);
     });
   }
 
@@ -432,6 +566,14 @@
   function handleSendClick(ev) {
     var btn = ev.currentTarget;
     if (!btn || btn.disabled) return;
+    // B34 (2026-08-04) — the latch is the authority, not `btn.disabled`. A
+    // button rendered (or re-bound) AFTER the latch went on would not carry
+    // the disabled attribute, and concurrent stages are exactly the script-lock
+    // contention this guard exists to prevent.
+    if (stagingInFlight) {
+      console.warn('[RouteSender] Ignored click: a stage is already in flight.');
+      return;
+    }
     var van = btn.getAttribute('data-van');
     if (!van) {
       console.error('[RouteSender] Send Route button missing data-van.');
@@ -481,55 +623,131 @@
     // Staging-tray nudge (2026-07-19) — non-blocking, never stops the send.
     warnTrayDogs();
 
+    // B34 (2026-08-04): reference time for the store confirmation, and the
+    // fleet latch. Taken BEFORE the POST so a stage that lands unusually fast
+    // still compares as "after this click".
+    var clickedAtMs = Date.now();
     setButtonState(btn, 'sending');
+    setFleetLatch(true, btn);
+
+    // Everything below settles through ONE of these two helpers, so the latch
+    // can never be left on. `landed` is the authority; the n8n response only
+    // decides which WORDING the operator sees.
+    function finishStaged(body) {
+      setButtonState(btn, 'success');
+      try {
+        if (window.RouteReorder && window.RouteReorder.toast) {
+          window.RouteReorder.toast('Staged in Reorder Routes — drag to reorder, then Send Final', 'info');
+        }
+      } catch (e) {}
+      setFleetLatch(false, btn);
+      setTimeout(function () { setButtonState(btn, 'idle'); }, SUCCESS_HOLD_MS);
+      console.log('[RouteSender] Staged ' + van + ' (confirmed against the store).');
+      // Additive: drop the optimised stop numbers n8n returns into the kennels.
+      // Any match issue is logged, never surfaced to the button.
+      try {
+        if (body && Array.isArray(body.stops) && body.stops.length) {
+          applyReturnedStops(van, body.stops, sentPeriod);
+        }
+      } catch (e) {
+        console.warn('[RouteSender] Could not apply stop numbers (' + van + '):', e);
+      }
+    }
+
+    // A genuine miss. The button stays DEAD for RETRY_COOLDOWN_MS: an Apps
+    // Script execution abandoned by n8n keeps running and keeps the script
+    // lock, so an instant retry lands straight back into the contention that
+    // caused the miss. Counting down is deliberate — a button that is merely
+    // dead reads as broken and gets clicked anyway.
+    function finishNotStaged(reason, hard) {
+      var labelEl = btn.querySelector('.send-route-btn__label') || btn;
+      btn.classList.remove('is-sending', 'is-success');
+      btn.classList.add('is-failed');
+      btn.disabled = true;
+      try {
+        if (window.RouteReorder && window.RouteReorder.toast) {
+          window.RouteReorder.toast(van + ' was NOT staged — ' + reason, 'warning');
+        }
+      } catch (e) {}
+      console.error('[RouteSender] Stage did not land for ' + van + ': ' + reason);
+      setFleetLatch(false, btn);
+      var left = Math.ceil(RETRY_COOLDOWN_MS / 1000);
+      labelEl.textContent = (hard ? LABEL_FAILED : LABEL_NOTLANDED) + ' (' + left + ')';
+      var tick = setInterval(function () {
+        left -= 1;
+        if (left > 0) {
+          labelEl.textContent = (hard ? LABEL_FAILED : LABEL_NOTLANDED) + ' (' + left + ')';
+          return;
+        }
+        clearInterval(tick);
+        setButtonState(btn, 'idle');
+      }, 1000);
+    }
+
+    // THE STORE OWNS THE OUTCOME. The watcher runs in PARALLEL with the
+    // request and settles the button on its own, so the UI no longer depends
+    // on the response arriving at all — which is the whole point: on
+    // 2026-08-03 the response was lost and the write had landed. It also
+    // releases the button the moment the route appears (typically 5–20 s)
+    // instead of waiting out the ceiling.
+    //
+    // The request contributes exactly two things: a FAST FAIL when the engine
+    // itself failed, and the stop numbers to write back. It never declares
+    // success — `ok` does not include Stage — Save.
+    var settled = false;
+    var succeeded = false;
+    var lastBody = null;
+
+    function settle(fn) {
+      if (settled) return;
+      settled = true;
+      fn();
+    }
+
+    awaitStageLanded(van, clickedAtMs, STAGE_CEILING_MS).then(function (landed) {
+      if (landed) settle(function () { succeeded = true; finishStaged(lastBody); });
+      else settle(function () {
+        finishNotStaged('it has not appeared in the Reorder tab. The staging store may be busy — wait for the countdown, then try ONCE.', false);
+      });
+    });
+
     postToN8n(payload).then(function (res) {
-      // FIXED 2026-07-20 — honour the webhook's OWN success flag. Previously any
-      // HTTP 200 flipped the button straight to "✅ Staged", but n8n answers 200
-      // with {ok:false} whenever the staging pipeline itself failed (dog not
-      // found, ambiguous name, RouteXL down, every dog skipped). A route that
-      // was never staged therefore looked identical to one that was, and staff
-      // only discovered it when the Reorder Routes tab came up empty. Parse the
-      // body FIRST, then decide which state the button lands in.
       var parseBody = (res && typeof res.json === 'function')
         ? res.json().catch(function () { return null; })
         : Promise.resolve(null);
       return parseBody.then(function (body) {
-        // An unparseable/absent body keeps the pre-2026-07-20 benefit of the
-        // doubt, so a future response-shape change can never block a real send.
+        lastBody = body;
+        // `ok:false` is n8n telling us the ENGINE failed (dog not found,
+        // ambiguous name, RouteXL down, every dog skipped). That is the ONE
+        // case where "check the dog names" is the right advice, and it is
+        // decisive — no route was built, so nothing can ever land. Fail now
+        // rather than making the operator watch out a 120 s ceiling.
         if (body && body.ok === false) {
-          throw new Error('n8n reported the route was NOT staged (ok:false)');
+          settle(function () {
+            finishNotStaged('the route could not be built. Check the dog names against the master sheet, then try again.', true);
+          });
+          return;
         }
-        setButtonState(btn, 'success');
-        // Reorder Routes (2026-06-26): nudge staff to the staging tab.
-        try {
-          if (window.RouteReorder && window.RouteReorder.toast) {
-            window.RouteReorder.toast('Staged in Reorder Routes — drag to reorder, then Send Final', 'info');
+        // If the store already confirmed before the response arrived, the
+        // stop numbers still have to be written back — finishStaged ran with
+        // a null body, so do it here.
+        if (settled && succeeded) {
+          try {
+            if (body && Array.isArray(body.stops) && body.stops.length) {
+              applyReturnedStops(van, body.stops, sentPeriod);
+            }
+          } catch (e) {
+            console.warn('[RouteSender] Could not apply stop numbers (' + van + '):', e);
           }
-        } catch (e) {}
-        setTimeout(function () { setButtonState(btn, 'idle'); }, SUCCESS_HOLD_MS);
-        console.log('[RouteSender] Sent ' + van + ' route to N8N:', payload);
-        // Additive: drop the optimised stop numbers n8n returns into the kennels.
-        // Any match issue is logged, never surfaced to the button.
-        try {
-          if (body && Array.isArray(body.stops) && body.stops.length) {
-            applyReturnedStops(van, body.stops, sentPeriod);
-          }
-        } catch (e) {
-          console.warn('[RouteSender] Could not apply stop numbers (' + van + '):', e);
         }
+        // Otherwise: say nothing. The store watcher owns the verdict.
       });
     }).catch(function (err) {
-      // Make a failed stage loud — the button alone is easy to miss.
-      try {
-        if (window.RouteReorder && window.RouteReorder.toast) {
-          window.RouteReorder.toast(
-            van + ' was NOT staged — ' + (err && err.message ? err.message : 'send failed') +
-            '. Check the dog names against the master sheet, then try again.', 'warning');
-        }
-      } catch (e) {}
-      console.error('[RouteSender] Send failed for ' + van + ':', err);
-      setButtonState(btn, 'failed');
-      setTimeout(function () { setButtonState(btn, 'idle'); }, FAILURE_HOLD_MS);
+      // A failed or timed-out request is NOT evidence that the stage failed
+      // (2026-08-03: the browser gave up at 30 s on a stage already written).
+      // Log it and leave the verdict to the store.
+      console.warn('[RouteSender] Stage request did not return cleanly for ' + van +
+        ' — deferring to the staging store:', err);
     });
   }
 
@@ -596,6 +814,15 @@
       if (btn.dataset.routeSenderBound === '1') return;
       btn.addEventListener('click', handleSendClick);
       btn.dataset.routeSenderBound = '1';
+      // B34 (2026-08-04): a button that appears mid-stage joins the latch,
+      // so the fleet-wide "one stage at a time" rule survives a re-render.
+      if (stagingInFlight && btn !== stagingBtn) {
+        var lbl = btn.querySelector('.send-route-btn__label') || btn;
+        if (btn.dataset.rsIdleLabel === undefined) btn.dataset.rsIdleLabel = lbl.textContent;
+        btn.disabled = true;
+        btn.classList.add('is-waiting');
+        lbl.textContent = LABEL_WAITING;
+      }
     });
   }
 
