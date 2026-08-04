@@ -32,7 +32,7 @@
   var FAILURE_HOLD_MS = 4000;
 
   // ----------------------------------------------------------------
-  // Double-click / re-stage storm guard (2026-08-04) — see B34.
+  // Double-click / re-stage storm guard (2026-08-04) — see Load Plan BUGS.md #41.
   // ----------------------------------------------------------------
   // REQUEST_TIMEOUT_MS was 30,000 and was the BUG, not the protection: the
   // button disabled itself on click (correct) but the 30 s abort re-enabled
@@ -42,15 +42,46 @@
   // every one takes the Apps Script script lock, so the presses starved each
   // other out and five of six stages never landed.
   //
-  // The ceiling below must exceed the WORST possible 889 stage run, measured
-  // 2026-08-03: sheet reads ~5 s + Fuzzy Match Dogs up to 25 s (the grooming
-  // feed's own timeout) + coords ~2 s + RouteXL ~2 s + Format Route ~1 s +
-  // Stage — Save up to 42 s (20 s timeout + 2 s wait + 20 s retry) ≈ 77 s.
-  // 120 s leaves headroom. It is a CEILING, not the normal wait: the store
-  // confirmation below releases the button the moment the route really lands
-  // (typically 5–20 s), so a healthy stage feels exactly as it does today.
-  var REQUEST_TIMEOUT_MS = 120000;
-  var STAGE_CEILING_MS   = 120000;  // hard stop; keep >= REQUEST_TIMEOUT_MS
+  // The ceiling below must exceed the WORST possible 889 stage run.
+  //
+  // ⚠️ RE-DERIVED 2026-08-04 FROM THE NODES' CONFIGURED MAXIMA, not from observed
+  // times. The previous version of this comment was built from a fast day's
+  // measurements and understated the total by ~45 s — a ceiling has to be sized
+  // against what the config PERMITS, because that is what a bad day produces.
+  // Read live from the 889 export, stage_only path:
+  //     Fuzzy Match Dogs — bounded by the grooming-feed
+  //       timeout it sets itself (stage2_fuzzy_match.js)      25.0 s
+  //     HTTP — RouteXL /tour/ — CONFIGURED timeout, not the
+  //       ~1 s it usually takes                               30.0 s
+  //     Stage — Save — one attempt since fix 2 (was 42 s:
+  //       20 s + 2 s wait + 20 s retry)                       60.0 s
+  //                                                        ─────────
+  //       bounded terms alone                                115.0 s
+  //     + Read Master / Coordinates / Alt Address: these have
+  //       NO timeout and carry retryOnFail maxTries 3 with a
+  //       3 s gap, so they contribute ~18 s of retry WAIT on
+  //       top of three unbounded attempts each. Observed
+  //       nominal ≈ 3.7 s; a degraded run is far more.        ~20 s+
+  //                                                        ─────────
+  //                                                          ≈ 135 s
+  // Hence 150 s, not 120 s. At 120 s this page would abort a run that was still
+  // going to succeed — and losing the response also loses `applyReturnedStops`
+  // (kennel stop numbers) and the new `staged` flag.
+  //
+  // 📌 Two standing constraints for whoever touches this next:
+  //   - STAGE_CEILING_MS must stay >= REQUEST_TIMEOUT_MS.
+  //   - If Stage — Save ever regains a retry, raise BOTH in the SAME ship:
+  //     maxTries 2 with a 60 s timeout and a 15 s gap makes the worst node 135 s
+  //     and the worst run ~210 s — the original bug, rebuilt.
+  //   - The three unbounded Sheets reads are the one term that cannot be
+  //     bounded from here. Giving them an explicit timeout in 889 is the real
+  //     cure and is logged as a follow-up, not done in this ship.
+  //
+  // It is a CEILING, not the normal wait: the store confirmation below — and,
+  // since fix 1, the response's own `staged` flag — releases the button the
+  // moment the route really lands, typically 5–20 s.
+  var REQUEST_TIMEOUT_MS = 150000;
+  var STAGE_CEILING_MS   = 150000;  // hard stop; keep >= REQUEST_TIMEOUT_MS
   var STORE_POLL_MS      = 4000;    // how often to ask the store "did it land?"
   var STORE_POLL_DELAY_MS = 3000;   // grace before the first poll (fastest observed stage: 3.5 s)
   var RETRY_COOLDOWN_MS  = 15000;   // after a FAILED stage, before re-arming
@@ -354,17 +385,25 @@
   }
 
   // ----------------------------------------------------------------
-  // Stage confirmation — ask the STORE, not the response (2026-08-04, B34)
+  // Stage confirmation — ask the STORE, not the response (2026-08-04, Load Plan BUGS.md #41)
   // ----------------------------------------------------------------
-  // Neither end of the pipeline can currently tell the operator whether a
-  // stage landed, in EITHER direction:
-  //   - the Apps Script returns a lock timeout as HTTP 200 + {error:…}, so
-  //     n8n's Stage — Save node reports success;
-  //   - 889's "Respond to Van Manager" derives `ok` from Fuzzy Match Dogs /
-  //     Build RouteXL Request / Format Route and never references Stage — Save.
-  // So `ok:true` does NOT mean staged, and a lost/slow response does NOT mean
+  // When this was written (2026-08-04, part 1) neither end of the pipeline could
+  // tell the operator whether a stage landed, in EITHER direction:
+  //   - the Apps Script returned a lock timeout as HTTP 200 + {error:…}, so
+  //     n8n's Stage — Save node reported success;
+  //   - 889's "Respond to Van Manager" derived `ok` from Fuzzy Match Dogs /
+  //     Build RouteXL Request / Format Route and never referenced Stage — Save.
+  // So `ok:true` did NOT mean staged, and a lost/slow response did NOT mean
   // not staged (on 2026-08-03 exec 309727 wrote the row while this page was
-  // showing red). The ReorderQueue is the only authority, so ask it.
+  // showing red). The ReorderQueue was the only authority, so we ask it.
+  //
+  // PART 2 (same bug, backend) added a server-side signal: the response now
+  // carries `staged` — true (the store confirmed the row), false (Stage — Save
+  // answered without confirming), or null (it never ran). That is used as an
+  // ACCELERATOR, not a replacement: `staged:true` settles the button on the spot
+  // instead of waiting for the next poll, and `staged:false` shortens the wait
+  // to one more poll. The store remains the authority, because a response can
+  // still be lost entirely — which is exactly how this bug presented.
   //
   // Matching is by VAN + freshness, never by rebuilding the slot key: the
   // section grammar (period + run_type → HALF_DAY/PM/NEXT_AM) lives in the
@@ -398,14 +437,23 @@
   }
 
   // Polls the store until the van's slot appears, or `ceilingMs` elapses.
-  // Resolves true (landed) / false (did not). NEVER rejects — an unreachable
-  // store must not be reported to the operator as a failed stage.
+  // Returns { promise, shortenTo }: the promise resolves true (landed) / false
+  // (did not) and NEVER rejects — an unreachable store must not be reported to
+  // the operator as a failed stage. `shortenTo(ms)` pulls the deadline in (never
+  // pushes it out), so a server-side `staged:false` can stop the operator staring
+  // at the full ceiling for an answer that has already arrived.
   function awaitStageLanded(van, sinceMs, ceilingMs) {
     var deadline = Date.now() + ceilingMs;
-    return new Promise(function (resolve) {
+    var promise = new Promise(function (resolve) {
       var stopped = false;
       function attempt() {
         if (stopped) return;
+        // Test the deadline HERE as well as in next(): without this, one poll
+        // always fires after the deadline and can burn the store's whole abort
+        // budget (STORE_TIMEOUT_MS) before resolving — a 150 s ceiling behaved
+        // like ~180 s, and a shortenTo() could be swallowed entirely by a poll
+        // that was already in flight.
+        if (Date.now() >= deadline) { stopped = true; resolve(false); return; }
         readStore().then(function (data) {
           if (stopped) return;
           if (slotLanded(data, van, sinceMs)) { stopped = true; resolve(true); return; }
@@ -418,6 +466,13 @@
       }
       setTimeout(attempt, STORE_POLL_DELAY_MS);
     });
+    return {
+      promise: promise,
+      shortenTo: function (ms) {
+        var d = Date.now() + ms;
+        if (d < deadline) deadline = d;
+      }
+    };
   }
 
   // ----------------------------------------------------------------
@@ -566,7 +621,7 @@
   function handleSendClick(ev) {
     var btn = ev.currentTarget;
     if (!btn || btn.disabled) return;
-    // B34 (2026-08-04) — the latch is the authority, not `btn.disabled`. A
+    // Load Plan BUGS.md #41 (2026-08-04) — the latch is the authority, not `btn.disabled`. A
     // button rendered (or re-bound) AFTER the latch went on would not carry
     // the disabled attribute, and concurrent stages are exactly the script-lock
     // contention this guard exists to prevent.
@@ -623,7 +678,7 @@
     // Staging-tray nudge (2026-07-19) — non-blocking, never stops the send.
     warnTrayDogs();
 
-    // B34 (2026-08-04): reference time for the store confirmation, and the
+    // Load Plan BUGS.md #41 (2026-08-04): reference time for the store confirmation, and the
     // fleet latch. Taken BEFORE the POST so a stage that lands unusually fast
     // still compares as "after this click".
     var clickedAtMs = Date.now();
@@ -633,6 +688,20 @@
     // Everything below settles through ONE of these two helpers, so the latch
     // can never be left on. `landed` is the authority; the n8n response only
     // decides which WORDING the operator sees.
+    // Additive: drop the optimised stop numbers n8n returns into the kennels.
+    // Any match issue is logged, never surfaced to the button. ONE copy — the
+    // response and the store can settle in either order, and before this was
+    // factored out both orders carried their own duplicate of it.
+    function applyStops(body) {
+      try {
+        if (body && Array.isArray(body.stops) && body.stops.length) {
+          applyReturnedStops(van, body.stops, sentPeriod);
+        }
+      } catch (e) {
+        console.warn('[RouteSender] Could not apply stop numbers (' + van + '):', e);
+      }
+    }
+
     function finishStaged(body) {
       setButtonState(btn, 'success');
       try {
@@ -642,16 +711,8 @@
       } catch (e) {}
       setFleetLatch(false, btn);
       setTimeout(function () { setButtonState(btn, 'idle'); }, SUCCESS_HOLD_MS);
-      console.log('[RouteSender] Staged ' + van + ' (confirmed against the store).');
-      // Additive: drop the optimised stop numbers n8n returns into the kennels.
-      // Any match issue is logged, never surfaced to the button.
-      try {
-        if (body && Array.isArray(body.stops) && body.stops.length) {
-          applyReturnedStops(van, body.stops, sentPeriod);
-        }
-      } catch (e) {
-        console.warn('[RouteSender] Could not apply stop numbers (' + van + '):', e);
-      }
+      console.log('[RouteSender] Staged ' + van + ' (confirmed).');
+      applyStops(body);
     }
 
     // A genuine miss. The button stays DEAD for RETRY_COOLDOWN_MS: an Apps
@@ -704,11 +765,12 @@
       fn();
     }
 
-    awaitStageLanded(van, clickedAtMs, STAGE_CEILING_MS).then(function (landed) {
+    var watcher = awaitStageLanded(van, clickedAtMs, STAGE_CEILING_MS);
+    var notStagedReason = 'it has not appeared in the Reorder tab. The staging store may be busy — wait for the countdown, then try ONCE.';
+
+    watcher.promise.then(function (landed) {
       if (landed) settle(function () { succeeded = true; finishStaged(lastBody); });
-      else settle(function () {
-        finishNotStaged('it has not appeared in the Reorder tab. The staging store may be busy — wait for the countdown, then try ONCE.', false);
-      });
+      else settle(function () { finishNotStaged(notStagedReason, false); });
     });
 
     postToN8n(payload).then(function (res) {
@@ -721,7 +783,7 @@
         // ambiguous name, RouteXL down, every dog skipped). That is the ONE
         // case where "check the dog names" is the right advice, and it is
         // decisive — no route was built, so nothing can ever land. Fail now
-        // rather than making the operator watch out a 120 s ceiling.
+        // rather than making the operator watch out the whole ceiling.
         if (body && body.ok === false) {
           settle(function () {
             finishNotStaged('the route could not be built. Check the dog names against the master sheet, then try again.', true);
@@ -731,14 +793,25 @@
         // If the store already confirmed before the response arrived, the
         // stop numbers still have to be written back — finishStaged ran with
         // a null body, so do it here.
-        if (settled && succeeded) {
-          try {
-            if (body && Array.isArray(body.stops) && body.stops.length) {
-              applyReturnedStops(van, body.stops, sentPeriod);
-            }
-          } catch (e) {
-            console.warn('[RouteSender] Could not apply stop numbers (' + van + '):', e);
-          }
+        if (settled && succeeded) { applyStops(body); return; }
+
+        // `staged` — the server-side storage result (889 "Respond to Van
+        // Manager", added 2026-08-04 with BUGS.md #41 fix 1). Absent on any
+        // pre-fix 889, which is why nothing below treats "not true" as failure.
+        //   true  → the ReorderQueue confirmed the row. Settle now instead of
+        //           waiting up to STORE_POLL_MS for the next poll to say so.
+        //   false → Stage — Save answered and did not confirm. Under fix 3 the
+        //           store refuses BEFORE it writes anything, so this is
+        //           decisive — but the store stays the authority, so give it one
+        //           more poll rather than settling straight off a response.
+        if (body && body.staged === true) {
+          settle(function () { succeeded = true; finishStaged(body); });
+          return;
+        }
+        if (body && body.staged === false) {
+          notStagedReason = 'the staging store was busy and did not take it. Wait for the countdown, then try ONCE.';
+          watcher.shortenTo(STORE_POLL_MS + 1000);
+          return;
         }
         // Otherwise: say nothing. The store watcher owns the verdict.
       });
@@ -814,7 +887,7 @@
       if (btn.dataset.routeSenderBound === '1') return;
       btn.addEventListener('click', handleSendClick);
       btn.dataset.routeSenderBound = '1';
-      // B34 (2026-08-04): a button that appears mid-stage joins the latch,
+      // Load Plan BUGS.md #41 (2026-08-04): a button that appears mid-stage joins the latch,
       // so the fleet-wide "one stage at a time" rule survives a re-render.
       if (stagingInFlight && btn !== stagingBtn) {
         var lbl = btn.querySelector('.send-route-btn__label') || btn;
