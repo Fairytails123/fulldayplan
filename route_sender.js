@@ -115,11 +115,31 @@
 
   // Latch/unlatch every OTHER van's button. The owning button is driven by
   // setButtonState as before, so its existing state machine is untouched.
+  // Is this button still serving its post-failure anti-storm cooldown?
+  //
+  // ⚠️ 2026-08-04: without this, the cooldown was cancelled by an UNRELATED van.
+  // `setFleetLatch(false)` re-enables every non-owner button, so: BVX misses at
+  // t=150 and starts its 15 s countdown → the operator stages SV at t=152 →
+  // SV lands at t=156 → SV's unlatch re-enables BVX with ~9 s unserved, straight
+  // back into the contention that just made it miss. Worse, the latch had
+  // captured BVX's countdown text as its "idle" label, so if the countdown had
+  // already finished the restore repainted a stale "⚠️ Not staged — retry (13)"
+  // on an ENABLED button, permanently. The cooldown is the anti-storm guard that
+  // fix 1 exists to protect, so it has to be per-button and outrank the latch.
+  function inCooldown(b) {
+    var until = Number(b && b.dataset ? b.dataset.rsCooldownUntil : 0);
+    return !!until && Date.now() < until;
+  }
+
   function setFleetLatch(on, owner) {
     stagingInFlight = !!on;
     stagingBtn = on ? (owner || null) : null;
     allStageButtons().forEach(function (b) {
       if (b === owner) return;
+      // A button serving its own cooldown is left completely alone in both
+      // directions: not re-labelled on latch (so its countdown is never captured
+      // as an "idle" label) and not re-enabled on unlatch.
+      if (inCooldown(b)) return;
       var lbl = b.querySelector('.send-route-btn__label') || b;
       if (on) {
         if (b.dataset.rsIdleLabel === undefined) b.dataset.rsIdleLabel = lbl.textContent;
@@ -420,18 +440,41 @@
     return Promise.reject(new Error('store reader unavailable'));
   }
 
-  function slotLanded(data, van, sinceMs) {
+  // Does the store hold the slot THIS CLICK produced?
+  //
+  // ⚠️ Matches the EXACT stamp this client sent, not a freshness window.
+  // Until 2026-08-04 this accepted any slot for the van with
+  // `staged_at >= sinceMs - 1000`, justified by a comment claiming "the fleet
+  // latch guarantees no other stage is in flight". **The fleet latch is per
+  // PAGE**, and two office devices are a normal morning: A stages BVX at
+  // 09:00:00, B stages BVX at 09:00:02, B's row lands last — and A's poll saw
+  // B's row as its own, showed ✅, and wrote A's stop numbers into A's grid
+  // while the store actually held B's route.
+  //
+  // The stamp is safe to match exactly because it is this client's own and it
+  // survives the whole chain byte-for-byte — verified live 2026-08-04:
+  //   payload.timestamp (new Date().toISOString() at click)
+  //     → stage2 `payload.timestamp` → stage4 `route_record.ts`
+  //     → Apps Script `staged_at` cell → loadStaged `staged_at`
+  // e.g. exec 314175 posted "2026-08-04T07:44:21.993Z" and HALF_DAY__SV still
+  // reports exactly that. Compared through Date.parse so a future
+  // representation change (a Sheets Date coercion) still compares as an
+  // instant rather than a string.
+  //
+  // Tightening this to exact-only is only safe BECAUSE fix 1 shipped alongside
+  // it: the response's own `staged:true` is now a second, independent
+  // confirmation path, so a store match that somehow failed can no longer
+  // strand the button. Do not tighten one without the other.
+  function slotLanded(data, van, stampMs) {
     if (!data || !Array.isArray(data.slots)) return false;
+    if (isNaN(stampMs)) return false;
     var want = String(van || '').toUpperCase();
     for (var i = 0; i < data.slots.length; i++) {
       var s = data.slots[i] || {};
       var ctx = s.ctx || {};
       if (String(ctx.v || s.van || '').toUpperCase() !== want) continue;
       if (s.status === 'CLEARED') continue;
-      var t = Date.parse(s.staged_at || s.updated_at || '');
-      // 1 s of slack: staged_at is stamped from the payload's own timestamp,
-      // which is generated a few ms BEFORE this click's reference time.
-      if (!isNaN(t) && t >= (sinceMs - 1000)) return true;
+      if (Date.parse(s.staged_at || '') === stampMs) return true;
     }
     return false;
   }
@@ -442,7 +485,7 @@
   // the operator as a failed stage. `shortenTo(ms)` pulls the deadline in (never
   // pushes it out), so a server-side `staged:false` can stop the operator staring
   // at the full ceiling for an answer that has already arrived.
-  function awaitStageLanded(van, sinceMs, ceilingMs) {
+  function awaitStageLanded(van, stampMs, ceilingMs) {
     var deadline = Date.now() + ceilingMs;
     var promise = new Promise(function (resolve) {
       var stopped = false;
@@ -456,7 +499,7 @@
         if (Date.now() >= deadline) { stopped = true; resolve(false); return; }
         readStore().then(function (data) {
           if (stopped) return;
-          if (slotLanded(data, van, sinceMs)) { stopped = true; resolve(true); return; }
+          if (slotLanded(data, van, stampMs)) { stopped = true; resolve(true); return; }
           next();
         }).catch(function () { if (!stopped) next(); });
       }
@@ -681,7 +724,12 @@
     // Load Plan BUGS.md #41 (2026-08-04): reference time for the store confirmation, and the
     // fleet latch. Taken BEFORE the POST so a stage that lands unusually fast
     // still compares as "after this click".
+    // The store is matched on the payload's OWN timestamp, which is what
+    // becomes `staged_at` end to end — not on the click's wall-clock, which
+    // only ever supported the old (cross-device-unsafe) freshness window.
     var clickedAtMs = Date.now();
+    var stampMs = Date.parse(payload && payload.timestamp ? payload.timestamp : '');
+    if (isNaN(stampMs)) stampMs = clickedAtMs;   // belt and braces; buildPayload always stamps
     setButtonState(btn, 'sending');
     setFleetLatch(true, btn);
 
@@ -732,6 +780,9 @@
       } catch (e) {}
       console.error('[RouteSender] Stage did not land for ' + van + ': ' + reason);
       setFleetLatch(false, btn);
+      // Claim the cooldown BEFORE releasing the latch reaches anyone else, so
+      // no other van's unlatch can cut it short (see inCooldown).
+      btn.dataset.rsCooldownUntil = String(Date.now() + RETRY_COOLDOWN_MS);
       var left = Math.ceil(RETRY_COOLDOWN_MS / 1000);
       labelEl.textContent = (hard ? LABEL_FAILED : LABEL_NOTLANDED) + ' (' + left + ')';
       var tick = setInterval(function () {
@@ -741,6 +792,7 @@
           return;
         }
         clearInterval(tick);
+        delete btn.dataset.rsCooldownUntil;
         setButtonState(btn, 'idle');
       }, 1000);
     }
@@ -765,7 +817,7 @@
       fn();
     }
 
-    var watcher = awaitStageLanded(van, clickedAtMs, STAGE_CEILING_MS);
+    var watcher = awaitStageLanded(van, stampMs, STAGE_CEILING_MS);
     var notStagedReason = 'it has not appeared in the Reorder tab. The staging store may be busy — wait for the countdown, then try ONCE.';
 
     watcher.promise.then(function (landed) {
