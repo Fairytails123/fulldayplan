@@ -200,16 +200,80 @@
   }
 
   // ---- network (preflight-free idiom, mirrors the page's Share/Fetch) -----
+  //
+  // 2026-08-04, BUGS.md #41 fix 4. Until now these two had NO timeout and NO
+  // AbortController — unlike postN8n, which has had both since it was written.
+  // That asymmetry is #41's own leading hypothesis for what pinned an in-flight
+  // saver flag (and, through the savers' mutual defer chain, everything behind
+  // it) during the 2026-08-03 staging failure: a stalled request never settles,
+  // so `kpInFlight`/`noteInFlight` never clear and every other saver waits on
+  // them for ever.
+  //
+  // ⚠️ STORE_TIMEOUT_MS is its OWN constant and must stay STRICTLY GREATER than
+  // the Apps Script's REORDER_LOCK_WAIT_MS (15 s). The whole point of #41 fix 3
+  // is that a busy store now ANSWERS `{ok:false, error:'busy', retryable:true}`
+  // instead of throwing; an abort set at or below the lock wait would cancel
+  // exactly the honest answer it was added to receive — the same mistake the old
+  // 30 s REQUEST_TIMEOUT_MS made against a 45–66 s backend. Do NOT reuse
+  // REQUEST_TIMEOUT_MS here: that constant belongs to postN8n, and coupling them
+  // means a future n8n tune silently retunes the store abort.
+  var STORE_TIMEOUT_MS = 30000;   // > the Apps Script's 15 s lock wait, with margin
+  var STORE_RETRIES = 1;          // one extra attempt, ONLY on an explicit retryable refusal
+  var STORE_RETRY_GAP_MS = 1200;
+
+  function fetchWithTimeout(url, init, ms) {
+    var controller = new AbortController();
+    var t = setTimeout(function () { controller.abort(); }, ms);
+    init = init || {};
+    init.signal = controller.signal;
+    return fetch(url, init).then(function (r) {
+      clearTimeout(t);
+      return r;
+    }).catch(function (err) {
+      clearTimeout(t);
+      throw err;
+    });
+  }
+
   function getStaged() {
-    return fetch(REORDER_URL + '?action=loadStaged&token=' + encodeURIComponent(TOKEN),
-      { method: 'GET', cache: 'no-cache', redirect: 'follow' })
+    return fetchWithTimeout(REORDER_URL + '?action=loadStaged&token=' + encodeURIComponent(TOKEN),
+      { method: 'GET', cache: 'no-cache', redirect: 'follow' }, STORE_TIMEOUT_MS)
       .then(function (r) { return r.json(); });
   }
+
+  // Retrying a `retryable` refusal happens HERE, in the one place every store
+  // write passes through, and deliberately NOT in the six callers. The callers
+  // are the house's classic "updated M of N sites" trap: `saveOrder`,
+  // `savePositions`, `saveMessage`, `moveStop`, `clearSlot` and `addStagedDog`
+  // each interpret a refusal their own way, and two of them (doSave, commitMove)
+  // respond by ROLLING BACK the user's edit on screen. A busy store would have
+  // read to them as "unknown failure" and visibly undone a drag — the same
+  // symptom as the 2026-08-03 S2 bug, from a new cause.
+  //
+  // A retry is safe for every action precisely because the refusal happens
+  // BEFORE the lock is held, so nothing was written and no `rev` moved: the
+  // identical body is still valid. That is a property of fix 3's `reorderLock_`,
+  // not a general licence — if the server ever refuses AFTER a partial write,
+  // this retry must go.
   function postStore(body) {
-    // No Content-Type header => simple request, no CORS preflight (Apps Script).
-    return fetch(REORDER_URL, { method: 'POST', body: JSON.stringify(body), redirect: 'follow' })
-      .then(function (r) { return r.text(); })
-      .then(function (t) { try { return JSON.parse(t); } catch (e) { return { ok: false, error: 'bad json' }; } });
+    var attempt = 0;
+    function once() {
+      // No Content-Type header => simple request, no CORS preflight (Apps Script).
+      return fetchWithTimeout(REORDER_URL,
+        { method: 'POST', body: JSON.stringify(body), redirect: 'follow' }, STORE_TIMEOUT_MS)
+        .then(function (r) { return r.text(); })
+        .then(function (t) { try { return JSON.parse(t); } catch (e) { return { ok: false, error: 'bad json' }; } })
+        .then(function (res) {
+          if (res && res.retryable === true && attempt < STORE_RETRIES) {
+            attempt++;
+            return new Promise(function (resolve) {
+              setTimeout(function () { resolve(once()); }, STORE_RETRY_GAP_MS);
+            });
+          }
+          return res;
+        });
+    }
+    return once();
   }
   function postN8n(payload) {
     var controller = new AbortController();
@@ -542,7 +606,10 @@
         toast('✓ ' + item.name + ' added to ' + item.van + (r.created ? ' — new route created' : ''), 'success');
         poll();   // refresh the target card immediately
       } else {
-        toast((r && r.error) || 'Could not add dog — try again', 'error');
+        toast((r && r.retryable)
+          ? 'The staging store is busy — the dog was not added. Try again in a moment.'
+          : ((r && r.error) || 'Could not add dog — try again'),
+          (r && r.retryable) ? 'warning' : 'error');
       }
     }).catch(function () { toast('Could not add dog — try again', 'error'); });
   }
@@ -959,6 +1026,12 @@
           st.renderedRev = null;           // force the next poll to re-render from server truth
           toast('That route changed on another device — reloaded', 'warning');
           poll();
+        } else if (res && res.retryable) {
+          // #41 fix 3/4: the store was busy and postStore already retried once.
+          // Nothing was written and no rev moved, so KEEP the operator's edit on
+          // screen: do NOT null renderedRev and do NOT poll() (either would repaint
+          // server truth over an edit that is still perfectly valid).
+          toast('The staging store is busy — the kennel change was not saved. Try again in a moment.', 'warning');
         } else {
           st.renderedRev = null;
           toast('Could not save kennel positions — reloaded', 'error');
@@ -1012,6 +1085,11 @@
           st.renderedRev = null;
           toast('That route changed on another device — reloaded', 'warning');
           poll();
+        } else if (res && res.retryable) {
+          // #41 fix 3/4: busy store, already retried once by postStore. Nothing
+          // was written and no rev moved — keep the typed note on screen.
+          if (sEl) { sEl.textContent = 'not saved — store busy'; }
+          toast('The staging store is busy — the driver note was not saved. Try again in a moment.', 'warning');
         } else {
           if (sEl) sEl.hidden = true;
           st.renderedRev = null;
@@ -2055,7 +2133,14 @@
       src.pendingSave = false; dst.pendingSave = false;
       if (!r || !r.ok) {
         rollback(src); rollback(dst);
-        toast((r && r.error) ? ('Could not move — ' + r.error) : 'Could not move — reverted', 'error');
+        // A `busy` refusal (#41 fix 3) is the one error here that is nobody's
+        // mistake and is worth retrying by hand; postStore has already retried
+        // it once. Everything else keeps the server's own wording.
+        toast(
+          (r && r.retryable)
+            ? 'The staging store is busy — the move was not saved. Try again in a moment.'
+            : ((r && r.error) ? ('Could not move — ' + r.error) : 'Could not move — reverted'),
+          (r && r.retryable) ? 'warning' : 'error');
         return;
       }
       // Adopt the orders the SERVER actually stored — it may have added or
@@ -2133,6 +2218,12 @@
           rollback(st);
           toast('That route changed on another device — reloaded', 'warning');
           poll();
+        } else if (r && r.retryable) {
+          // postStore already retried this once. The store is genuinely busy, so
+          // the edit is reverted as before — but say WHY, because "could not
+          // save" sent staff hunting for a dog-name problem on 2026-08-03.
+          rollback(st);
+          toast('The staging store is busy — the new order was not saved. Try again in a moment.', 'warning');
         } else {
           rollback(st);
           toast('Could not save order — reverted', 'error');
@@ -2188,6 +2279,11 @@
         if (r && r.ok) {
           removeCard(st);
           toast(vanFromKey(slotKey) + ' ' + (reason || 'route cleared'), 'info');
+        } else if (r && r.retryable) {
+          // busy store; postStore already retried. The slot is untouched, so the
+          // card correctly stays where it is.
+          st.pendingSave = false;
+          toast('The staging store is busy — the route was not cleared. Try again in a moment.', 'warning');
         } else { st.pendingSave = false; toast('Could not clear route — try again', 'error'); }
       })
       .catch(function () { st.pendingSave = false; toast('Could not clear route — try again', 'error'); });
