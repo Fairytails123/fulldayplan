@@ -54,7 +54,27 @@
   var TOKEN = 'ft-k9-board-2024-sec';
   var POLL_MS = 5000;
   var SAVE_DEBOUNCE_MS = 600;
-  var REQUEST_TIMEOUT_MS = 30000;
+  // postN8n's abort for the FINAL SEND — the path with real customer side-effects.
+  //
+  // ⚠️ Raised 30 s → 150 s on 2026-08-04 (BUGS.md #41, found by the review and then
+  // confirmed by live traffic the same morning). 30 s was shorter than the send
+  // itself: execs 315496 and 315498, two real final sends three seconds apart at
+  // 09:43Z, took **42.1 s and 38.2 s**. Both would have aborted here, painted
+  // "Send failed — route kept, retry", and re-enabled the button after 4 s — on
+  // sends that had SUCCEEDED. A re-press then produces a SECOND Telegram route
+  // message to the drivers, a second Whiteboard — Update and a second W1 ingest,
+  // and unlike /drive's sendQueueSlot there is no idempotency backstop here.
+  //
+  // That is the same mis-sizing #41 diagnosed on the staging path, sitting on the
+  // higher-consequence caller. Bounded maxima on the final-send path, read from
+  // the 889 export: grooming feed 25 s + RouteXL 30 s + VAN-ETA Forward 25 s +
+  // Whiteboard — Update 20 s = 100 s, plus ~18 s of Sheets retry wait ≈ 118 s.
+  // 150 s matches route_sender.js's ceiling and leaves headroom.
+  //
+  // It is a CEILING, not the normal wait — a healthy send still resolves in
+  // seconds. Sizing it from observed times is what produced 30 s; size it from
+  // what the backend config PERMITS.
+  var REQUEST_TIMEOUT_MS = 150000;
   var SENT_RESET_MS = 2500;   // after a send: hold "✅ Sent", then re-enable so the (persisting) route can be re-sent
   var CLEAR_TOMBSTONE_MS = 6000;   // ignore a just-cleared slot for this long so an in-flight poll can't re-add its card
 
