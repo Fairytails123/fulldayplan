@@ -68,6 +68,45 @@
   .reset-btn.done{background:#f0fdf4;color:#15803d;border-color:#bbf7d0}
   .empty{margin:auto;text-align:center;color:var(--muted);padding:30px 16px}
   .empty .big{font-size:2.4rem;margin-bottom:6px}
+  /* ---- route thread (2026-08-06) ----
+     Collapsed by default: a 9-13 stop route would otherwise push the reset button
+     and every other van off the bottom of a 340px panel. */
+  .thread-btn{display:flex;align-items:center;gap:6px;width:100%;margin-top:9px;padding:6px 8px;
+    border:1px solid var(--line);border-radius:9px;background:#f8fafc;color:#475569;
+    font-size:.76rem;font-weight:700;cursor:pointer;text-align:left}
+  .thread-btn:hover{background:#f1f5f9}
+  .thread-btn .caret{transition:transform .18s ease;display:inline-block}
+  .thread-btn[aria-expanded="true"] .caret{transform:rotate(90deg)}
+  .thread-btn .n{margin-left:auto;font-weight:600;color:var(--muted)}
+  .thread{display:none;margin-top:8px}
+  .thread.open{display:block}
+  .tl{position:relative;padding-left:24px}
+  /* Per-row connectors rather than one long rule, so the travelled part of the
+     route can be coloured: a done row draws its own segment in the van colour. */
+  .tstop{position:relative;display:flex;align-items:baseline;gap:6px;padding:4px 0;font-size:.82rem;line-height:1.3}
+  .tstop::after{content:"";position:absolute;left:-16px;top:0;height:100%;width:2px;background:#cbd5e1;z-index:1}
+  .tstop:last-child::after{display:none}
+  .tstop.done::after{background:var(--c)}
+  .tstop::before{content:"";position:absolute;left:-22px;top:6px;width:14px;height:14px;border-radius:50%;
+    background:#fff;border:2px solid #cbd5e1;box-sizing:border-box;z-index:2}
+  .tstop.done::before{background:var(--c);border-color:var(--c)}
+  .tstop.now::before{border-color:var(--c);border-width:4px}
+  .tstop.next::before{border-color:var(--c)}
+  .tstop.skip{color:var(--muted)} .tstop.skip .nm{text-decoration:line-through}
+  .tstop.gone{color:var(--stale);opacity:.75} .tstop.gone .nm{text-decoration:line-through}
+  .tseq{color:var(--muted);font-weight:700;font-variant-numeric:tabular-nums;min-width:1.4em}
+  .tstop .nm{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tpc{margin-left:auto;color:var(--muted);font-size:.72rem;white-space:nowrap}
+  .tgd{font-size:.7rem;color:var(--muted);font-weight:700}
+  /* the leg the van is currently on */
+  .tleg{position:relative;height:34px}
+  .tleg::after{content:"";position:absolute;left:-16px;top:0;height:100%;width:2px;background:#cbd5e1;z-index:1}
+  .tfill{position:absolute;left:-16px;top:0;width:2px;background:var(--c);z-index:2}
+  .tvan{position:absolute;left:-24px;z-index:3;transform:translateY(-50%);white-space:nowrap;
+    font-size:.7rem;font-weight:800;color:#fff;background:var(--c);border:2px solid #fff;
+    border-radius:9px;padding:1px 7px;box-shadow:0 2px 6px rgba(15,23,42,.3)}
+  .tleg.unknown .tvan{background:var(--stale);border-style:dashed}
+  .tleg.unknown .tfill{background:repeating-linear-gradient(180deg,var(--stale) 0 3px,transparent 3px 6px)}
   /* map markers */
   .van-marker{position:relative;display:grid;place-items:center;transform:translate(-50%,-50%)}
   .van-pin{font-weight:800;color:#fff;background:var(--c);border:2.5px solid #fff;border-radius:11px;
@@ -231,6 +270,62 @@
   function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,function(c){
     return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
 
+  // ---- route thread ----------------------------------------------------
+  // Which vans have their thread open. Kept OUTSIDE renderCards because the poll
+  // rebuilds the whole panel with innerHTML every 15s (see renderCards) — without
+  // this, an expanded thread would snap shut under the operator every tick.
+  var expanded = {};
+
+  function stopRow(s, isNext){
+    var st = String(s.status||"pending").toLowerCase();
+    var cls = (st==="collected"||st==="dropped") ? "done"
+            : st==="removed" ? "gone"
+            : st==="skipped" ? "skip"
+            : st==="arrived" ? "now"
+            : isNext ? "next" : "";
+    var title = st==="removed" ? "removed from the route"
+              : st==="skipped" ? "skipped"
+              : (cls==="done" ? "done" : st==="arrived" ? "at this stop" : "still to do");
+    return '<div class="tstop '+cls+'" title="'+esc(title)+'">'+
+             '<span class="tseq">'+esc(s.seq)+'</span>'+
+             '<span class="nm">'+esc(s.dog_name||"")+'</span>'+
+             (s.grooming ? ' <span class="tgd">✂️'+(s.leg_code?' '+esc(s.leg_code):'')+'</span>' : '')+
+             (s.postcode ? '<span class="tpc">'+esc(s.postcode)+'</span>' : '')+
+           '</div>';
+  }
+
+  // The van's own row, drawn on the line between two stops.
+  // p===null means "somewhere on this leg" — the tap-derived position with no live
+  // fix (an iPhone driver, a dead phone, a stale ping). It is drawn mid-leg and
+  // dashed so it never reads as a precise location it isn't.
+  function vanRow(v, p){
+    var known = (p !== null && p !== undefined && isFinite(p));
+    var pct = known ? Math.round(Number(p)*100) : 50;
+    var lbl = known ? "live position" : "position from stop taps — no live GPS";
+    return '<div class="tleg'+(known?"":" unknown")+'" title="'+esc(lbl)+'">'+
+             '<i class="tfill" style="height:'+pct+'%"></i>'+
+             '<span class="tvan" style="top:'+pct+'%">🚐 '+esc(v.van)+(known?"":" ?")+'</span>'+
+           '</div>';
+  }
+
+  function threadHtml(v){
+    // Tolerates an older API that has no stops[] — the card simply keeps its
+    // previous shape, so the page and the workflow can deploy in either order.
+    var stops = Array.isArray(v.stops) ? v.stops : null;
+    if(!stops || !stops.length) return "";
+    var legTo = (v.leg_to===null||v.leg_to===undefined) ? null : Number(v.leg_to);
+    var rows = stops.map(function(s){
+      var isNext = (legTo!==null && Number(s.seq)===legTo);
+      return (isNext ? vanRow(v, v.leg_progress) : "") + stopRow(s, isNext);
+    }).join("");
+    var open = expanded[v.van] ? " open" : "";
+    return '<button class="thread-btn" type="button" aria-expanded="'+(open?"true":"false")+'" data-van="'+esc(v.van)+'">'+
+             '<span class="caret">▸</span><span>Route</span>'+
+             '<span class="n">'+stops.length+' stops</span>'+
+           '</button>'+
+           '<div class="thread'+open+'" data-thread="'+esc(v.van)+'"><div class="tl">'+rows+'</div></div>';
+  }
+
   function renderCards(vans){
     if(!vans.length){
       cardsEl.innerHTML = '<div class="empty"><div class="big">🚐</div>No vans are currently on a route.<br><small>Positions appear here once a driver starts a route and shares live location.</small></div>';
@@ -254,9 +349,23 @@
         '<div class="prog"><i style="--c:'+col+';width:'+pct+'%"></i></div>'+
         '<div class="stat-row"><span><b>'+esc(v.done)+'</b> done · <b>'+esc(v.remaining)+'</b> to go</span>'+
         '<span>'+fmtAge(v.age_s)+'</span></div>'+
+        threadHtml(v)+
         '<div class="card-foot"><button class="reset-btn" data-route="'+esc(v.route_id||"")+'" data-van="'+esc(v.van)+'">↺&nbsp;Reset route</button></div>'+
       '</div>';
     }).join("");
+    // expand / collapse the thread. stopPropagation so it does not also fire the
+    // card's pan-to-van handler below.
+    Array.prototype.forEach.call(cardsEl.querySelectorAll(".thread-btn"), function(b){
+      b.addEventListener("click", function(ev){
+        ev.stopPropagation();
+        var van = b.getAttribute("data-van");
+        var panel = cardsEl.querySelector('[data-thread="'+(window.CSS&&CSS.escape?CSS.escape(van):van)+'"]');
+        var open = !(expanded[van]);
+        expanded[van] = open;                      // survives the next poll's re-render
+        if(panel) panel.classList.toggle("open", open);
+        b.setAttribute("aria-expanded", open ? "true" : "false");
+      });
+    });
     // click a card -> focus its van on the map
     Array.prototype.forEach.call(cardsEl.querySelectorAll(".card"), function(c){
       c.addEventListener("click", function(){
