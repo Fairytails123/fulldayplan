@@ -681,6 +681,14 @@
       outline-color: #0074A6;
       background: #E6F7FE;
     }
+    .tile.sync-auto, .tile-inbox.sync-auto {
+      background: #FFF4D6;
+      outline-color: #D98200;
+    }
+    .tile.sync-removed, .tile-inbox.sync-removed {
+      background: #FFE9E7;
+      outline-color: #C63D32;
+    }
 
     /* ── Second-address (ALT) tile control ─────────────────────────── */
     /* The ▼ chip and the address tag line are SEPARATE overlays anchored to
@@ -1606,6 +1614,7 @@
       // Configuration
       const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxUeIiIJQZZeoo3aXHDdqVZNNqFKLhWhi_WhPVb6GUIvkMlfNxTKsOXyCTGdvAEsMLC/exec';
       const STORAGE_PREFIX = 'van_v5_';  // Updated version for new data structure
+      const PIN_WITNESS_PREFIX = 'van_pin_witness_';
       const MAX_UNDO_STATES = 20;
       
       // Valid dog names from JotForm (for validation)
@@ -1795,6 +1804,59 @@
         } catch (e) {
           showToast('Storage full! Please clear some data.', 'error');
         }
+      }
+
+      // The last cloud pin this device has actually seen, kept separately per
+      // plan. It is only a freshness witness; the PlanData row remains the
+      // authority and old clients can continue to use their legacy POST.
+      function getPinWitness(planId) {
+        try { return localStorage.getItem(PIN_WITNESS_PREFIX + String(planId || '')) || ''; }
+        catch (e) { return ''; }
+      }
+
+      function witnessPin(planId, pinnedAt) {
+        var next = String(pinnedAt || '');
+        if (!next) return;
+        try {
+          var key = PIN_WITNESS_PREFIX + String(planId || '');
+          var prior = localStorage.getItem(key) || '';
+          if (!prior || !isFinite(Date.parse(prior)) || Date.parse(next) >= Date.parse(prior)) {
+            localStorage.setItem(key, next);
+          }
+        } catch (e) { /* storage unavailable must never block Fetch or Share */ }
+      }
+
+      // After this device writes a pin, witness the backend's timestamp rather
+      // than its own clock. Failure is deliberately silent: the completed
+      // Share/final-send remains successful, but no unverified witness is kept.
+      async function refreshPinWitness(planId) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 5000);
+        try {
+          const res = await fetch(`${SCRIPT_URL}?planId=${planId}`, {
+            method: 'GET', cache: 'no-cache', redirect: 'follow', signal: controller.signal
+          });
+          if (!res.ok) return null;
+          const meta = await res.json();
+          witnessPin(planId, meta && meta.pinned_at);
+          return meta;
+        } catch (ignore) {
+          return null;
+        } finally {
+          clearTimeout(timer);
+        }
+      }
+
+      // Testable Share guard. Only a newer system-produced final photo needs
+      // an explicit human decision; missing metadata is deliberately fail-open.
+      function sharePinGuard(meta, witnessedPinnedAt, confirmFn) {
+        if (!meta || String(meta.source || '') !== 'final-send' || !meta.pinned_at) return true;
+        var pinnedMs = Date.parse(meta.pinned_at);
+        var witnessedMs = Date.parse(witnessedPinnedAt || '');
+        if (!isFinite(pinnedMs) || (isFinite(witnessedMs) && witnessedMs >= pinnedMs)) return true;
+        var ask = typeof confirmFn === 'function' ? confirmFn : function () { return true; };
+        return !!ask('A newer final load plan has been pinned since this device last fetched it. ' +
+          'Share will replace that final photo with this device\'s plan. Continue?');
       }
       
       // Helper to get stop number object (handles migration from old string format)
@@ -2068,6 +2130,7 @@
 
           if (!res.ok) throw new Error("Network response was not ok");
           const cloud = await res.json();
+          witnessPin(currentPlan, cloud && cloud.pinned_at);
 
           if (cloud && cloud.state && cloud.state !== "{}") {
             saveUndoState();
@@ -2103,15 +2166,43 @@
       //      data. The response is now validated before we claim success.
       const SHARE_TIMEOUT_MS = 30000;
 
+      // Share has one payload builder so every path which skips or passes the
+      // freshness dialog still identifies the sanctioned writer explicitly.
+      function buildSharePlanPayload(planId, planState) {
+        return { action: 'savePlan', state: planState, planId: planId, source: 'share' };
+      }
+
       async function cloudShare() {
         shareBtn.disabled = true;
         shareBtn.textContent = "Sharing…";
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), SHARE_TIMEOUT_MS);
+        let controller = null;
+        let timer = null;
         try {
+          const sharePayload = buildSharePlanPayload(currentPlan, state);
+          // Read metadata first, but fail open: an unavailable metadata check
+          // skips only the dialog and falls through to this same Share POST.
+          let pinMeta = null;
+          const metaController = new AbortController();
+          const metaTimer = setTimeout(() => metaController.abort(), 5000);
+          try {
+            const metaRes = await fetch(`${SCRIPT_URL}?planId=${currentPlan}`, {
+              method: 'GET', cache: 'no-cache', redirect: 'follow', signal: metaController.signal
+            });
+            if (metaRes.ok) pinMeta = await metaRes.json();
+          } catch (ignore) {
+          } finally {
+            clearTimeout(metaTimer);
+          }
+          if (!sharePinGuard(pinMeta, getPinWitness(currentPlan), function (msg) { return window.confirm(msg); })) {
+            showToast('Share cancelled — the newer final plan was kept', 'info');
+            return;
+          }
+
+          controller = new AbortController();
+          timer = setTimeout(() => controller.abort(), SHARE_TIMEOUT_MS);
           const res = await fetch(SCRIPT_URL, {
             method: 'POST',
-            body: JSON.stringify({ action: 'savePlan', state: state, planId: currentPlan }),
+            body: JSON.stringify(sharePayload),
             redirect: 'follow',
             signal: controller.signal
           });
@@ -2131,6 +2222,7 @@
             } catch (ignore) {}
           }
           if (backendError) throw new Error(backendError);
+          await refreshPinWitness(currentPlan);
           syncTimeEl.textContent = `Synced ${time}`;
           showToast(`${currentPlan.replace('_', ' ')} plan shared to cloud!`, 'success');
         } catch(e) {
@@ -2140,7 +2232,7 @@
             : (e && e.message ? e.message : 'unknown error');
           showToast(`Share FAILED (${reason}) — the plan was NOT saved to the cloud. Try again.`, 'error');
         } finally {
-          clearTimeout(timer);
+          if (timer) clearTimeout(timer);
           shareBtn.disabled = false;
           shareBtn.textContent = "Share";
         }
@@ -2236,6 +2328,24 @@
         hydrate();
         uiAfterPlanLoad();   // 2026-08-01 redesign: seg thumb, plan copy, run-type proxies
         scheduleStoreOverlay(p);   // 2026-08-02: align to the staged store
+      }
+
+      // Send Final can originate from a card for either plan while the Reorder
+      // tab is open. Load that plan behind the tab before applying the final
+      // store overlay, so the photographed state is always the sent plan.
+      function preparePlanForFinalSync(planId) {
+        var plan = String(planId || '').toUpperCase() === 'NEXT_AM' ? 'NEXT_AM' : 'PM';
+        if (currentPlan !== plan) loadPlan(plan);
+        return state;
+      }
+
+      function getPlanStateForSync(planId) {
+        var plan = String(planId || '').toUpperCase() === 'NEXT_AM' ? 'NEXT_AM' : 'PM';
+        if (currentPlan === plan) return state;
+        try {
+          var raw = localStorage.getItem(STORAGE_PREFIX + plan);
+          return raw ? JSON.parse(raw) : { tiles: {}, placements: {}, stops: {}, departures: {}, runTypes: {} };
+        } catch (e) { return { tiles: {}, placements: {}, stops: {}, departures: {}, runTypes: {} }; }
       }
 
       document.querySelectorAll('.departure-selector select').forEach(select => {
@@ -2517,6 +2627,7 @@
           Object.keys(state.placements).forEach(k => {
             state.placements[k] = state.placements[k].filter(id => id !== dragId);
           });
+          if (state.tiles[dragId]) delete state.tiles[dragId].syncMarker;
           
           if (bin) {
             const binned = (state.tiles[dragId] && state.tiles[dragId].text) || 'Dog';
@@ -2651,7 +2762,17 @@
       function createTileElement(tid, className) {
         const tile = document.createElement('div');
         tile.className = className;
-        tile.textContent = state.tiles[tid].text;
+        const syncMarker = state.tiles[tid].syncMarker || '';
+        tile.textContent = state.tiles[tid].text +
+          (syncMarker === 'auto-placed' ? ' · AUTO' :
+            (syncMarker === 'removed-from-route' ? ' · removed from route' : ''));
+        if (syncMarker === 'auto-placed') {
+          tile.classList.add('sync-auto');
+          tile.title = 'Automatically placed in the first free kennel after Send Final';
+        } else if (syncMarker === 'removed-from-route') {
+          tile.classList.add('sync-removed');
+          tile.title = 'Removed from route in the Reorder tab';
+        }
         // Every tile carries its id (2026-08-01 redesign): the Android
         // document-level drag delegation always needed it; the tap-to-select
         // layer now uses it on every platform. Inert on the desktop drag path.
@@ -3062,6 +3183,17 @@
       
       // ==================== INITIALISATION ====================
       loadPlan('PM');
+
+      // Named diagnostic/test surface for the pin freshness rules.
+      window.VanPlanSync = Object.assign(window.VanPlanSync || {}, {
+        sharePinGuard: sharePinGuard,
+        getPinWitness: getPinWitness,
+        witnessPin: witnessPin,
+        refreshPinWitness: refreshPinWitness,
+        buildSharePlanPayload: buildSharePlanPayload,
+        preparePlanForFinalSync: preparePlanForFinalSync,
+        getPlanState: getPlanStateForSync
+      });
       
       // Debug logging
       console.log('=== Van Manager - No Jump Fix ===');
@@ -3088,16 +3220,42 @@
       // Lifted from the RouteSender.init inline hook (2026-07-31) so the tap
       // layer and the Reorder write-back share ONE move implementation.
       // Mirrors finishDrag's semantics; refuses rather than half-applies.
-      function moveTileToBoxHost(tileId, boxId) {
+      function moveTileToBoxHost(tileId, boxId, opts) {
         if (!state.tiles || !state.tiles[tileId]) return false;
+        opts = opts || {};
         var arr = state.placements[boxId] || [];
-        if (arr.indexOf(tileId) !== -1) return false;   // already there
+        if (arr.indexOf(tileId) !== -1) {
+          if (!opts.overlay) return false;
+          if (opts.auto) state.tiles[tileId].syncMarker = 'auto-placed';
+          else delete state.tiles[tileId].syncMarker;
+          localSave();
+          hydrate();
+          return true;
+        }
         if (arr.length >= 2) return false;              // box full — leave the grid alone
         saveUndoState();
         Object.keys(state.placements).forEach(function (k) {
           state.placements[k] = (state.placements[k] || []).filter(function (t) { return t !== tileId; });
         });
         (state.placements[boxId] = state.placements[boxId] || []).push(tileId);
+        if (opts.auto) state.tiles[tileId].syncMarker = 'auto-placed';
+        else delete state.tiles[tileId].syncMarker;
+        localSave();
+        hydrate();
+        return true;
+      }
+
+      function moveTileToTrayHost(tileId, marker) {
+        if (!state.tiles || !state.tiles[tileId]) return false;
+        var placed = Object.keys(state.placements || {}).some(function (boxId) {
+          return (state.placements[boxId] || []).indexOf(tileId) !== -1;
+        });
+        if (!placed && state.tiles[tileId].syncMarker === marker) return false;
+        saveUndoState();
+        Object.keys(state.placements || {}).forEach(function (boxId) {
+          state.placements[boxId] = (state.placements[boxId] || []).filter(function (id) { return id !== tileId; });
+        });
+        state.tiles[tileId].syncMarker = marker || 'removed-from-route';
         localSave();
         hydrate();
         return true;
@@ -3368,7 +3526,8 @@
           // word. Refuses (returns false) rather than half-applies. Since the
           // 2026-08-01 redesign the implementation lives in moveTileToBoxHost,
           // shared with the tap-to-select layer.
-          moveTileToBox: function (tileId, boxId) { return moveTileToBoxHost(tileId, boxId); }
+          moveTileToBox: function (tileId, boxId, opts) { return moveTileToBoxHost(tileId, boxId, opts); },
+          moveTileToTray: function (tileId, marker) { return moveTileToTrayHost(tileId, marker); }
         });
       }
     })();
