@@ -870,6 +870,23 @@
       grid-template-columns: minmax(0, 1fr);
     }
     #reorderView > * { min-width: 0; }
+    .reorder-plan-tabs {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      background: var(--seg-bg);
+      border-radius: 10px;
+      padding: 2px;
+    }
+    .reorder-plan-tab {
+      appearance: none;
+      border: none;
+      padding: 0;
+      background: transparent;
+    }
+    .reorder-plan-tab.active {
+      background: #fff;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.10);
+    }
     .reorder-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
     .reorder-headtext { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1 1 auto; }
     .reorder-title { font-size: 17px; font-weight: 700; letter-spacing: -0.02em; }
