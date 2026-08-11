@@ -119,6 +119,7 @@
 
   // ---- state -----------------------------------------------------
   var active = false;
+  var currentReorderSectionTab = 'HALF_DAY';
   var pollTimer = null;
   var pollFails = 0;
   var slots = {};   // slot_key -> { record, card, stopsById, renderedRev, dragging, pendingSave, saveTimer, staleRemove, preDragOrder }
@@ -477,6 +478,26 @@
       '<span class="reorder-live-pill"><span class="reorder-poll-dot" id="reorderPollDot"></span>Live</span>';
     view.appendChild(head);
     view.appendChild(buildAddPanel());
+    var tabStrip = document.createElement('div');
+    tabStrip.className = 'reorder-plan-tabs';
+    reorderSectionTabLabels().forEach(function (tab) {
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'nav-tab reorder-plan-tab';
+      button.setAttribute('data-section', tab.key);
+      button.setAttribute('role', 'button');
+      button.setAttribute('tabindex', '0');
+      button.textContent = tab.label;
+      button.addEventListener('click', function () { setReorderSectionTab(tab.key); });
+      button.addEventListener('keydown', function (event) {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          setReorderSectionTab(tab.key);
+        }
+      });
+      tabStrip.appendChild(button);
+    });
+    view.appendChild(tabStrip);
     SECTIONS.forEach(function (sec) {
       var s = document.createElement('section');
       s.className = 'reorder-section';
@@ -492,7 +513,46 @@
       var clr = s.querySelector('.reorder-clear-section');
       if (clr) clr.addEventListener('click', function () { clearSection(sec.key); });
     });
+    setReorderSectionTab('HALF_DAY');
     view.__built = true;
+  }
+
+  function reorderSectionTabLabels() {
+    return [
+      { key: 'HALF_DAY', label: 'Today Half Day' },
+      { key: 'PM', label: 'Today PM' },
+      { key: 'NEXT_AM', label: 'Next Day AM' }
+    ];
+  }
+
+  function getReorderSectionTab() {
+    return currentReorderSectionTab;
+  }
+
+  function setReorderSectionTab(key) {
+    var sections = document.querySelectorAll('.reorder-section');
+    var tabs = document.querySelectorAll('.reorder-plan-tab');
+    var valid = false;
+    sections.forEach(function (section) {
+      if (section.getAttribute('data-section') === key) valid = true;
+    });
+    if (!valid) return;
+    currentReorderSectionTab = key;
+    sections.forEach(function (section) {
+      section.hidden = section.getAttribute('data-section') !== key;
+    });
+    tabs.forEach(function (tab) {
+      tab.classList.toggle('active', tab.getAttribute('data-section') === key);
+    });
+    if (typeof slots === 'undefined') return;
+    setTimeout(function () {
+      Object.keys(slots).forEach(function (slotKey) {
+        var st = slots[slotKey];
+        if (st && st.record && st.record.section === key && st.mapOpen && st.map) {
+          try { st.map.invalidateSize(); fitMap(st); } catch (e) {}
+        }
+      });
+    }, 0);
   }
 
   // ---- Add Dog panel + staging area ------------------------------
@@ -2837,6 +2897,7 @@
         if (st && st.mapOpen && st.map) { try { st.map.invalidateSize(); fitMap(st); } catch (e) {} }
       });
     }, 0);
+    setReorderSectionTab(getReorderSectionTab());
   }
   function exit() {
     active = false;
