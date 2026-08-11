@@ -173,9 +173,109 @@
   //   hostMoveTileToBox(tileId, boxId) → moves a tile into a kennel box
   //   (undo state + remove-from-everywhere + max-2, exactly like a drag).
   var hostMoveTileToBox = null;
+  var hostMoveTileToTray = null;
 
   function safeState() {
     try { return hostGetState ? hostGetState() : null; } catch (e) { return null; }
+  }
+
+  function findTilePlacement(st, tileId) {
+    var boxId = '';
+    Object.keys((st && st.placements) || {}).some(function (candidateId) {
+      if ((st.placements[candidateId] || []).indexOf(tileId) === -1) return false;
+      boxId = candidateId;
+      return true;
+    });
+    return {
+      boxId: boxId,
+      van: boxId ? String(boxId).split('-')[0].toUpperCase().trim() : null
+    };
+  }
+
+  // Collect every kennel in the target van, not merely the requested kp box.
+  // The placement planner needs the full list to choose a safe fallback when
+  // a cross-van dog's requested box already contains two dogs.
+  function collectTargetVanBoxes(van, st) {
+    var targetVan = String(van || '').toUpperCase().trim();
+    var prefix = targetVan.toLowerCase() + '-';
+    var boxes = [];
+    Array.prototype.forEach.call(document.querySelectorAll('.box[data-box^="' + prefix + '"]'), function (el) {
+      if (!el || !el.dataset || !el.dataset.box) return;
+      boxes.push({
+        id: el.dataset.box,
+        van: targetVan,
+        pos: el.dataset.pos || '',
+        occupants: ((st && st.placements && st.placements[el.dataset.box]) || []).slice()
+      });
+    });
+    return boxes;
+  }
+
+  // Pure placement seam used by the store overlay. A valid position wins when
+  // its box has room. If that box is full, a dog already in the target van is
+  // refused and stays put; only cross-van or unplaced dogs fall back to the
+  // first empty, then first half-occupied, target-van box. No full box is ever
+  // displaced and this seam never targets the staging tray.
+  function planCrossVanPlacement(van, kp, boxes, currentVan) {
+    var wantVan = String(van || '').toUpperCase();
+    var fromVan = currentVan == null ? '' : String(currentVan).toUpperCase();
+    var code = String(kp || '').toUpperCase().trim();
+    var validCode = /^[SB][TMB][PMD]$/.test(code);
+    var candidates = (Array.isArray(boxes) ? boxes : []).filter(function (box) {
+      return box && String(box.van || '').toUpperCase() === wantVan;
+    });
+    if (validCode) {
+      for (var i = 0; i < candidates.length; i++) {
+        if (String(candidates[i].pos || '').toUpperCase() === code &&
+            (candidates[i].occupants || []).length < 2) {
+          return { boxId: candidates[i].id, auto: false };
+        }
+      }
+      if (fromVan === wantVan) {
+        return { refused: true, reason: 'requested kennel unavailable in ' + wantVan };
+      }
+    }
+    var firstHalf = null;
+    for (var j = 0; j < candidates.length; j++) {
+      var count = (candidates[j].occupants || []).length;
+      if (count === 0) return { boxId: candidates[j].id, auto: true };
+      if (count === 1 && !firstHalf) firstHalf = candidates[j];
+    }
+    if (firstHalf) return { boxId: firstHalf.id, auto: true };
+    return { refused: true, reason: 'no free kennel in ' + wantVan };
+  }
+
+  // Pure staged-membership seam. `d` records every dog originally staged;
+  // flattened `o` records the dogs still routed after any Reorder-tab removal.
+  function classifyOverlayDog(name, slotRecs) {
+    function clean(value) {
+      var out = String(value == null ? '' : value).trim();
+      var before;
+      do {
+        before = out;
+        // Reuse the ONE canonical G.D. literal (GROOMING_RE below) — a second
+        // variant copy here is exactly what _trace_dogname_drift.mjs guards
+        // against. ALT is a Load-Plan-only token with no canonical regex.
+        out = out.replace(GROOMING_RE, '').trim();
+        out = out.replace(/(^|\s)ALT$/i, '').trim();
+      } while (out && out !== before);
+      return out.toLowerCase().replace(/\s+/g, ' ').trim();
+    }
+    var want = clean(name);
+    if (!want) return 'unstaged';
+    var inStaged = false, inOrder = false;
+    (Array.isArray(slotRecs) ? slotRecs : []).forEach(function (rec) {
+      var ctx = (rec && rec.ctx) || {};
+      (Array.isArray(ctx.d) ? ctx.d : []).forEach(function (dog) {
+        if (clean(dog) === want) inStaged = true;
+      });
+      (Array.isArray(ctx.o) ? ctx.o : []).forEach(function (members) {
+        (Array.isArray(members) ? members : [members]).forEach(function (dog) {
+          if (clean(dog) === want) inOrder = true;
+        });
+      });
+    });
+    return inOrder ? 'routed' : (inStaged ? 'removed' : 'unstaged');
   }
 
   function getDogsForVan(van) {
@@ -222,26 +322,21 @@
     return out;
   }
 
-  // One-way Reorder→grid kennel write-back (owner request 2026-07-31): when a
-  // dog's kennel is changed on the Reorder tab, reflect the ASSIGNMENT onto the
-  // Load Plan grid so the seed matches the final word. Deliberate limits, all
-  // silent no-ops (this is a cosmetic courtesy — ctx.kp is the authority):
-  //   - assignments only; NEVER unassigns/trays a tile (a trayed dog silently
-  //     drops off the route at the next re-stage — that trap must stay closed);
-  //   - only when the slot's plan is the currently loaded plan (state is
-  //     per-plan; the other plan's grid simply catches up next time it is the
-  //     seed);
-  //   - skips Add-Dog dogs (no tile), unknown codes for the van, and full boxes.
-  // Matching uses the SAME normName that keyed `positions` at stage time.
-  function applyKennelFromReorder(planKey, van, dogName, posCode) {
+  // Reorder→grid kennel alignment. It never creates a missing tile or displaces
+  // a full two-dog box. The 2026-07-31 direct kennel write-back applies only
+  // the requested box and refuses any fallback, so the dog stays where staff
+  // placed it when that box is unavailable. Store overlays may move cross-van
+  // or unplaced dogs to a free fallback box and visibly mark it auto-placed.
+  // Removed dogs are trayed only by moveRemovedDogToTray after positive d/o
+  // membership classification; this assignment function itself never trays.
+  // The other plan and Add-Dog dogs without a tile remain silent no-ops.
+  function applyKennelFromReorder(planKey, van, dogName, posCode, opts) {
+    opts = opts || {};
     if (typeof hostMoveTileToBox !== 'function') return false;
     if (String(planKey || '').toUpperCase() !== String(getCurrentPeriod()).toUpperCase()) return false;
     var st = safeState();
     if (!st || !st.tiles || !st.placements) return false;
     var code = String(posCode || '').toUpperCase().trim();
-    if (!code) return false;
-    var boxEl = document.querySelector('.box[data-box^="' + String(van || '').toLowerCase() + '-"][data-pos="' + code + '"]');
-    if (!boxEl || !boxEl.dataset || !boxEl.dataset.box) return false;
     var want = normName(dogName);
     if (!want) return false;
     var tileId = null;
@@ -251,8 +346,64 @@
       return false;
     });
     if (!tileId) return false;
-    try { return hostMoveTileToBox(tileId, boxEl.dataset.box) === true; }
+    var targetVan = String(van || '').toUpperCase().trim();
+    var prefix = targetVan.toLowerCase() + '-';
+    var placement = findTilePlacement(st, tileId);
+    var currentBox = placement.boxId;
+    var currentVan = placement.van;
+    var validCode = /^[SB][TMB][PMD]$/.test(code);
+    if (!validCode && currentBox.indexOf(prefix) === 0) return false;
+    var boxes = collectTargetVanBoxes(targetVan, st);
+    // A tile already in its valid requested box is aligned even when it shares
+    // that box with a second dog; do not mistake its own occupancy for fullness.
+    if (validCode && currentBox) {
+      var currentEl = document.querySelector('[data-box="' + currentBox + '"]');
+      if (currentEl && String(currentEl.dataset.pos || '').toUpperCase() === code) {
+        try { return hostMoveTileToBox(tileId, currentBox, { overlay: true, auto: false }) === true; }
+        catch (sameErr) { return false; }
+      }
+    }
+    var decision = planCrossVanPlacement(targetVan, code, boxes, currentVan);
+    if (!decision || decision.refused || !decision.boxId) return false;
+    if (decision.auto && opts.storeOverlay !== true) return false;
+    try { return hostMoveTileToBox(tileId, decision.boxId, { overlay: true, auto: decision.auto === true }) === true; }
     catch (e) { return false; }
+  }
+
+  function moveRemovedDogToTray(planKey, dogName) {
+    if (typeof hostMoveTileToTray !== 'function') return false;
+    if (String(planKey || '').toUpperCase() !== String(getCurrentPeriod()).toUpperCase()) return false;
+    var st = safeState();
+    if (!st || !st.tiles) return false;
+    var want = normName(dogName), tileId = null;
+    Object.keys(st.tiles).some(function (tid) {
+      var tile = st.tiles[tid];
+      if (tile && tile.text && normName(tile.text) === want) { tileId = tid; return true; }
+      return false;
+    });
+    if (!tileId) return false;
+    try { return hostMoveTileToTray(tileId, 'removed-from-route') === true; }
+    catch (e) { return false; }
+  }
+
+  function clearVanStops(planKey, van) {
+    if (typeof hostSetStopValue !== 'function') return 0;
+    if (String(planKey || '').toUpperCase() !== String(getCurrentPeriod()).toUpperCase()) return 0;
+    var st = safeState();
+    if (!st || !st.placements) return 0;
+    var prefix = String(van || '').toLowerCase() + '-', cleared = 0;
+    Object.keys(st.placements).forEach(function (boxId) {
+      if (boxId.indexOf(prefix) !== 0) return;
+      try {
+        hostSetStopValue(boxId, 'primary', '');
+        hostSetStopValue(boxId, 'secondary', '');
+        cleared++;
+      } catch (e) {}
+    });
+    if (cleared && typeof hostHydrate === 'function') {
+      try { hostHydrate(); } catch (e2) {}
+    }
+    return cleared;
   }
 
   function getCurrentPeriod() {
@@ -991,6 +1142,7 @@
       hostSetStopValue = typeof opts.setStopValue === 'function' ? opts.setStopValue : null;
       hostHydrate = typeof opts.hydrate === 'function' ? opts.hydrate : null;
       hostMoveTileToBox = typeof opts.moveTileToBox === 'function' ? opts.moveTileToBox : null;
+      hostMoveTileToTray = typeof opts.moveTileToTray === 'function' ? opts.moveTileToTray : null;
       bindButtons();
       bindToggles();
       console.log('[RouteSender] Initialised. State accessor wired:',
@@ -1010,6 +1162,10 @@
     // Kennel write-back (added 2026-07-31) — called by route_reorder.js when a
     // dog's kennel is changed on the Reorder tab (one-way, assignments only).
     applyKennelFromReorder: applyKennelFromReorder,
+    planCrossVanPlacement: planCrossVanPlacement,
+    classifyOverlayDog: classifyOverlayDog,
+    moveRemovedDogToTray: moveRemovedDogToTray,
+    clearVanStops: clearVanStops,
     // Staging-tray nudge helpers (2026-07-19) — getTrayDogsForPlan is read by
     // route_reorder.js sendFinal (plan-matched left-behind guard).
     getTrayDogs: getTrayDogs,
