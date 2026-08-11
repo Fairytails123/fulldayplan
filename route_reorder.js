@@ -1015,12 +1015,14 @@
   // two can never mutually defer forever.
   function scheduleKpSave(st) {
     st.pendingKpSave = true;
+    st.kpSaveFailed = false;
     var sf = st.card && st.card.querySelector('.reorder-sent-flag');
     if (sf) sf.hidden = true;              // positions changed since the last send
     if (st.kpSaveTimer) clearTimeout(st.kpSaveTimer);
     st.kpSaveTimer = setTimeout(function () { doKpSave(st); }, SAVE_DEBOUNCE_MS);
   }
   function doKpSave(st) {
+    if (st.kpInFlight) return;
     if (st.pendingSave || st.noteInFlight) {
       // An order save is queued/in flight, or a driver-note POST is mid-air
       // (it bumps the same rev) — let it land first. Note defer is on
@@ -1035,24 +1037,32 @@
     var kp = {};
     r.dogs.forEach(function (d) { if (d.code) kp[d.key] = d.code; });
     st.kpInFlight = true;
-    postStore({ action: 'savePositions', token: TOKEN, slot_key: st.record.slot_key, kp: kp,
+    st.kpSaveTimer = null;
+    return postStore({ action: 'savePositions', token: TOKEN, slot_key: st.record.slot_key, kp: kp,
                 rev: st.record.rev, last_reordered_by: deviceId() })
       .then(function (res) {
         st.kpInFlight = false;
         st.pendingKpSave = false;
         if (res && res.ok) {
+          st.kpSaveFailed = false;
           if (res.rev != null) { st.record.rev = res.rev; st.renderedRev = res.rev; }
         } else if (res && res.stale) {
+          st.kpSaveFailed = true;
+          markReorderSaveFailure(st);
           st.renderedRev = null;           // force the next poll to re-render from server truth
           toast('That route changed on another device — reloaded', 'warning');
           poll();
         } else if (res && res.retryable) {
+          st.kpSaveFailed = true;
+          markReorderSaveFailure(st);
           // #41 fix 3/4: the store was busy and postStore already retried once.
           // Nothing was written and no rev moved, so KEEP the operator's edit on
           // screen: do NOT null renderedRev and do NOT poll() (either would repaint
           // server truth over an edit that is still perfectly valid).
           toast('The staging store is busy — the kennel change was not saved. Try again in a moment.', 'warning');
         } else {
+          st.kpSaveFailed = true;
+          markReorderSaveFailure(st);
           st.renderedRev = null;
           toast('Could not save kennel positions — reloaded', 'error');
           poll();
@@ -1061,6 +1071,8 @@
       .catch(function () {
         st.kpInFlight = false;
         st.pendingKpSave = false;
+        st.kpSaveFailed = true;
+        markReorderSaveFailure(st);
         st.renderedRev = null;
         toast('Could not save kennel positions — reloaded', 'error');
         poll();
@@ -1081,6 +1093,7 @@
     st.noteSaveTimer = setTimeout(function () { doNoteSave(st); }, NOTE_SAVE_DEBOUNCE_MS);
   }
   function doNoteSave(st) {
+    if (st.noteInFlight) return;
     if (st.pendingSave || st.pendingKpSave || st.kpInFlight) {
       if (st.noteSaveTimer) clearTimeout(st.noteSaveTimer);
       st.noteSaveTimer = setTimeout(function () { doNoteSave(st); }, 500);
@@ -1090,7 +1103,8 @@
     if (!note) { st.pendingNoteSave = false; return; }
     var dm = String(note.value || '').replace(/\s+/g, ' ').trim().slice(0, 500);
     st.noteInFlight = true;
-    postStore({ action: 'saveMessage', token: TOKEN, slot_key: st.record.slot_key, dm: dm,
+    st.noteSaveTimer = null;
+    return postStore({ action: 'saveMessage', token: TOKEN, slot_key: st.record.slot_key, dm: dm,
                 rev: st.record.rev, last_reordered_by: deviceId() })
       .then(function (res) {
         st.noteInFlight = false;
@@ -1511,14 +1525,33 @@
     return stampFromDate(d);
   }
 
-  // The stamp a slot staged TODAY for this section would carry — the overlay's
-  // day guard compares a slot's own stamp against this (slots persist until
-  // overwritten/cleared, and many dogs attend daily, so yesterday's slot must
-  // never renumber today's grid).
-  function expectedStampFor(section) {
-    var d = new Date();
-    if (section === 'NEXT_AM') d = new Date(d.getTime() + 86400000);
-    return stampFromDate(d);
+  // Overlay day guard with an injectable clock for deterministic checks. A
+  // NEXT_AM route staged the previous evening legitimately carries today's
+  // stamp on run morning; accept that crossover only before noon in London
+  // and inside a 36-hour belt. From noon, NEXT_AM belongs to tomorrow's plan.
+  function slotDayAccepted(rec, nowMs) {
+    var now = new Date(nowMs == null ? Date.now() : nowMs);
+    if (isNaN(now.getTime())) now = new Date();
+    var stamp = dayStampFor(rec);
+    var today = stampFromDate(now);
+    var expectedDate = new Date(now.getTime());
+    if (rec && rec.section === 'NEXT_AM') expectedDate = new Date(expectedDate.getTime() + 86400000);
+    var expected = stampFromDate(expectedDate);
+    if (stamp === expected) return true;
+    if (!rec || rec.section !== 'NEXT_AM' || stamp !== today) return false;
+    var hourParts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Europe/London', hour: '2-digit', hourCycle: 'h23'
+    }).formatToParts(now);
+    var londonHour = 0;
+    hourParts.forEach(function (part) {
+      if (part.type === 'hour') londonHour = Number(part.value);
+    });
+    if (londonHour >= 12) return false;
+    var stagedMs = Date.parse(rec.staged_at || '');
+    var updatedMs = Date.parse(rec.updated_at || '');
+    var latest = Math.max(isFinite(stagedMs) ? stagedMs : 0, isFinite(updatedMs) ? updatedMs : 0);
+    var age = now.getTime() - latest;
+    return latest > 0 && age >= 0 && age <= 36 * 60 * 60 * 1000;
   }
 
   // ---- Load-Plan overlay from the staged store (2026-08-02, Kam) ----------
@@ -1531,46 +1564,78 @@
   // one-way write-back (RouteSender.applyKennelFromReorder — never trays,
   // never creates a tile, max-2 refusal) and stop numbers through
   // RouteSender.applyReturnedStops with clearUnmatched (a dog pulled off the
-  // route sheds its stale number). NOTHING is written to the cloud store —
-  // no dual-write, no stale-device wipe vector; Share stays manual, and a
-  // Share after alignment simply publishes the corrected grid.
+  // route sheds its stale number). The overlay itself never writes the cloud
+  // store; Share and the post-send pin publish an aligned snapshot separately.
   function overlayFromStore(planId) {
     planId = String(planId || '').toUpperCase() === 'NEXT_AM' ? 'NEXT_AM' : 'PM';
     if (!window.RouteSender || !RouteSender.applyKennelFromReorder ||
-        !RouteSender.applyReturnedStops) return;
-    getStaged().then(function (body) {
-      if (!body || body.ok !== true || !Array.isArray(body.slots)) return;
-      applyStoreOverlay(planId, body.slots);
+        !RouteSender.applyReturnedStops) return Promise.resolve(null);
+    return getStaged().then(function (body) {
+      if (!body || body.ok !== true || !Array.isArray(body.slots)) return null;
+      return applyStoreOverlay(planId, body.slots, body.cleared);
     }).catch(function () { /* offline / store error → grid stays as loaded */ });
   }
 
-  function applyStoreOverlay(planId, slotRecs) {
-    var kennelMoves = 0, stopWrites = 0, vansAligned = 0;
-    (slotRecs || []).forEach(function (rec) {
-      if (!rec || !rec.ctx || !rec.van) return;
+  function applyStoreOverlay(planId, slotRecs, clearedKeys) {
+    var kennelMoves = 0, stopWrites = 0, vansAligned = 0, removedMoves = 0;
+    var eligible = (slotRecs || []).filter(function (rec) {
+      if (!rec || !rec.ctx || !rec.van) return false;
       var slotPlan = (rec.section === 'NEXT_AM') ? 'NEXT_AM' : 'PM';   // HALF_DAY rides the PM plan
-      if (slotPlan !== planId) return;
-      if (dayStampFor(rec) !== expectedStampFor(rec.section)) return;  // another day's slot
+      return slotPlan === planId && slotDayAccepted(rec, Date.now());
+    });
+    eligible.forEach(function (rec) {
       var o = Array.isArray(rec.ctx.o) ? rec.ctx.o : [];
-      if (!o.length) return;
       var kidx = kennelIndexFor(rec.ctx);
       var stops = [];
       o.forEach(function (members, i) {
         (members || []).forEach(function (m) {
           if (isSalonName(m)) return;          // rides the route, has no grid tile
           var code = kidx[normKey(m)];
-          if (code && RouteSender.applyKennelFromReorder(planId, rec.van, m, code)) kennelMoves++;
+          if (RouteSender.applyKennelFromReorder(planId, rec.van, m, code || '',
+              { storeOverlay: true })) kennelMoves++;
           stops.push({ name: m, stop: i + 1 });
         });
       });
-      stopWrites += RouteSender.applyReturnedStops(rec.van, stops, planId, { clearUnmatched: true });
+      if (stops.length) {
+        stopWrites += RouteSender.applyReturnedStops(rec.van, stops, planId, { clearUnmatched: true });
+      }
       vansAligned++;
+    });
+
+    // Tray only dogs positively identified as removed from these staged slots.
+    // A never-staged grid dog is not enumerated and remains untouched.
+    var seenDogs = {};
+    eligible.forEach(function (rec) {
+      var order = Array.isArray(rec.ctx.o) ? rec.ctx.o : [];
+      if (!order.length) return;
+      (Array.isArray(rec.ctx.d) ? rec.ctx.d : []).forEach(function (dog) {
+        var key = normKey(dog);
+        if (!key || seenDogs[key]) return;
+        seenDogs[key] = true;
+        if (RouteSender.classifyOverlayDog(dog, eligible) === 'removed' &&
+            RouteSender.moveRemovedDogToTray(planId, dog)) removedMoves++;
+      });
+    });
+
+    // CLEARED rows are omitted from slots and supplied additively as keys.
+    // Do not blank a van if another active PM/HALF_DAY slot still owns it.
+    var activeVans = {};
+    eligible.forEach(function (rec) { activeVans[String(rec.van || '').toUpperCase()] = true; });
+    (Array.isArray(clearedKeys) ? clearedKeys : []).forEach(function (slotKey) {
+      var parts = String(slotKey || '').split('__');
+      if (parts.length !== 2) return;
+      var clearedPlan = parts[0] === 'NEXT_AM' ? 'NEXT_AM' : 'PM';
+      var van = String(parts[1] || '').toUpperCase();
+      if (clearedPlan === planId && van && !activeVans[van]) {
+        stopWrites += RouteSender.clearVanStops(planId, van);
+      }
     });
     if (vansAligned) {
       console.log('[RouteReorder] Grid aligned to the staged store (' + planId + '): ' +
-        vansAligned + ' van(s), ' + stopWrites + ' stop number(s), ' + kennelMoves + ' kennel move(s).');
+        vansAligned + ' van(s), ' + stopWrites + ' stop write(s), ' + kennelMoves +
+        ' kennel move(s), ' + removedMoves + ' removed dog(s) trayed.');
     }
-    return { vans: vansAligned, stops: stopWrites, kennels: kennelMoves };
+    return { vans: vansAligned, stops: stopWrites, kennels: kennelMoves, removed: removedMoves };
   }
 
   function buildCard(rec) {
@@ -2201,12 +2266,14 @@
   // ---- save (debounced, optimistic, rollback) -------------------
   function scheduleSave(st) {
     st.pendingSave = true;
+    st.orderSaveFailed = false;
     var sf = st.card && st.card.querySelector('.reorder-sent-flag');
     if (sf) sf.hidden = true;          // route changed since the last send → drop the "sent" flag
     if (st.saveTimer) clearTimeout(st.saveTimer);
     st.saveTimer = setTimeout(function () { doSave(st); }, SAVE_DEBOUNCE_MS);
   }
   function doSave(st) {
+    if (st.orderInFlight) return;
     if (st.kpInFlight || st.noteInFlight) {
       // A kennel-positions or driver-note POST is mid-air; all three writes bump
       // the SAME rev, so let it land and adopt its rev first (a note POST that
@@ -2224,34 +2291,56 @@
     // `rev` added 2026-07-20: the server now refuses a save whose rev is stale
     // or whose membership differs from the stored route, so a plain reorder can
     // no longer silently undo a cross-van move made on another device.
-    postStore({ action: 'saveOrder', token: TOKEN, slot_key: st.record.slot_key, o: o,
+    st.orderInFlight = true;
+    st.saveTimer = null;
+    return postStore({ action: 'saveOrder', token: TOKEN, slot_key: st.record.slot_key, o: o,
                 rev: st.record.rev, last_reordered_by: deviceId() })
       .then(function (r) {
+        st.orderInFlight = false;
         st.pendingSave = false;
         if (r && r.ok) {
+          st.orderSaveFailed = false;
           st.record.ctx.o = o;
           // record.rev is the optimistic-concurrency token a later move sends.
           // Leaving it stale here made the NEXT cross-van move fail as
           // "changed elsewhere" after any ordinary reorder.
           if (r.rev != null) { st.record.rev = r.rev; st.renderedRev = r.rev; }
         } else if (r && r.stale) {
+          st.orderSaveFailed = true;
+          markReorderSaveFailure(st);
           rollback(st);
           toast('That route changed on another device — reloaded', 'warning');
           poll();
         } else if (r && r.retryable) {
+          st.orderSaveFailed = true;
+          markReorderSaveFailure(st);
           // postStore already retried this once. The store is genuinely busy, so
           // the edit is reverted as before — but say WHY, because "could not
           // save" sent staff hunting for a dog-name problem on 2026-08-03.
           rollback(st);
           toast('The staging store is busy — the new order was not saved. Try again in a moment.', 'warning');
         } else {
+          st.orderSaveFailed = true;
+          markReorderSaveFailure(st);
           rollback(st);
           toast('Could not save order — reverted', 'error');
         }
       })
-      .catch(function () { st.pendingSave = false; rollback(st); toast('Could not save order — reverted', 'error'); });
+      .catch(function () {
+        st.orderInFlight = false;
+        st.pendingSave = false;
+        st.orderSaveFailed = true;
+        markReorderSaveFailure(st);
+        rollback(st);
+        toast('Could not save order — reverted', 'error');
+      });
+  }
+  function markReorderSaveFailure(st) {
+    st.saveFailureSeq = Number(st.saveFailureSeq || 0) + 1;
   }
   function rollback(st) {
+    st.orderSaveFailed = false;
+    st.kpSaveFailed = false;
     renderTiles(st, st.record);       // record.ctx.o is the last known-good order
     st.renderedRev = st.record.rev;
   }
@@ -2357,6 +2446,57 @@
     else { btn.disabled = false; lbl.textContent = '📍 Send Final Route'; }
   }
 
+  // Force every queued order/kennel/note debounce through the existing saver
+  // functions and wait for their bounded network calls to settle. The final
+  // payload is built only after this promise resolves, so ctx.o/ctx.kp and the
+  // visible route cannot diverge at the Send Final boundary.
+  function flushPendingReorderSaves(sendingSlotKey) {
+    return new Promise(function (resolve, reject) {
+      var sending = slots[sendingSlotKey];
+      var failureSeqAtStart = sending ? Number(sending.saveFailureSeq || 0) : 0;
+      function step() {
+        var waiting = false;
+        Object.keys(slots).forEach(function (key) {
+          var st = slots[key];
+          if (!st) return;
+          if (st.pendingSave && !st.orderInFlight && !st.kpInFlight && !st.noteInFlight) {
+            if (st.saveTimer) { clearTimeout(st.saveTimer); st.saveTimer = null; }
+            doSave(st);
+          } else if (st.pendingKpSave && !st.kpInFlight && !st.pendingSave && !st.noteInFlight) {
+            if (st.kpSaveTimer) { clearTimeout(st.kpSaveTimer); st.kpSaveTimer = null; }
+            doKpSave(st);
+          } else if (st.pendingNoteSave && !st.noteInFlight && !st.pendingSave && !st.pendingKpSave && !st.kpInFlight) {
+            if (st.noteSaveTimer) { clearTimeout(st.noteSaveTimer); st.noteSaveTimer = null; }
+            doNoteSave(st);
+          }
+          if (st.pendingSave || st.pendingKpSave || st.pendingNoteSave ||
+              st.orderInFlight || st.kpInFlight || st.noteInFlight) waiting = true;
+        });
+        if (waiting) {
+          setTimeout(step, 25);
+        } else {
+          var failed = sending && Number(sending.saveFailureSeq || 0) !== failureSeqAtStart;
+          if (failed) reject(new Error('pending reorder changes were not saved'));
+          else resolve();
+        }
+      }
+      step();
+    });
+  }
+
+  // Best-effort pin seam. A failed photograph cannot retroactively fail a
+  // Telegram send that has already returned ok.
+  function autoPinAfterSend(planId, deps) {
+    deps = deps || {};
+    try {
+      var snapshot = typeof deps.getState === 'function' ? deps.getState() : {};
+      var payload = { action: 'savePlan', planId: planId, state: snapshot, source: 'final-send' };
+      return Promise.resolve(deps.postPlan(payload)).then(function () {
+        return { pinned: true };
+      }).catch(function () { return { pinned: false }; });
+    } catch (e) { return Promise.resolve({ pinned: false }); }
+  }
+
   // ⚠️ MIRROR RULE (2026-07-11): the VAN-ETA driver app (fulldayplan repo,
   // drive/index.html, queuePayload()) carries a faithful PORT of this payload
   // build so drivers can send-and-open a staged route themselves. Any change to
@@ -2366,6 +2506,9 @@
     if (!st) return;
     var btn = st.card.querySelector('.reorder-send');
     if (!btn || btn.disabled) return;
+    if (st.finalFlushInFlight) return;
+    st.finalFlushInFlight = true;
+    return flushPendingReorderSaves(slotKey).then(function () {
     var ctx = st.record.ctx || {};
     var ol = st.card.querySelector('.reorder-list');
     var o = currentOrderIds(ol).map(function (id) { return st.stopsById[id]; });
@@ -2480,7 +2623,7 @@
     } // P5c: end of the verbatim fallback construction (a module-built payload skips it)
 
     setBtn(btn, 'sending');
-    postN8n(payload).then(function (res) {
+    return postN8n(payload).then(function (res) {
       return res.json().catch(function () { return {}; });
     }).then(function (body) {
       if (!body || body.ok !== true) throw new Error((body && body.error) || 'route not ok');
@@ -2495,14 +2638,50 @@
       // grid, 2026-08-02). Self-guards: applyKennelFromReorder /
       // applyReturnedStops skip when the sent slot's plan isn't the loaded
       // one — the next plan load overlays it then.
-      try { overlayFromStore((st.record && st.record.section === 'NEXT_AM') ? 'NEXT_AM' : 'PM'); }
-      catch (e) { /* alignment is best-effort — never taint a successful send */ }
-      setTimeout(function () { if (slots[slotKey]) setBtn(btn, 'idle'); }, SENT_RESET_MS);
+      var sentPlan = (st.record && st.record.section === 'NEXT_AM') ? 'NEXT_AM' : 'PM';
+      try {
+        if (window.VanPlanSync && window.VanPlanSync.preparePlanForFinalSync) {
+          window.VanPlanSync.preparePlanForFinalSync(sentPlan);
+        }
+      } catch (prepareErr) { /* redraw remains best-effort */ }
+      return Promise.resolve(overlayFromStore(sentPlan)).catch(function () { return null; }).then(function () {
+        return autoPinAfterSend(sentPlan, {
+          getState: function () {
+            return window.VanPlanSync && window.VanPlanSync.getPlanState
+              ? window.VanPlanSync.getPlanState(sentPlan) : {};
+          },
+          postPlan: function (pinPayload) {
+            return fetch(REORDER_URL, {
+              method: 'POST', body: JSON.stringify(pinPayload), redirect: 'follow'
+            }).then(function (pinRes) {
+              if (!pinRes.ok) throw new Error('pin responded ' + pinRes.status);
+              return pinRes.text();
+            }).then(function (pinText) {
+              if (!pinText || /^Error\b/i.test(pinText)) throw new Error(pinText || 'empty pin response');
+              return pinText;
+            });
+          }
+        });
+      }).then(function (pinResult) {
+        try {
+          if (pinResult && pinResult.pinned && window.VanPlanSync &&
+              window.VanPlanSync.refreshPinWitness) {
+            Promise.resolve(window.VanPlanSync.refreshPinWitness(sentPlan))
+              .catch(function () { return null; });
+          }
+        } catch (witnessErr) {}
+        setTimeout(function () { if (slots[slotKey]) setBtn(btn, 'idle'); }, SENT_RESET_MS);
+      });
     }).catch(function () {
       setBtn(btn, 'failed');
       setTimeout(function () { setBtn(btn, 'idle'); }, 4000);
       toast('Send failed — route kept, retry', 'error');
     });
+    }).catch(function () {
+      setBtn(btn, 'failed');
+      setTimeout(function () { if (slots[slotKey]) setBtn(btn, 'idle'); }, 4000);
+      toast('Pending route changes could not be saved — route not sent', 'error');
+    }).finally(function () { st.finalFlushInFlight = false; });
   }
 
   // ---- reconcile (poll) -----------------------------------------
@@ -2592,7 +2771,8 @@
           if (tomb) delete cleared[rec.slot_key];
           st = slots[rec.slot_key] = {
             record: rec, card: null, stopsById: {}, renderedRev: null,
-            dragging: false, pendingSave: false, saveTimer: null, staleRemove: false,
+            dragging: false, pendingSave: false, saveTimer: null, orderInFlight: false,
+            orderSaveFailed: false, kpSaveFailed: false, saveFailureSeq: 0, staleRemove: false,
             pendingKpSave: false, kpSaveTimer: null, kpInFlight: false,
             pendingNoteSave: false, noteSaveTimer: null, noteInFlight: false,
             map: null, mapLayer: null, mapBounds: null, mapOpen: false
