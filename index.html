@@ -3278,6 +3278,29 @@
         return true;
       }
 
+      // Final-send rebuild seam: create a routed dog that no longer has a
+      // grid tile, while preserving the same cap, undo and marker semantics
+      // as moveTileToBoxHost. Ordinary overlays never call this hook.
+      function createTileInBoxHost(text, boxId, opts) {
+        opts = opts || {};
+        var cleanText = String(text == null ? '' : text).trim();
+        if (!cleanText || !state.tiles || !state.placements) return null;
+        var arr = state.placements[boxId] || [];
+        if (arr.length >= 2) return null;
+        saveUndoState();
+        var id;
+        do {
+          id = 't_ovl_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+        } while (state.tiles[id]);
+        state.tiles[id] = { id: id, text: cleanText };
+        if (opts.auto) state.tiles[id].syncMarker = 'auto-placed';
+        else delete state.tiles[id].syncMarker;
+        (state.placements[boxId] = state.placements[boxId] || []).push(id);
+        localSave();
+        hydrate();
+        return id;
+      }
+
       function isPlacedTile(tid) {
         return Object.keys(state.placements).some(function (k) {
           return (state.placements[k] || []).indexOf(tid) !== -1;
@@ -3544,6 +3567,7 @@
           // 2026-08-01 redesign the implementation lives in moveTileToBoxHost,
           // shared with the tap-to-select layer.
           moveTileToBox: function (tileId, boxId, opts) { return moveTileToBoxHost(tileId, boxId, opts); },
+          createTileInBox: function (text, boxId, opts) { return createTileInBoxHost(text, boxId, opts); },
           moveTileToTray: function (tileId, marker) { return moveTileToTrayHost(tileId, marker); }
         });
       }
