@@ -1626,40 +1626,48 @@
   // RouteSender.applyReturnedStops with clearUnmatched (a dog pulled off the
   // route sheds its stale number). The overlay itself never writes the cloud
   // store; Share and the post-send pin publish an aligned snapshot separately.
-  function overlayFromStore(planId) {
+  function overlayFromStore(planId, opts) {
+    opts = opts || {};
     planId = String(planId || '').toUpperCase() === 'NEXT_AM' ? 'NEXT_AM' : 'PM';
     if (!window.RouteSender || !RouteSender.applyKennelFromReorder ||
         !RouteSender.applyReturnedStops) return Promise.resolve(null);
     return getStaged().then(function (body) {
       if (!body || body.ok !== true || !Array.isArray(body.slots)) return null;
-      return applyStoreOverlay(planId, body.slots, body.cleared);
+      return applyStoreOverlay(planId, body.slots, body.cleared, opts);
     }).catch(function () { /* offline / store error → grid stays as loaded */ });
   }
 
-  function applyStoreOverlay(planId, slotRecs, clearedKeys) {
+  function applyStoreOverlay(planId, slotRecs, clearedKeys, opts) {
+    opts = opts || {};
     var kennelMoves = 0, stopWrites = 0, vansAligned = 0, removedMoves = 0;
     var eligible = (slotRecs || []).filter(function (rec) {
       if (!rec || !rec.ctx || !rec.van) return false;
       var slotPlan = (rec.section === 'NEXT_AM') ? 'NEXT_AM' : 'PM';   // HALF_DAY rides the PM plan
       return slotPlan === planId && slotDayAccepted(rec, Date.now());
     });
+    var stopsByVan = {};
     eligible.forEach(function (rec) {
+      var van = String(rec.van || '').toUpperCase();
+      if (!stopsByVan[van]) {
+        stopsByVan[van] = [];
+        vansAligned++;
+      }
       var o = Array.isArray(rec.ctx.o) ? rec.ctx.o : [];
       var kidx = kennelIndexFor(rec.ctx);
-      var stops = [];
       o.forEach(function (members, i) {
         (members || []).forEach(function (m) {
           if (isSalonName(m)) return;          // rides the route, has no grid tile
           var code = kidx[normKey(m)];
           if (RouteSender.applyKennelFromReorder(planId, rec.van, m, code || '',
-              { storeOverlay: true })) kennelMoves++;
-          stops.push({ name: m, stop: i + 1 });
+              { storeOverlay: true, createMissing: opts.rebuild === true })) kennelMoves++;
+          stopsByVan[van].push({ name: m, stop: i + 1 });
         });
       });
-      if (stops.length) {
-        stopWrites += RouteSender.applyReturnedStops(rec.van, stops, planId, { clearUnmatched: true });
-      }
-      vansAligned++;
+    });
+    Object.keys(stopsByVan).forEach(function (van) {
+      var stops = stopsByVan[van];
+      if (!stops.length) return;
+      stopWrites += RouteSender.applyReturnedStops(van, stops, planId, { clearUnmatched: true });
     });
 
     // Tray only dogs positively identified as removed from these staged slots.
@@ -2551,7 +2559,10 @@
     try {
       var snapshot = typeof deps.getState === 'function' ? deps.getState() : {};
       var payload = { action: 'savePlan', planId: planId, state: snapshot, source: 'final-send' };
-      return Promise.resolve(deps.postPlan(payload)).then(function () {
+      function attempt() {
+        return Promise.resolve().then(function () { return deps.postPlan(payload); });
+      }
+      return attempt().catch(function () { return attempt(); }).then(function () {
         return { pinned: true };
       }).catch(function () { return { pinned: false }; });
     } catch (e) { return Promise.resolve({ pinned: false }); }
@@ -2704,7 +2715,7 @@
           window.VanPlanSync.preparePlanForFinalSync(sentPlan);
         }
       } catch (prepareErr) { /* redraw remains best-effort */ }
-      return Promise.resolve(overlayFromStore(sentPlan)).catch(function () { return null; }).then(function () {
+      return Promise.resolve(overlayFromStore(sentPlan, { rebuild: true })).catch(function () { return null; }).then(function () {
         return autoPinAfterSend(sentPlan, {
           getState: function () {
             return window.VanPlanSync && window.VanPlanSync.getPlanState
@@ -2730,6 +2741,11 @@
               .catch(function () { return null; });
           }
         } catch (witnessErr) {}
+        if (!pinResult || pinResult.pinned !== true) {
+          try {
+            toast('Final plan NOT saved to cloud — other devices will not see it. Press Share to retry.', 'error');
+          } catch (pinToastErr) {}
+        }
         setTimeout(function () { if (slots[slotKey]) setBtn(btn, 'idle'); }, SENT_RESET_MS);
       });
     }).catch(function () {
