@@ -173,6 +173,7 @@
   //   hostMoveTileToBox(tileId, boxId) → moves a tile into a kennel box
   //   (undo state + remove-from-everywhere + max-2, exactly like a drag).
   var hostMoveTileToBox = null;
+  var hostCreateTileInBox = null;
   var hostMoveTileToTray = null;
 
   function safeState() {
@@ -345,15 +346,50 @@
       if (t && t.text && normName(t.text) === want) { tileId = tid; return true; }
       return false;
     });
-    if (!tileId) return false;
     var targetVan = String(van || '').toUpperCase().trim();
     var prefix = targetVan.toLowerCase() + '-';
+    var boxes = collectTargetVanBoxes(targetVan, st);
+    if (!tileId) {
+      if (opts.createMissing !== true || opts.storeOverlay !== true ||
+          typeof hostCreateTileInBox !== 'function') return false;
+      // Creation is deliberately more conservative than the strict move path:
+      // staged names may be fuller than tile text, or differ only by accents
+      // and apostrophe style. Any tolerant match means the tile already exists.
+      function foldCreateName(value) {
+        return String(value || '').replace(/\u2019/g, "'")
+          .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      }
+      var foldedWant = foldCreateName(want);
+      var hasTolerantTile = Object.keys(st.tiles).some(function (tid) {
+        var t = st.tiles[tid];
+        var foldedTile = t && t.text ? foldCreateName(normName(t.text)) : '';
+        return !!foldedTile && (foldedTile === foldedWant ||
+          foldedTile.indexOf(foldedWant + ' ') === 0 ||
+          foldedWant.indexOf(foldedTile + ' ') === 0);
+      });
+      if (hasTolerantTile) return false;
+      var missingDecision = planCrossVanPlacement(targetVan, code, boxes, null);
+      if (!missingDecision || missingDecision.refused || !missingDecision.boxId) return false;
+      // Preserve the staged display casing while reusing normName's canonical
+      // G.D./ALT handling to peel only recognised trailing marker tokens.
+      var tileText = String(dogName == null ? '' : dogName).trim();
+      var displayParts = tileText.split(/\s+/);
+      while (displayParts.length > 1) {
+        var withoutLast = displayParts.slice(0, -1).join(' ');
+        if (normName(withoutLast) !== want) break;
+        displayParts.pop();
+        tileText = withoutLast;
+      }
+      try {
+        return typeof hostCreateTileInBox(tileText, missingDecision.boxId,
+          { auto: missingDecision.auto === true }) === 'string';
+      } catch (createErr) { return false; }
+    }
     var placement = findTilePlacement(st, tileId);
     var currentBox = placement.boxId;
     var currentVan = placement.van;
     var validCode = /^[SB][TMB][PMD]$/.test(code);
     if (!validCode && currentBox.indexOf(prefix) === 0) return false;
-    var boxes = collectTargetVanBoxes(targetVan, st);
     // A tile already in its valid requested box is aligned even when it shares
     // that box with a second dog; do not mistake its own occupancy for fullness.
     if (validCode && currentBox) {
@@ -1142,6 +1178,7 @@
       hostSetStopValue = typeof opts.setStopValue === 'function' ? opts.setStopValue : null;
       hostHydrate = typeof opts.hydrate === 'function' ? opts.hydrate : null;
       hostMoveTileToBox = typeof opts.moveTileToBox === 'function' ? opts.moveTileToBox : null;
+      hostCreateTileInBox = typeof opts.createTileInBox === 'function' ? opts.createTileInBox : null;
       hostMoveTileToTray = typeof opts.moveTileToTray === 'function' ? opts.moveTileToTray : null;
       bindButtons();
       bindToggles();
