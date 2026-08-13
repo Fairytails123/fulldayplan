@@ -449,6 +449,11 @@
       border-radius: 9px;
     }
     .run-opt.active { color: var(--ink); }
+    .lane-empty-note {
+      margin: -2px 0 0; font-size: 12px; font-weight: 600;
+      color: var(--sec); text-align: center;
+    }
+    .lane-empty-note[hidden] { display: none; }
 
     /* ── Kennel grids ──────────────────────────────────────────────── */
     .two-cols { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; min-width: 0; }
@@ -1359,6 +1364,7 @@
             <div class="grid-shell-backdoor" title="Back doors" aria-hidden="true"></div>
           </div>
         </div>
+        <p class="lane-empty-note" data-van="bv" hidden>No half-day route yet</p>
         <div class="route-controls" data-van-route="bv">
           <div class="route-toggles">
             <div class="toggle-row">
@@ -1468,6 +1474,7 @@
             <div class="grid-shell-backdoor" title="Back doors" aria-hidden="true"></div>
           </div>
         </div>
+        <p class="lane-empty-note" data-van="sv" hidden>No half-day route yet</p>
         <div class="route-controls" data-van-route="sv">
           <div class="route-toggles">
             <div class="toggle-row">
@@ -1585,6 +1592,7 @@
             <div class="grid-shell-backdoor" title="Back doors" aria-hidden="true"></div>
           </div>
         </div>
+        <p class="lane-empty-note" data-van="bvx" hidden>No half-day route yet</p>
         <div class="route-controls" data-van-route="bvx">
           <div class="route-toggles">
             <div class="toggle-row">
@@ -1766,8 +1774,9 @@
       
       // State - Updated structure for dual stop numbers
       let currentPlan = 'PM';
-      let state = { tiles: {}, placements: {}, stops: {}, departures: {}, runTypes: {} };
+      let state = { tiles: {}, placements: {}, stops: {}, stopsHd: {}, departures: {}, runTypes: {} };
       // stops structure: { 'bv-c1': { primary: '5', secondary: '3' }, ... }
+      // stopsHd is the additive PM half-day lane; NEXT_AM always uses stops.
       
       let undoStack = [];
       let activeClone = null;
@@ -1877,8 +1886,10 @@
       }
       
       // Helper to get stop number object (handles migration from old string format)
-      function getStopObj(boxId) {
-        const stop = state.stops[boxId];
+      function getStopObj(boxId, lane) {
+        const store = currentPlan === 'PM' && String(lane || '').toUpperCase() === 'HD'
+          ? (state.stopsHd || {}) : (state.stops || {});
+        const stop = store[boxId];
         if (!stop) return { primary: '', secondary: '' };
         if (typeof stop === 'string') {
           // Migrate old string format to new object format
@@ -1888,12 +1899,15 @@
       }
       
       // Helper to set stop number
-      function setStopValue(boxId, type, value) {
-        if (!state.stops[boxId] || typeof state.stops[boxId] === 'string') {
-          const oldValue = typeof state.stops[boxId] === 'string' ? state.stops[boxId] : '';
-          state.stops[boxId] = { primary: oldValue, secondary: '' };
+      function setStopValue(boxId, type, value, lane) {
+        const useHd = currentPlan === 'PM' && String(lane || '').toUpperCase() === 'HD';
+        const storeName = useHd ? 'stopsHd' : 'stops';
+        if (!state[storeName]) state[storeName] = {};
+        if (!state[storeName][boxId] || typeof state[storeName][boxId] === 'string') {
+          const oldValue = typeof state[storeName][boxId] === 'string' ? state[storeName][boxId] : '';
+          state[storeName][boxId] = { primary: oldValue, secondary: '' };
         }
-        state.stops[boxId][type] = value;
+        state[storeName][boxId][type] = value;
         localSave();
       }
 
@@ -1952,51 +1966,59 @@
       
       function collectTransmitData() {
         const dogs = [];
+        const transmittedNames = new Set();
         const departures = {
           bv: document.getElementById('bv-departure').value,
           sv: document.getElementById('sv-departure').value,
           bvx: document.getElementById('bvx-departure').value
         };
         
-        // Iterate through all placements
+        // Transmit Plan is deliberately merged: the staff whiteboard needs
+        // every placed dog's van code, regardless of the active PM run lane.
         Object.entries(state.placements).forEach(([boxId, tileIds]) => {
-          const stopObj = getStopObj(boxId);
-          const primaryStop = stopObj.primary;
-          const secondaryStop = stopObj.secondary;
-          
-          // Skip if no primary stop number assigned
-          if (!primaryStop || primaryStop.trim() === '') return;
-          
           const vanPrefix = boxId.split('-')[0];
           const vanName = VAN_MAP[vanPrefix];
           const departureTime = departures[vanPrefix];
-          
-          // Process each dog in the box
-          tileIds.forEach((tileId, index) => {
+          const laneTileIds = { FD: [], HD: [] };
+          (tileIds || []).forEach(tileId => {
             const tile = state.tiles[tileId];
             if (!tile) return;
-            
-            const dogName = tile.text;
-            const matchedName = findMatchingDogName(dogName);
-            
-            // Determine stop number:
-            // - First dog (index 0, top) uses primary stop
-            // - Second dog (index 1, bottom) uses secondary if filled, else primary
-            let stopNumber;
-            if (index === 0) {
-              stopNumber = primaryStop;
-            } else {
-              // Second dog: use secondary if filled, otherwise use primary (same house)
-              stopNumber = (secondaryStop && secondaryStop.trim() !== '') ? secondaryStop : primaryStop;
-            }
-            
-            dogs.push({
-              inputName: dogName,
-              matchedName: matchedName,
-              stopNumber: stopNumber,
-              van: vanName,
-              departureTime: departureTime,
-              isValid: matchedName !== null
+            const lane = tile.rt === 'HD' ? 'HD' : 'FD';
+            laneTileIds[lane].push(tileId);
+          });
+
+          // Each lane has its own primary/secondary sequence, while the final
+          // whiteboard transmission remains deliberately merged across lanes.
+          ['FD', 'HD'].forEach(lane => {
+            const stopObj = getStopObj(boxId, lane);
+            const primaryStop = stopObj.primary;
+            const secondaryStop = stopObj.secondary;
+            if (!primaryStop || primaryStop.trim() === '') return;
+
+            laneTileIds[lane].forEach((tileId, laneIndex) => {
+              const tile = state.tiles[tileId];
+              if (!tile) return;
+              const dogName = tile.text;
+              const matchedName = findMatchingDogName(dogName);
+              const foldedName = String(matchedName || dogName || '')
+                .replace(/\u2019/g, "'").normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '').toLowerCase()
+                .replace(/\s+/g, ' ').trim();
+              if (foldedName && transmittedNames.has(foldedName)) return;
+
+              // The second dog in this lane shares primary unless a separate
+              // secondary stop is present, matching the legacy house rule.
+              const stopNumber = laneIndex === 0 ? primaryStop :
+                ((secondaryStop && secondaryStop.trim() !== '') ? secondaryStop : primaryStop);
+              if (foldedName) transmittedNames.add(foldedName);
+              dogs.push({
+                inputName: dogName,
+                matchedName: matchedName,
+                stopNumber: stopNumber,
+                van: vanName,
+                departureTime: departureTime,
+                isValid: matchedName !== null
+              });
             });
           });
         });
@@ -2016,11 +2038,22 @@
           .map(id => state.tiles[id].text);
         const noStop = [];
         Object.entries(state.placements).forEach(([boxId, tileIds]) => {
-          const stopObj = getStopObj(boxId);
-          if (stopObj.primary && stopObj.primary.trim() !== '') return;
+          const laneTileIds = { FD: [], HD: [] };
           (tileIds || []).forEach(id => {
             const tile = state.tiles[id];
-            if (tile) noStop.push(tile.text);
+            if (!tile) return;
+            laneTileIds[tile.rt === 'HD' ? 'HD' : 'FD'].push(id);
+          });
+          ['FD', 'HD'].forEach(lane => {
+            const stopObj = getStopObj(boxId, lane);
+            const primaryStop = stopObj.primary;
+            const secondaryStop = stopObj.secondary;
+            laneTileIds[lane].forEach((id, laneIndex) => {
+              const tile = state.tiles[id];
+              const stopNumber = laneIndex === 0 ? primaryStop :
+                ((secondaryStop && secondaryStop.trim() !== '') ? secondaryStop : primaryStop);
+              if (tile && (!stopNumber || stopNumber.trim() === '')) noStop.push(tile.text);
+            });
           });
         });
         return { tray, noStop };
@@ -2135,6 +2168,19 @@
       }
 
       // ==================== CLOUD OPERATIONS ====================
+      function syncRuntypeControlsFromState() {
+        const resolved = {};
+        ['bv', 'sv', 'bvx'].forEach(v => {
+          const el = document.getElementById(v + '-runtype');
+          if (!el) return;
+          const saved = state.runTypes && state.runTypes[v];
+          const valid = saved && Array.from(el.options).some(o => o.value === saved);
+          el.value = valid ? saved : RUNTYPE_DEFAULT;
+          resolved[v] = el.value;
+        });
+        state.runTypes = resolved;
+      }
+
       async function cloudFetch() {
         fetchBtn.disabled = true;
         fetchBtn.textContent = "Fetching…";
@@ -2154,6 +2200,8 @@
             state = JSON.parse(cloud.state);
             // Migrate old stops format if needed
             migrateStopsFormat();
+            syncRuntypeControlsFromState();
+            syncRunSegs();
             syncTimeEl.textContent = `Synced ${cloud.time}`;
             localSave();
             hydrate();
@@ -2257,13 +2305,20 @@
       
       // Migrate old string stops to new object format
       function migrateStopsFormat() {
-        if (state.stops) {
-          Object.keys(state.stops).forEach(boxId => {
-            if (typeof state.stops[boxId] === 'string') {
-              state.stops[boxId] = { primary: state.stops[boxId], secondary: '' };
+        if (!state || typeof state !== 'object') state = {};
+        state.tiles = state.tiles || {};
+        state.placements = state.placements || {};
+        state.stops = state.stops || {};
+        state.stopsHd = state.stopsHd || {};
+        state.departures = state.departures || {};
+        state.runTypes = state.runTypes || {};
+        ['stops', 'stopsHd'].forEach(storeName => {
+          Object.keys(state[storeName]).forEach(boxId => {
+            if (typeof state[storeName][boxId] === 'string') {
+              state[storeName][boxId] = { primary: state[storeName][boxId], secondary: '' };
             }
           });
-        }
+        });
       }
 
       // ==================== PLAN MANAGEMENT ====================
@@ -2291,7 +2346,7 @@
         currentPlan = p;
         document.getElementById('currentLabel').textContent = p.replace('_', ' ') + ' Plan';
         const raw = localStorage.getItem(STORAGE_PREFIX + p);
-        state = raw ? JSON.parse(raw) : { tiles: {}, placements: {}, stops: {}, departures: {}, runTypes: {} };
+        state = raw ? JSON.parse(raw) : { tiles: {}, placements: {}, stops: {}, stopsHd: {}, departures: {}, runTypes: {} };
         
         // Migrate old stops format
         migrateStopsFormat();
@@ -2325,21 +2380,9 @@
           bvx: document.getElementById('bvx-departure').value
         };
 
-        // Apply saved run-type (FD/HD) per van, or fall back to the default
-        // (FD). PM-plan only — the dropdown is hidden in Next-Day-AM mode, but we
-        // still resolve/persist a value so it sticks when the user returns to PM.
-        ['bv', 'sv', 'bvx'].forEach(v => {
-          const el = document.getElementById(v + '-runtype');
-          if (!el) return;
-          const saved = state.runTypes && state.runTypes[v];
-          const valid = saved && Array.from(el.options).some(o => o.value === saved);
-          el.value = valid ? saved : RUNTYPE_DEFAULT;
-        });
-        state.runTypes = {
-          bv: document.getElementById('bv-runtype').value,
-          sv: document.getElementById('sv-runtype').value,
-          bvx: document.getElementById('bvx-runtype').value
-        };
+        // Re-apply the state-owned run type to its controls (default FD).
+        syncRuntypeControlsFromState();
+        syncRunSegs();
         localSave();
 
         hydrate();
@@ -2361,8 +2404,8 @@
         if (currentPlan === plan) return state;
         try {
           var raw = localStorage.getItem(STORAGE_PREFIX + plan);
-          return raw ? JSON.parse(raw) : { tiles: {}, placements: {}, stops: {}, departures: {}, runTypes: {} };
-        } catch (e) { return { tiles: {}, placements: {}, stops: {}, departures: {}, runTypes: {} }; }
+          return raw ? JSON.parse(raw) : { tiles: {}, placements: {}, stops: {}, stopsHd: {}, departures: {}, runTypes: {} };
+        } catch (e) { return { tiles: {}, placements: {}, stops: {}, stopsHd: {}, departures: {}, runTypes: {} }; }
       }
 
       document.querySelectorAll('.departure-selector select').forEach(select => {
@@ -2388,6 +2431,7 @@
             bvx: document.getElementById('bvx-runtype').value
           };
           localSave();
+          hydrate();
         });
       });
 
@@ -2653,10 +2697,17 @@
           } else if (box) {
             const boxId = box.dataset.box;
             if (!state.placements[boxId]) state.placements[boxId] = [];
-            if (state.placements[boxId].length < 2) {
+            const destinationLane = currentPlan === 'PM'
+              ? ((state.runTypes && state.runTypes[boxId.split('-')[0]]) === 'HD' ? 'HD' : 'FD') : '';
+            const sameLaneCount = state.placements[boxId].filter(id => {
+              const tile = state.tiles[id];
+              return currentPlan !== 'PM' || (tile && tile.rt === 'HD' ? 'HD' : 'FD') === destinationLane;
+            }).length;
+            if (sameLaneCount < 2) {
               state.placements[boxId].push(dragId);
               const movedTile = state.tiles[dragId];
               if (movedTile) {
+                if (currentPlan === 'PM') movedTile.rt = destinationLane;
                 showToast(movedTile.text + ' → ' + boxId.split('-')[0].toUpperCase() +
                   (box.dataset.pos ? ' · ' + box.dataset.pos : ''), 'success');
               }
@@ -3016,8 +3067,14 @@
             box.appendChild(arch);
           }
           
-          const stopObj = getStopObj(boxId);
-          const ids = state.placements[boxId] || [];
+          const vanPrefix = boxId.split('-')[0];
+          const activeLane = currentPlan === 'PM'
+            ? ((state.runTypes && state.runTypes[vanPrefix]) === 'HD' ? 'HD' : 'FD') : '';
+          const stopObj = getStopObj(boxId, activeLane);
+          const ids = (state.placements[boxId] || []).filter(id => {
+            const tile = state.tiles[id];
+            return currentPlan !== 'PM' || (tile && tile.rt === 'HD' ? 'HD' : 'FD') === activeLane;
+          });
           
           // Primary stop input (top left) - always visible
           const stopPrimary = document.createElement('input');
@@ -3028,7 +3085,7 @@
           stopPrimary.setAttribute('aria-label', 'Stop number for ' + (box.dataset.pos || boxId));
           stopPrimary.value = stopObj.primary || '';
           stopPrimary.oninput = () => {
-            setStopValue(boxId, 'primary', stopPrimary.value);
+            setStopValue(boxId, 'primary', stopPrimary.value, activeLane);
           };
           box.appendChild(stopPrimary);
           
@@ -3043,7 +3100,7 @@
             stopSecondary.title = 'Second dog’s stop (blank = same stop)';
             stopSecondary.setAttribute('aria-label', 'Second dog’s stop (blank = same stop)');
             stopSecondary.oninput = () => {
-              setStopValue(boxId, 'secondary', stopSecondary.value);
+              setStopValue(boxId, 'secondary', stopSecondary.value, activeLane);
             };
             box.appendChild(stopSecondary);
           }
@@ -3057,7 +3114,6 @@
           
           if (ids.length > 0) {
             box.classList.add('full');
-            const vanPrefix = boxId.split('-')[0];
             vanCounts[vanPrefix] += ids.length;
           }
           
@@ -3078,6 +3134,12 @@
             const count = vanCounts[van];
             countEl.textContent = `${count} dog${count !== 1 ? 's' : ''}`;
             countEl.classList.toggle('has-dogs', count > 0);
+          }
+          const emptyNote = document.querySelector('.lane-empty-note[data-van="' + van + '"]');
+          if (emptyNote) {
+            const isEmptyHd = currentPlan === 'PM' && state.runTypes &&
+              state.runTypes[van] === 'HD' && vanCounts[van] === 0;
+            emptyNote.hidden = !isEmptyHd;
           }
         });
         
@@ -3170,8 +3232,10 @@
       
       clearBtn.onclick = () => {
         if (confirm("Clear all local data for this plan? This cannot be undone.")) {
-          state = { tiles: {}, placements: {}, stops: {}, departures: {}, runTypes: {} };
+          state = { tiles: {}, placements: {}, stops: {}, stopsHd: {}, departures: {}, runTypes: {} };
           undoStack = [JSON.stringify(state)];
+          syncRuntypeControlsFromState();
+          syncRunSegs();
           localSave();
           hydrate();
           
@@ -3241,20 +3305,32 @@
         if (!state.tiles || !state.tiles[tileId]) return false;
         opts = opts || {};
         var arr = state.placements[boxId] || [];
+        var useLane = currentPlan === 'PM';
+        var van = String(boxId || '').split('-')[0];
+        var requestedLane = String(opts.rt || '').toUpperCase();
+        var lane = requestedLane === 'FD' || requestedLane === 'HD' ? requestedLane :
+          ((state.runTypes && state.runTypes[van]) === 'HD' ? 'HD' : 'FD');
+        var sameLaneCount = arr.filter(function (id) {
+          if (id === tileId) return false;
+          var tile = state.tiles[id];
+          return !useLane || (tile && tile.rt === 'HD' ? 'HD' : 'FD') === lane;
+        }).length;
+        if (sameLaneCount >= 2) return false;              // lane full — leave the grid alone
         if (arr.indexOf(tileId) !== -1) {
           if (!opts.overlay) return false;
+          if (useLane) state.tiles[tileId].rt = lane;
           if (opts.auto) state.tiles[tileId].syncMarker = 'auto-placed';
           else delete state.tiles[tileId].syncMarker;
           localSave();
           hydrate();
           return true;
         }
-        if (arr.length >= 2) return false;              // box full — leave the grid alone
         saveUndoState();
         Object.keys(state.placements).forEach(function (k) {
           state.placements[k] = (state.placements[k] || []).filter(function (t) { return t !== tileId; });
         });
         (state.placements[boxId] = state.placements[boxId] || []).push(tileId);
+        if (useLane) state.tiles[tileId].rt = lane;
         if (opts.auto) state.tiles[tileId].syncMarker = 'auto-placed';
         else delete state.tiles[tileId].syncMarker;
         localSave();
@@ -3286,13 +3362,23 @@
         var cleanText = String(text == null ? '' : text).trim();
         if (!cleanText || !state.tiles || !state.placements) return null;
         var arr = state.placements[boxId] || [];
-        if (arr.length >= 2) return null;
+        var useLane = currentPlan === 'PM';
+        var van = String(boxId || '').split('-')[0];
+        var requestedLane = String(opts.rt || '').toUpperCase();
+        var lane = requestedLane === 'FD' || requestedLane === 'HD' ? requestedLane :
+          ((state.runTypes && state.runTypes[van]) === 'HD' ? 'HD' : 'FD');
+        var sameLaneCount = arr.filter(function (id) {
+          var tile = state.tiles[id];
+          return !useLane || (tile && tile.rt === 'HD' ? 'HD' : 'FD') === lane;
+        }).length;
+        if (sameLaneCount >= 2) return null;
         saveUndoState();
         var id;
         do {
           id = 't_ovl_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
         } while (state.tiles[id]);
         state.tiles[id] = { id: id, text: cleanText };
+        if (useLane) state.tiles[id].rt = lane;
         if (opts.auto) state.tiles[id].syncMarker = 'auto-placed';
         else delete state.tiles[id].syncMarker;
         (state.placements[boxId] = state.placements[boxId] || []).push(id);
@@ -3330,7 +3416,13 @@
         document.querySelectorAll('.box').forEach(function (box) {
           var ids = state.placements[box.dataset.box] || [];
           if (ids.indexOf(selTid) !== -1) return;
-          if (ids.length < 2) box.classList.add('can-take');
+          var van = String(box.dataset.box || '').split('-')[0];
+          var lane = currentPlan === 'PM' && state.runTypes && state.runTypes[van] === 'HD' ? 'HD' : 'FD';
+          var sameLaneCount = ids.filter(function (id) {
+            var tile = state.tiles[id];
+            return currentPlan !== 'PM' || (tile && tile.rt === 'HD' ? 'HD' : 'FD') === lane;
+          }).length;
+          if (sameLaneCount < 2) box.classList.add('can-take');
         });
       }
 
@@ -3339,7 +3431,8 @@
         var ids = state.placements[boxId] || [];
         if (ids.indexOf(selTid) !== -1) { selTid = null; refreshSelectionUi(); return; }
         var text = state.tiles[selTid].text;
-        if (moveTileToBoxHost(selTid, boxId)) {
+        var lane = currentPlan === 'PM' && state.runTypes && state.runTypes[boxId.split('-')[0]] === 'HD' ? 'HD' : 'FD';
+        if (moveTileToBoxHost(selTid, boxId, { rt: currentPlan === 'PM' ? lane : undefined })) {
           selTid = null;
           showToast(text + ' → ' + boxId.split('-')[0].toUpperCase() +
             (box.dataset.pos ? ' · ' + box.dataset.pos : ''), 'success');
@@ -3414,9 +3507,13 @@
         var total = 0;
         var perVan = { bv: 0, sv: 0, bvx: 0 };
         Object.keys(state.placements).forEach(function (boxId) {
-          var n = (state.placements[boxId] || []).filter(function (id) { return !!state.tiles[id]; }).length;
-          total += n;
           var v = boxId.split('-')[0];
+          var lane = currentPlan === 'PM' && state.runTypes && state.runTypes[v] === 'HD' ? 'HD' : 'FD';
+          var n = (state.placements[boxId] || []).filter(function (id) {
+            var tile = state.tiles[id];
+            return !!tile && (currentPlan !== 'PM' || (tile.rt === 'HD' ? 'HD' : 'FD') === lane);
+          }).length;
+          total += n;
           if (perVan[v] != null) perVan[v] += n;
         });
         var boxes = document.querySelectorAll('.box').length;
@@ -3458,8 +3555,8 @@
         }
       }
 
-      // ---- run-type segmented proxy (the REAL <select> stays the value source;
-      //      option VALUES 'FD'/'HD' are the pipeline contract — never sent from here) ----
+      // ---- run-type segmented proxy (state.runTypes is authoritative; the REAL
+      //      <select> mirrors it and remains the accessible control) ----
       function syncRunSegs() {
         ['bv', 'sv', 'bvx'].forEach(function (v) {
           var sel = document.getElementById(v + '-runtype');
@@ -3557,7 +3654,7 @@
         window.RouteSender.init({
           getState: function () { return state; },
           getCurrentPlan: function () { return currentPlan; },
-          setStopValue: function (boxId, type, value) { setStopValue(boxId, type, value); },
+          setStopValue: function (boxId, type, value, lane) { setStopValue(boxId, type, value, lane); },
           hydrate: function () { hydrate(); },
           // One-way Reorder→grid kennel write-back (2026-07-31): move a tile
           // into a kennel box, mirroring finishDrag's semantics (undo state,
