@@ -1062,7 +1062,10 @@
     try {
       if (code && window.RouteSender && RouteSender.applyKennelFromReorder) {
         var wbPlan = (String(ctx.p || '').toUpperCase() === 'NEXT_AM') ? 'NEXT_AM' : 'PM';
-        RouteSender.applyKennelFromReorder(wbPlan, ctx.v, member, code);
+        var wbLane = wbPlan === 'PM' &&
+          (st.record.section === 'HALF_DAY' || String(ctx.rt || '').toUpperCase() === 'HD') ? 'HD' : 'FD';
+        RouteSender.applyKennelFromReorder(wbPlan, ctx.v, member, code,
+          { lane: wbPlan === 'PM' ? wbLane : undefined });
       }
     } catch (eWb) { /* cosmetic only — never break a kennel edit on it */ }
   }
@@ -1640,16 +1643,40 @@
   function applyStoreOverlay(planId, slotRecs, clearedKeys, opts) {
     opts = opts || {};
     var kennelMoves = 0, stopWrites = 0, vansAligned = 0, removedMoves = 0;
+    function laneForRec(rec) {
+      if (planId !== 'PM') return null;
+      return rec && (rec.section === 'HALF_DAY' || (rec.ctx && rec.ctx.rt === 'HD')) ? 'HD' : 'FD';
+    }
     var eligible = (slotRecs || []).filter(function (rec) {
       if (!rec || !rec.ctx || !rec.van) return false;
       var slotPlan = (rec.section === 'NEXT_AM') ? 'NEXT_AM' : 'PM';   // HALF_DAY rides the PM plan
       return slotPlan === planId && slotDayAccepted(rec, Date.now());
     });
-    var stopsByVan = {};
+    // Record routed ownership before moving anything so legacy adoption is
+    // independent of store order and never steals a dog from its own lane.
+    var routedLanesByDog = {};
+    eligible.forEach(function (rec) {
+      var lane = laneForRec(rec) || 'FD';
+      var o = Array.isArray(rec.ctx.o) ? rec.ctx.o : [];
+      o.forEach(function (members) {
+        (members || []).forEach(function (m) {
+          if (isSalonName(m)) return;
+          var key = normKey(m);
+          if (!key) return;
+          if (!routedLanesByDog[key]) routedLanesByDog[key] = {};
+          routedLanesByDog[key][lane] = true;
+        });
+      });
+    });
+    var stopsByVanLane = {};
+    var alignedVans = {};
     eligible.forEach(function (rec) {
       var van = String(rec.van || '').toUpperCase();
-      if (!stopsByVan[van]) {
-        stopsByVan[van] = [];
+      var lane = laneForRec(rec);
+      var laneKey = van + '__' + (lane || 'FD');
+      if (!stopsByVanLane[laneKey]) stopsByVanLane[laneKey] = { van: van, lane: lane, stops: [] };
+      if (!alignedVans[van]) {
+        alignedVans[van] = true;
         vansAligned++;
       }
       var o = Array.isArray(rec.ctx.o) ? rec.ctx.o : [];
@@ -1658,44 +1685,55 @@
         (members || []).forEach(function (m) {
           if (isSalonName(m)) return;          // rides the route, has no grid tile
           var code = kidx[normKey(m)];
+          var owners = routedLanesByDog[normKey(m)] || {};
           if (RouteSender.applyKennelFromReorder(planId, rec.van, m, code || '',
-              { storeOverlay: true, createMissing: opts.rebuild === true })) kennelMoves++;
-          stopsByVan[van].push({ name: m, stop: i + 1 });
+              { storeOverlay: true, createMissing: opts.rebuild === true, lane: lane || undefined,
+                allowLaneAdoption: planId !== 'PM' || Object.keys(owners).length === 1 })) kennelMoves++;
+          stopsByVanLane[laneKey].stops.push({ name: m, stop: i + 1 });
         });
       });
     });
-    Object.keys(stopsByVan).forEach(function (van) {
-      var stops = stopsByVan[van];
-      if (!stops.length) return;
-      stopWrites += RouteSender.applyReturnedStops(van, stops, planId, { clearUnmatched: true });
+    Object.keys(stopsByVanLane).forEach(function (key) {
+      var group = stopsByVanLane[key];
+      if (!group.stops.length) return;
+      stopWrites += RouteSender.applyReturnedStops(group.van, group.stops, planId,
+        { clearUnmatched: true, lane: group.lane || undefined });
     });
 
     // Tray only dogs positively identified as removed from these staged slots.
     // A never-staged grid dog is not enumerated and remains untouched.
     var seenDogs = {};
     eligible.forEach(function (rec) {
+      var lane = laneForRec(rec);
       var order = Array.isArray(rec.ctx.o) ? rec.ctx.o : [];
       if (!order.length) return;
+      var laneEligible = eligible.filter(function (candidate) {
+        return laneForRec(candidate) === lane;
+      });
       (Array.isArray(rec.ctx.d) ? rec.ctx.d : []).forEach(function (dog) {
         var key = normKey(dog);
-        if (!key || seenDogs[key]) return;
-        seenDogs[key] = true;
-        if (RouteSender.classifyOverlayDog(dog, eligible) === 'removed' &&
-            RouteSender.moveRemovedDogToTray(planId, dog)) removedMoves++;
+        var seenKey = (lane || 'FD') + '__' + key;
+        if (!key || seenDogs[seenKey]) return;
+        seenDogs[seenKey] = true;
+        if (RouteSender.classifyOverlayDog(dog, laneEligible) === 'removed' &&
+            RouteSender.moveRemovedDogToTray(planId, dog, lane || undefined)) removedMoves++;
       });
     });
 
     // CLEARED rows are omitted from slots and supplied additively as keys.
-    // Do not blank a van if another active PM/HALF_DAY slot still owns it.
-    var activeVans = {};
-    eligible.forEach(function (rec) { activeVans[String(rec.van || '').toUpperCase()] = true; });
+    // Do not blank a lane if another active slot still owns that van+lane.
+    var activeVanLanes = {};
+    eligible.forEach(function (rec) {
+      activeVanLanes[String(rec.van || '').toUpperCase() + '__' + (laneForRec(rec) || 'FD')] = true;
+    });
     (Array.isArray(clearedKeys) ? clearedKeys : []).forEach(function (slotKey) {
       var parts = String(slotKey || '').split('__');
       if (parts.length !== 2) return;
       var clearedPlan = parts[0] === 'NEXT_AM' ? 'NEXT_AM' : 'PM';
+      var clearedLane = clearedPlan === 'PM' && parts[0] === 'HALF_DAY' ? 'HD' : 'FD';
       var van = String(parts[1] || '').toUpperCase();
-      if (clearedPlan === planId && van && !activeVans[van]) {
-        stopWrites += RouteSender.clearVanStops(planId, van);
+      if (clearedPlan === planId && van && !activeVanLanes[van + '__' + clearedLane]) {
+        stopWrites += RouteSender.clearVanStops(planId, van, planId === 'PM' ? clearedLane : undefined);
       }
     });
     if (vansAligned) {
