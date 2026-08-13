@@ -196,17 +196,26 @@
   // Collect every kennel in the target van, not merely the requested kp box.
   // The placement planner needs the full list to choose a safe fallback when
   // a cross-van dog's requested box already contains two dogs.
-  function collectTargetVanBoxes(van, st) {
+  function collectTargetVanBoxes(van, st, lane) {
     var targetVan = String(van || '').toUpperCase().trim();
     var prefix = targetVan.toLowerCase() + '-';
+    var useLane = getCurrentPeriod() === 'PM' && lane != null;
+    var wantedLane = String(lane || '').toUpperCase() === 'HD' ? 'HD' : 'FD';
     var boxes = [];
     Array.prototype.forEach.call(document.querySelectorAll('.box[data-box^="' + prefix + '"]'), function (el) {
       if (!el || !el.dataset || !el.dataset.box) return;
+      var occupants = ((st && st.placements && st.placements[el.dataset.box]) || []).slice();
+      if (useLane) {
+        occupants = occupants.filter(function (tileId) {
+          var tile = st && st.tiles && st.tiles[tileId];
+          return (tile && tile.rt === 'HD' ? 'HD' : 'FD') === wantedLane;
+        });
+      }
       boxes.push({
         id: el.dataset.box,
         van: targetVan,
         pos: el.dataset.pos || '',
-        occupants: ((st && st.placements && st.placements[el.dataset.box]) || []).slice()
+        occupants: occupants
       });
     });
     return boxes;
@@ -283,12 +292,15 @@
     var st = safeState();
     if (!st || !st.placements || !st.tiles) return [];
     var prefix = String(van).toLowerCase() + '-';
+    var useLane = getCurrentPeriod() === 'PM';
+    var lane = useLane ? (getRunType(van) || 'FD') : '';
     var dogs = [];
     Object.keys(st.placements).forEach(function (boxId) {
       if (boxId.indexOf(prefix) !== 0) return;
       var tileIds = st.placements[boxId] || [];
       tileIds.forEach(function (tileId) {
         var tile = st.tiles[tileId];
+        if (useLane && (tile && tile.rt === 'HD' ? 'HD' : 'FD') !== lane) return;
         if (tile && tile.text) dogs.push(String(tile.text).trim());
       });
     });
@@ -307,6 +319,8 @@
     var out = {};
     if (!st || !st.placements || !st.tiles) return out;
     var prefix = String(van).toLowerCase() + '-';
+    var useLane = getCurrentPeriod() === 'PM';
+    var lane = useLane ? (getRunType(van) || 'FD') : '';
     Object.keys(st.placements).forEach(function (boxId) {
       if (boxId.indexOf(prefix) !== 0) return;
       var boxEl = document.querySelector('[data-box="' + boxId + '"]');
@@ -314,6 +328,7 @@
       if (!pos) return;
       (st.placements[boxId] || []).forEach(function (tileId) {
         var tile = st.tiles[tileId];
+        if (useLane && (tile && tile.rt === 'HD' ? 'HD' : 'FD') !== lane) return;
         if (tile && tile.text) {
           var key = normName(tile.text);
           if (key) out[key] = pos;
@@ -340,15 +355,29 @@
     var code = String(posCode || '').toUpperCase().trim();
     var want = normName(dogName);
     if (!want) return false;
-    var tileId = null;
+    var useLane = getCurrentPeriod() === 'PM';
+    var lane = String(opts.lane || '').toUpperCase() === 'HD' ? 'HD' : 'FD';
+    var tileId = null, otherLaneTileId = null;
     Object.keys(st.tiles).some(function (tid) {
       var t = st.tiles[tid];
-      if (t && t.text && normName(t.text) === want) { tileId = tid; return true; }
+      if (!t || !t.text || normName(t.text) !== want) return false;
+      if (!useLane || (t.rt === 'HD' ? 'HD' : 'FD') === lane) {
+        tileId = tid;
+        return true;
+      }
+      if (!otherLaneTileId) otherLaneTileId = tid;
       return false;
     });
+    var adopting = !tileId && !!otherLaneTileId;
+    if (adopting) {
+      // A strict match in another lane is adoption, never creation. The store
+      // overlay suppresses adoption when that tile's own lane also routes it.
+      if (opts.allowLaneAdoption === false) return false;
+      tileId = otherLaneTileId;
+    }
     var targetVan = String(van || '').toUpperCase().trim();
     var prefix = targetVan.toLowerCase() + '-';
-    var boxes = collectTargetVanBoxes(targetVan, st);
+    var boxes = collectTargetVanBoxes(targetVan, st, useLane ? lane : undefined);
     if (!tileId) {
       if (opts.createMissing !== true || opts.storeOverlay !== true ||
           typeof hostCreateTileInBox !== 'function') return false;
@@ -362,6 +391,7 @@
       var foldedWant = foldCreateName(want);
       var hasTolerantTile = Object.keys(st.tiles).some(function (tid) {
         var t = st.tiles[tid];
+        if (useLane && (t && t.rt === 'HD' ? 'HD' : 'FD') !== lane) return false;
         var foldedTile = t && t.text ? foldCreateName(normName(t.text)) : '';
         return !!foldedTile && (foldedTile === foldedWant ||
           foldedTile.indexOf(foldedWant + ' ') === 0 ||
@@ -382,38 +412,55 @@
       }
       try {
         return typeof hostCreateTileInBox(tileText, missingDecision.boxId,
-          { auto: missingDecision.auto === true }) === 'string';
+          { auto: missingDecision.auto === true, rt: useLane ? lane : undefined }) === 'string';
       } catch (createErr) { return false; }
     }
     var placement = findTilePlacement(st, tileId);
     var currentBox = placement.boxId;
     var currentVan = placement.van;
     var validCode = /^[SB][TMB][PMD]$/.test(code);
+    // Legacy-lane adoption is deliberately a same-box move when possible: it
+    // re-stamps the tile without disturbing the operator's kennel placement.
+    if (adopting && currentBox) {
+      try {
+        return hostMoveTileToBox(tileId, currentBox,
+          { overlay: true, auto: false, rt: useLane ? lane : undefined }) === true;
+      } catch (adoptErr) { return false; }
+    }
     if (!validCode && currentBox.indexOf(prefix) === 0) return false;
     // A tile already in its valid requested box is aligned even when it shares
     // that box with a second dog; do not mistake its own occupancy for fullness.
     if (validCode && currentBox) {
       var currentEl = document.querySelector('[data-box="' + currentBox + '"]');
       if (currentEl && String(currentEl.dataset.pos || '').toUpperCase() === code) {
-        try { return hostMoveTileToBox(tileId, currentBox, { overlay: true, auto: false }) === true; }
+        try {
+          return hostMoveTileToBox(tileId, currentBox,
+            { overlay: true, auto: false, rt: useLane ? lane : undefined }) === true;
+        }
         catch (sameErr) { return false; }
       }
     }
     var decision = planCrossVanPlacement(targetVan, code, boxes, currentVan);
     if (!decision || decision.refused || !decision.boxId) return false;
     if (decision.auto && opts.storeOverlay !== true) return false;
-    try { return hostMoveTileToBox(tileId, decision.boxId, { overlay: true, auto: decision.auto === true }) === true; }
+    try {
+      return hostMoveTileToBox(tileId, decision.boxId,
+        { overlay: true, auto: decision.auto === true, rt: useLane ? lane : undefined }) === true;
+    }
     catch (e) { return false; }
   }
 
-  function moveRemovedDogToTray(planKey, dogName) {
+  function moveRemovedDogToTray(planKey, dogName, lane) {
     if (typeof hostMoveTileToTray !== 'function') return false;
     if (String(planKey || '').toUpperCase() !== String(getCurrentPeriod()).toUpperCase()) return false;
     var st = safeState();
     if (!st || !st.tiles) return false;
+    var useLane = getCurrentPeriod() === 'PM';
+    var wantedLane = String(lane || '').toUpperCase() === 'HD' ? 'HD' : 'FD';
     var want = normName(dogName), tileId = null;
     Object.keys(st.tiles).some(function (tid) {
       var tile = st.tiles[tid];
+      if (useLane && (tile && tile.rt === 'HD' ? 'HD' : 'FD') !== wantedLane) return false;
       if (tile && tile.text && normName(tile.text) === want) { tileId = tid; return true; }
       return false;
     });
@@ -422,17 +469,19 @@
     catch (e) { return false; }
   }
 
-  function clearVanStops(planKey, van) {
+  function clearVanStops(planKey, van, lane) {
     if (typeof hostSetStopValue !== 'function') return 0;
     if (String(planKey || '').toUpperCase() !== String(getCurrentPeriod()).toUpperCase()) return 0;
     var st = safeState();
     if (!st || !st.placements) return 0;
+    var useLane = getCurrentPeriod() === 'PM';
+    var wantedLane = String(lane || '').toUpperCase() === 'HD' ? 'HD' : 'FD';
     var prefix = String(van || '').toLowerCase() + '-', cleared = 0;
     Object.keys(st.placements).forEach(function (boxId) {
       if (boxId.indexOf(prefix) !== 0) return;
       try {
-        hostSetStopValue(boxId, 'primary', '');
-        hostSetStopValue(boxId, 'secondary', '');
+        hostSetStopValue(boxId, 'primary', '', useLane ? wantedLane : undefined);
+        hostSetStopValue(boxId, 'secondary', '', useLane ? wantedLane : undefined);
         cleared++;
       } catch (e) {}
     });
@@ -467,15 +516,18 @@
     return normaliseDeparture(el && el.value);
   }
 
-  // Full Day (FD) / Half Day (HD) selector — PM plan ONLY. The dropdown is hidden
-  // in Next-Day-AM mode (it still exists in the DOM), so we gate on the current
-  // period and send '' for AM routes. Whitelisted to FD/HD so only a known token
-  // ever reaches the payload.
+  // Full Day (FD) / Half Day (HD) — PM plan ONLY. state.runTypes is the source
+  // of truth shared with hydrate; the dropdown is only a fallback for legacy
+  // hosts without a valid state value. PM defaults to FD; AM always sends ''.
   function getRunType(van) {
     if (getCurrentPeriod() !== 'PM') return '';
+    var key = String(van).toLowerCase();
+    var st = safeState();
+    var stateValue = st && st.runTypes ? String(st.runTypes[key] || '').toUpperCase().trim() : '';
+    if (stateValue === 'FD' || stateValue === 'HD') return stateValue;
     var el = document.getElementById(String(van).toLowerCase() + '-runtype');
     var v = el && el.value ? String(el.value).toUpperCase().trim() : '';
-    return (v === 'FD' || v === 'HD') ? v : '';
+    return (v === 'FD' || v === 'HD') ? v : 'FD';
   }
 
   // Accepts either an options object (preferred) or a legacy boolean
@@ -773,12 +825,18 @@
     var st = safeState();
     if (!st || !st.placements || !st.tiles) return 0;
     var prefix = String(van).toLowerCase() + '-';
+    var useLane = getCurrentPeriod() === 'PM';
+    var lane = String(opts && opts.lane || '').toUpperCase() === 'HD' ? 'HD' : 'FD';
 
     // This van's placed tiles, each with its kennel + slot.
     var slots = [];
     Object.keys(st.placements).forEach(function (boxId) {
       if (boxId.indexOf(prefix) !== 0) return;
-      var tileIds = st.placements[boxId] || [];
+      var tileIds = (st.placements[boxId] || []).filter(function (tileId) {
+        if (!useLane) return true;
+        var tile = st.tiles[tileId];
+        return (tile && tile.rt === 'HD' ? 'HD' : 'FD') === lane;
+      });
       tileIds.forEach(function (tileId, idx) {
         var tile = st.tiles[tileId];
         if (!tile || !tile.text) return;
@@ -820,7 +878,7 @@
       if (best && bestScore > 0) {
         claimed[best.tileId] = true;
         try {
-          hostSetStopValue(best.boxId, best.slot, String(s.stop));
+          hostSetStopValue(best.boxId, best.slot, String(s.stop), useLane ? lane : undefined);
           applied++;
         } catch (e) { console.warn('[RouteSender] setStopValue failed:', e); }
       } else {
@@ -835,7 +893,7 @@
     if (opts && opts.clearUnmatched && applied) {
       slots.forEach(function (slot) {
         if (claimed[slot.tileId]) return;
-        try { hostSetStopValue(slot.boxId, slot.slot, ''); } catch (e) {}
+        try { hostSetStopValue(slot.boxId, slot.slot, '', useLane ? lane : undefined); } catch (e) {}
       });
     }
 
@@ -930,7 +988,7 @@
     function applyStops(body) {
       try {
         if (body && Array.isArray(body.stops) && body.stops.length) {
-          applyReturnedStops(van, body.stops, sentPeriod);
+          applyReturnedStops(van, body.stops, sentPeriod, { lane: payload.run_type });
         }
       } catch (e) {
         console.warn('[RouteSender] Could not apply stop numbers (' + van + '):', e);
