@@ -254,6 +254,25 @@
     .btn-transmit.transmitting { background: #8F5000; animation: pulse 1.5s infinite; }
     .btn-transmit.success { background: #1E7B36; }
 
+    .rp-reorder-transmit { flex: 0 0 auto; min-height: 38px; padding: 0 14px; border-radius: 9px; font-size: 13px; }
+    .rp-stale-warn {
+      position: fixed; z-index: 1200; left: 50%; top: 84px; transform: translateX(-50%);
+      width: min(520px, calc(100% - 28px)); padding: 16px;
+      border: 2px solid #C66A00; border-radius: 14px;
+      background: #FFF6D8; color: #5C3A00; box-shadow: 0 12px 34px rgba(0,0,0,.2);
+      font: 700 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      animation: rpStalePulse 1.35s ease-in-out infinite;
+    }
+    .rp-stale-warn[hidden] { display: none; }
+    .rp-stale-actions { display: flex; gap: 8px; margin-top: 12px; }
+    .rp-stale-actions button { min-height: 40px; padding: 0 15px; border: 0; border-radius: 9px; font-weight: 800; cursor: pointer; }
+    #rpStaleForce { background: #C66A00; color: #fff; }
+    #rpStaleCancel { background: #fff; color: #5C3A00; border: 1px solid #D9B66A; }
+    @keyframes rpStalePulse {
+      0%, 100% { box-shadow: 0 12px 34px rgba(198,106,0,.18); }
+      50% { box-shadow: 0 12px 34px rgba(198,106,0,.42), 0 0 0 5px rgba(198,106,0,.12); }
+    }
+
     @keyframes pulse {
       0%, 100% { opacity: 1; }
       50% { opacity: 0.7; }
@@ -1196,6 +1215,13 @@
 </head>
 <body>
   <div class="toast-container" id="toastContainer" role="status" aria-live="polite"></div>
+  <div id="routePlanStaleWarning" class="rp-stale-warn" role="alert" hidden>
+    <div id="rpStaleText"></div>
+    <div class="rp-stale-actions">
+      <button type="button" id="rpStaleForce">Send anyway</button>
+      <button type="button" id="rpStaleCancel">Cancel</button>
+    </div>
+  </div>
   
   <header class="app-header">
     <div class="app-header-inner">
@@ -1239,7 +1265,7 @@
               <span class="dock-total" id="dockTotal">0 dogs</span>
               <span class="dock-sub">3 vans ready</span>
             </div>
-            <button id="transmitBtn" class="btn-transmit" title="Transmit plan to Telegram">Transmit plan</button>
+            <button id="transmitBtn" class="btn-transmit" title="Email route plans are available for Next Day AM only" disabled>📧 Email route plan</button>
           </div>
         </div>
       </div>
@@ -1641,6 +1667,8 @@
       const STORAGE_PREFIX = 'van_v5_';  // Updated version for new data structure
       const PIN_WITNESS_PREFIX = 'van_pin_witness_';
       const MAX_UNDO_STATES = 20;
+      const ROUTE_PLAN_EMAIL_WEBHOOK = 'https://auto.thefairytails.co.uk/webhook/route-plan-email-v1?k=route-plan-email-staff-v1';
+      const ROUTE_PLAN_EMAIL_STAMP_KEY = 'rpLastEmailed_NEXT_AM';
       
       // Valid dog names from JotForm (for validation)
       const VALID_DOG_NAMES = [
@@ -1782,7 +1810,7 @@
       let activeClone = null;
       let dragId = null;
       let startX, startY;
-      let transmitComplete = false;
+      let transmitInFlight = false;
       // Tap-to-select layer (2026-08-01 redesign): the selected tile id, and a
       // short click-suppression window so the click synthesised after a drag
       // never doubles as a selection tap.
@@ -1806,9 +1834,7 @@
         onlineStatus.textContent = online ? 'Online' : 'Offline';
         shareBtn.disabled = !online;
         fetchBtn.disabled = !online;
-        if (!transmitComplete) {
-          transmitBtn.disabled = !online;
-        }
+        updateTransmitControls();
       }
       
       window.addEventListener('online', updateOnlineStatus);
@@ -2059,112 +2085,194 @@
         return { tray, noStop };
       }
 
-      async function transmitPlan() {
-        if (transmitComplete) {
-          showToast('Plan already transmitted. Clear and redo to transmit again.', 'warning');
-          return;
-        }
-        
-        const dogs = collectTransmitData();
-        
-        if (dogs.length === 0) {
-          showToast('No dogs with stop numbers to transmit!', 'warning');
-          return;
-        }
-        
-        const validDogs = dogs.filter(d => d.isValid);
-        const invalidDogs = dogs.filter(d => !d.isValid);
-        
-        if (validDogs.length === 0) {
-          showToast('No valid dogs found in JotForm list!', 'error');
-          return;
-        }
-        
-        const departures = {
-          bv: document.getElementById('bv-departure').value,
-          sv: document.getElementById('sv-departure').value,
-          bvx: document.getElementById('bvx-departure').value
-        };
-        
-        const planLabel = currentPlan === 'NEXT_AM' ? 'Next Day AM' : 'PM';
-        // ADDED 2026-07-19: staging-tray nudge — dogs in the tray or without a
-        // stop number silently never transmit; say so before committing.
-        const leftBehind = collectLeftBehindDogs();
-        const confirmMsg = `Send ${validDogs.length} dogs (${planLabel}) to Telegram for review?` +
-          (invalidDogs.length > 0 ? `\n\n⚠️ ${invalidDogs.length} dogs will be skipped (not in list):\n${invalidDogs.map(d => d.inputName).join(', ')}` : '') +
-          (leftBehind.tray.length > 0 ? `\n\n🔴 ${leftBehind.tray.length} dog${leftBehind.tray.length === 1 ? '' : 's'} still in the STAGING TRAY — not going on any route:\n${leftBehind.tray.join(', ')}` : '') +
-          (leftBehind.noStop.length > 0 ? `\n\n⚠️ ${leftBehind.noStop.length} dog${leftBehind.noStop.length === 1 ? '' : 's'} placed but with NO stop number — not transmitted:\n${leftBehind.noStop.join(', ')}` : '') +
-          `\n\nAfter reviewing in Telegram, type /send to submit to JotForm.`;
-        
-        if (!confirm(confirmMsg)) return;
-        
-        transmitBtn.disabled = true;
-        transmitBtn.classList.add('transmitting');
-        transmitBtn.textContent = 'Sending…';
-        
-        try {
-          const response = await fetch(SCRIPT_URL, {
-            method: 'POST',
-            body: JSON.stringify({
-              action: 'transmitPlan',
-              planType: currentPlan,
-              dogs: validDogs.map(d => ({
-                dogName: d.matchedName,
-                stopNumber: d.stopNumber,
-                van: d.van,
-                departureTime: d.departureTime,
-                status: 'pending'
-              })),
-              departures: departures,
-              timestamp: new Date().toISOString()
-            }),
-            redirect: 'follow'
+      // The controls display whichever plan is open. The email payload is
+      // deliberately pinned to the persisted NEXT_AM state, including Reorder.
+      function getNextAmDepartures() {
+        const nextState = getPlanStateForSync('NEXT_AM') || {};
+        const saved = nextState.departures || {};
+        const defaults = DEPARTURE_DEFAULTS.NEXT_AM;
+        const resolved = {};
+        ['bv', 'sv', 'bvx'].forEach(function (van) {
+          resolved[van] = migrateTo24h(saved[van]) || defaults[van];
+        });
+        return resolved;
+      }
+
+      function getStoredNextAmWarnings() {
+        const nextState = getPlanStateForSync('NEXT_AM') || {};
+        const tiles = nextState.tiles || {};
+        const placements = nextState.placements || {};
+        const stops = nextState.stops || {};
+        const placed = new Set();
+        const invalid = [];
+        const noStop = [];
+        Object.entries(placements).forEach(function (entry) {
+          const boxId = entry[0];
+          const ids = entry[1] || [];
+          let stop = stops[boxId] || {};
+          if (typeof stop === 'string') stop = { primary: stop, secondary: '' };
+          ids.forEach(function (id, index) {
+            placed.add(id);
+            const tile = tiles[id];
+            if (!tile) return;
+            const stopNumber = index === 0 ? String(stop.primary || '') : String(stop.secondary || stop.primary || '');
+            if (!stopNumber.trim()) noStop.push(tile.text);
+            if (!findMatchingDogName(tile.text)) invalid.push(tile.text);
           });
-          
-          const resultText = await response.text();
-          console.log('Response:', resultText);
-          
-          let result;
-          try {
-            result = JSON.parse(resultText);
-          } catch (e) {
-            result = { success: true };
-          }
-          
-          if (result.success !== false) {
-            transmitComplete = true;
-            transmitBtn.classList.remove('transmitting');
-            transmitBtn.classList.add('success');
-            transmitBtn.textContent = `Sent · ${validDogs.length} dogs`;
-            
-            let successMsg = `${planLabel}: ${validDogs.length} dogs sent to Telegram for review!`;
-            if (invalidDogs.length > 0) {
-              successMsg += ` (${invalidDogs.length} skipped)`;
-            }
-            showToast(successMsg, 'success');
-            
-            // ADDED: Show Telegram status as supplementary info
-            if (result.telegramSent === false && result.telegramError) {
-              console.warn('Telegram send failed:', result.telegramError);
-              showToast('⚠️ Telegram message failed — check bot token and chat ID', 'warning');
-            } else if (result.telegramMessages > 1) {
-              console.log('Telegram message split into ' + result.telegramMessages + ' parts');
-            }
-            
-            if (invalidDogs.length > 0) {
-              console.log('Skipped dogs (not in JotForm list):', invalidDogs.map(d => d.inputName));
-            }
-          } else {
-            throw new Error(result.error || result.telegramError || 'Transmit failed — check GAS deployment');
-          }
-          
-        } catch (error) {
-          console.error('Transmit error:', error);
-          transmitBtn.disabled = false;
-          transmitBtn.classList.remove('transmitting');
-          transmitBtn.textContent = 'Transmit plan';
-          showToast(`Failed: ${error.message}`, 'error');
+        });
+        const tray = Object.keys(tiles).filter(function (id) { return !placed.has(id); }).map(function (id) { return tiles[id].text; });
+        return { invalid: invalid, tray: tray, noStop: noStop };
+      }
+
+      function londonPressStamp() {
+        const parts = new Intl.DateTimeFormat('en-GB', {
+          timeZone: 'Europe/London', hourCycle: 'h23', hour: '2-digit', minute: '2-digit'
+        }).formatToParts(new Date());
+        let hh = '00', mm = '00';
+        parts.forEach(function (p) { if (p.type === 'hour') hh = p.value; if (p.type === 'minute') mm = p.value; });
+        return hh + mm;
+      }
+
+      function lastEmailedStamp() {
+        try { return localStorage.getItem(ROUTE_PLAN_EMAIL_STAMP_KEY) || ''; }
+        catch (e) { return ''; }
+      }
+
+      function updateTransmitControls() {
+        const online = navigator.onLine;
+        const last = lastEmailedStamp();
+        const mainDisabled = transmitInFlight || !online || currentPlan !== 'NEXT_AM';
+        const buttonText = transmitInFlight ? 'Emailing…' : '📧 Email route plan';
+        const mainTitle = currentPlan !== 'NEXT_AM'
+          ? 'Email route plans are available for Next Day AM only'
+          : (last ? 'Last emailed ' + last + '. Press again to send a fresh email run.' : 'Email tomorrow’s sent AM route plan');
+        if (transmitBtn.disabled !== mainDisabled) transmitBtn.disabled = mainDisabled;
+        if (transmitBtn.textContent !== buttonText) transmitBtn.textContent = buttonText;
+        if (transmitBtn.title !== mainTitle) transmitBtn.title = mainTitle;
+        const reorderBtn = document.getElementById('transmitBtnReorder');
+        const section = reorderBtn && reorderBtn.closest('.reorder-section[data-section="NEXT_AM"]');
+        if (reorderBtn) {
+          const reorderDisabled = transmitInFlight || !online || !section || section.hidden;
+          const reorderTitle = last ? 'Last emailed ' + last + '. Press again to send a fresh email run.' : 'Email tomorrow’s sent AM route plan';
+          if (reorderBtn.disabled !== reorderDisabled) reorderBtn.disabled = reorderDisabled;
+          if (reorderBtn.textContent !== buttonText) reorderBtn.textContent = buttonText;
+          if (reorderBtn.title !== reorderTitle) reorderBtn.title = reorderTitle;
         }
+      }
+
+      function showStalePlanWarning(result) {
+        return new Promise(function (resolve) {
+          const banner = document.getElementById('routePlanStaleWarning');
+          const lines = (result.staleVans || []).map(function (item) {
+            return item.van + ': latest plan ' + item.latestDate;
+          });
+          document.getElementById('rpStaleText').textContent =
+            '⚠️ Stale route plan detected. Nothing has been queued. ' + lines.join(' · ') + '. Send anyway using those latest plans?';
+          banner.hidden = false;
+          const finish = function (answer) {
+            banner.hidden = true;
+            document.getElementById('rpStaleForce').onclick = null;
+            document.getElementById('rpStaleCancel').onclick = null;
+            resolve(answer);
+          };
+          document.getElementById('rpStaleForce').onclick = function () { finish(true); };
+          document.getElementById('rpStaleCancel').onclick = function () { finish(false); };
+        });
+      }
+
+      async function postRoutePlanEmail(payload) {
+        const controller = new AbortController();
+        const timeout = setTimeout(function () { controller.abort(); }, 60000);
+        let response;
+        let responseText;
+        try {
+          response = await fetch(ROUTE_PLAN_EMAIL_WEBHOOK, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+            signal: controller.signal
+          });
+          responseText = await response.text();
+        } catch (error) {
+          if (error && error.name === 'AbortError') throw new Error('The email service timed out after 60 seconds');
+          throw error;
+        } finally {
+          clearTimeout(timeout);
+        }
+        let result;
+        try { result = JSON.parse(responseText); }
+        catch (e) { throw new Error('The email service returned an unreadable response'); }
+        if (!response.ok) throw new Error(result.error || ('Email service HTTP ' + response.status));
+        if (result.stale) {
+          const force = await showStalePlanWarning(result);
+          if (!force) return null;
+          return postRoutePlanEmail(Object.assign({}, payload, { force: true }));
+        }
+        if (!result.ok) throw new Error(result.error || 'The route-plan email run was refused');
+        return result;
+      }
+
+      async function runRoutePlanEmail(event) {
+        const trigger = event && event.currentTarget ? event.currentTarget : transmitBtn;
+        const fromReorder = trigger && trigger.id === 'transmitBtnReorder';
+        const reorderSection = fromReorder && trigger.closest('.reorder-section[data-section="NEXT_AM"]');
+        if ((!fromReorder && currentPlan !== 'NEXT_AM') || (fromReorder && (!reorderSection || reorderSection.hidden))) {
+          showToast('Route-plan emails are available for Next Day AM only.', 'warning');
+          return;
+        }
+        if (transmitInFlight || !navigator.onLine) return;
+
+        const warnings = getStoredNextAmWarnings();
+        const last = lastEmailedStamp();
+        const confirmMsg = 'Email tomorrow’s SENT morning route plan to parent households?' +
+          '\n\nThe ledger controls dogs, route order and pick-up times. This button can be used again whenever staff choose.' +
+          (last ? '\n\nLast emailed ' + last + '.' : '') +
+          (warnings.invalid.length ? '\n\n⚠️ ' + warnings.invalid.length + ' local dog name(s) are not in the legacy list:\n' + warnings.invalid.join(', ') : '') +
+          (warnings.tray.length ? '\n\n🔴 ' + warnings.tray.length + ' dog(s) still in the STAGING TRAY:\n' + warnings.tray.join(', ') : '') +
+          (warnings.noStop.length ? '\n\n⚠️ ' + warnings.noStop.length + ' placed dog(s) have NO local stop number:\n' + warnings.noStop.join(', ') : '');
+        if (!confirm(confirmMsg)) return;
+
+        transmitInFlight = true;
+        updateTransmitControls();
+        try {
+          const result = await postRoutePlanEmail({
+            plan: 'NEXT_AM',
+            departures: getNextAmDepartures(),
+            pressStamp: londonPressStamp()
+          });
+          if (!result) {
+            showToast('Email run cancelled — nothing queued.', 'info');
+            return;
+          }
+          const hhmm = new Intl.DateTimeFormat('en-GB', {
+            timeZone: 'Europe/London', hourCycle: 'h23', hour: '2-digit', minute: '2-digit'
+          }).format(new Date());
+          try { localStorage.setItem(ROUTE_PLAN_EMAIL_STAMP_KEY, hhmm); } catch (e) {}
+          const skippedCount = Array.isArray(result.skipped) ? result.skipped.length : 0;
+          showToast('Route plan email: queued ' + Number(result.queued || 0) + ', skipped ' + skippedCount + '.', skippedCount ? 'warning' : 'success');
+        } catch (error) {
+          console.error('Route-plan email error:', error);
+          showToast('Email run failed: ' + (error && error.message ? error.message : 'unknown error'), 'error');
+        } finally {
+          transmitInFlight = false;
+          updateTransmitControls();
+        }
+      }
+
+      function ensureReorderTransmitButton() {
+        const view = document.getElementById('reorderView');
+        if (!view) return;
+        const section = view.querySelector('.reorder-section[data-section="NEXT_AM"]');
+        const head = section && section.querySelector('.reorder-section-head');
+        if (!head || document.getElementById('transmitBtnReorder')) { updateTransmitControls(); return; }
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.id = 'transmitBtnReorder';
+        button.className = 'btn-transmit rp-reorder-transmit';
+        button.textContent = '📧 Email route plan';
+        button.onclick = transmitPlan;
+        head.appendChild(button);
+        updateTransmitControls();
       }
 
       // ==================== CLOUD OPERATIONS ====================
@@ -2356,10 +2464,8 @@
         const isNextAM = p === 'NEXT_AM';
         document.body.classList.toggle('next-am-mode', isNextAM);
         
-        transmitComplete = false;
-        transmitBtn.disabled = false;
         transmitBtn.classList.remove('success', 'transmitting');
-        transmitBtn.textContent = 'Transmit plan';
+        updateTransmitControls();
         
         // Apply saved departure (migrating legacy "07:30 am" → "07:30") or
         // fall back to this plan's default (PM=15:00 all vans;
@@ -2406,6 +2512,12 @@
           var raw = localStorage.getItem(STORAGE_PREFIX + plan);
           return raw ? JSON.parse(raw) : { tiles: {}, placements: {}, stops: {}, stopsHd: {}, departures: {}, runTypes: {} };
         } catch (e) { return { tiles: {}, placements: {}, stops: {}, stopsHd: {}, departures: {}, runTypes: {} }; }
+      }
+
+      // Named UI handler kept deliberately small so the C15 writer guard can
+      // inspect this surface independently from the neighbouring Share code.
+      async function transmitPlan(event) {
+        return runRoutePlanEmail(event);
       }
 
       document.querySelectorAll('.departure-selector select').forEach(select => {
@@ -3229,6 +3341,12 @@
       shareBtn.onclick = cloudShare;
       fetchBtn.onclick = cloudFetch;
       transmitBtn.onclick = transmitPlan;
+      const reorderViewForTransmit = document.getElementById('reorderView');
+      if (reorderViewForTransmit) {
+        new MutationObserver(function () { ensureReorderTransmitButton(); updateTransmitControls(); })
+          .observe(reorderViewForTransmit, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden'] });
+        ensureReorderTransmitButton();
+      }
       
       clearBtn.onclick = () => {
         if (confirm("Clear all local data for this plan? This cannot be undone.")) {
@@ -3239,10 +3357,8 @@
           localSave();
           hydrate();
           
-          transmitComplete = false;
-          transmitBtn.disabled = false;
           transmitBtn.classList.remove('success', 'transmitting');
-          transmitBtn.textContent = 'Transmit plan';
+          updateTransmitControls();
           
           showToast('Local data cleared', 'info');
         }
@@ -3586,6 +3702,7 @@
         setSegPosition(currentPlan);
         updatePlanCopy();
         syncRunSegs();
+        updateTransmitControls();
       }
 
       // Reorder tab shows no plan; keep the segmented thumb in step. These
