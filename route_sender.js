@@ -255,6 +255,18 @@
     return { refused: true, reason: 'no free kennel in ' + wantVan };
   }
 
+  // Keep byte folding aligned with shared/ft-names.js normalise; the
+  // parity-with-ft-names-normalise test in tests/tray-fold.smoke.mjs pins it.
+  function foldNameBytes(value) {
+    return String(value || '')
+      .toLowerCase()
+      .normalize('NFKD')
+      .replace(/[‘’ʼ′]/g, "'")
+      .replace(/[^\p{Letter}\p{Number}\s'-]/gu, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
   // Pure staged-membership seam. `d` records every dog originally staged;
   // flattened `o` records the dogs still routed after any Reorder-tab removal.
   function classifyOverlayDog(name, slotRecs) {
@@ -266,10 +278,12 @@
         // Reuse the ONE canonical G.D. literal (GROOMING_RE below) — a second
         // variant copy here is exactly what _trace_dogname_drift.mjs guards
         // against. ALT is a Load-Plan-only token with no canonical regex.
-        out = out.replace(GROOMING_RE, '').trim();
-        out = out.replace(/(^|\s)ALT$/i, '').trim();
+        var stripped = out.replace(GROOMING_RE, '').trim();
+        out = stripped || out;
+        stripped = out.replace(/(^|\s)ALT$/i, '').trim();
+        out = stripped || out;
       } while (out && out !== before);
-      return out.toLowerCase().replace(/\s+/g, ' ').trim();
+      return foldNameBytes(out);
     }
     var want = clean(name);
     if (!want) return 'unstaged';
@@ -798,7 +812,8 @@
   function normName(s) {
     // Strip a trailing ALT (2nd-address) then G.D. (grooming) token so a marked
     // tile matches its clean resolved name. No-op for ordinary names.
-    return stripGroomingToken(stripAltToken(s)).toLowerCase().replace(/\s+/g, ' ').trim();
+    var stripped = stripGroomingToken(stripAltToken(s));
+    return foldNameBytes(stripped);
   }
 
   // 3 = exact; 2 = tile name is the leading token of the route name
