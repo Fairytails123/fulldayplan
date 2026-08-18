@@ -1747,14 +1747,14 @@
         'bvx': 'Big van X-ray'
       };
 
-      // ==================== DEPARTURE DEFAULTS (2026-06-03) ====================
+      // ==================== DEPARTURE DEFAULTS (2026-08-18) ====================
       // PM-plan default is 15:00 for all three vans (was hidden + AM-only → 3pm
-      // routes went out as "(departs 07:30)"). NEXT_AM defaults locked with Kam:
-      // SV 07:30, BV 08:30, BVX 08:30. Values are 24h HH:MM matching the new
+      // routes went out as "(departs 07:30)"). NEXT_AM defaults changed per Kam 2026-08-18
+      // (supersedes the 2026-06-03/05 lock): BVX 07:30, BV 08:30, SV 08:30. Values are 24h HH:MM matching the new
       // <option value="…"> list in the per-van departure <select>s.
       const DEPARTURE_DEFAULTS = {
         PM:      { bv: '15:00', sv: '15:00', bvx: '15:00' },
-        NEXT_AM: { bv: '08:30', sv: '07:30', bvx: '08:30' }
+        NEXT_AM: { bv: '08:30', sv: '08:30', bvx: '07:30' }
       };
 
       // ==================== RUN-TYPE DEFAULT (2026-06-05) ====================
@@ -2469,8 +2469,8 @@
         
         // Apply saved departure (migrating legacy "07:30 am" → "07:30") or
         // fall back to this plan's default (PM=15:00 all vans;
-        // NEXT_AM=SV 07:30, BV 08:30, BVX 08:30). Persist the resolved
-        // values so the migration / defaulting sticks across reloads.
+        // NEXT_AM=BVX 07:30, BV 08:30, SV 08:30), changed per Kam 2026-08-18
+        // (supersedes the 2026-06-03/05 lock). Persist resolved values so the migration / defaulting sticks across reloads.
         const _depDefaults = DEPARTURE_DEFAULTS[p] || DEPARTURE_DEFAULTS.PM;
         ['bv', 'sv', 'bvx'].forEach(v => {
           const el = document.getElementById(v + '-departure');
