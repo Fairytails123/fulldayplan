@@ -195,7 +195,7 @@
     .plan-note { font-size: 13px; font-weight: 500; color: var(--sec); }
     .plan-actions {
       display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 8px;
     }
     .plan-actions button {
@@ -206,7 +206,7 @@
     }
     .plan-actions button:active:not(:disabled) { transform: scale(0.97); opacity: 0.7; }
     .plan-actions button:disabled { opacity: 0.5; cursor: not-allowed; }
-    .btn-share, .btn-fetch { background: var(--brand-tint); color: var(--heading-tint); }
+    .btn-fetch { background: var(--brand-tint); color: var(--heading-tint); }
     .btn-danger { background: var(--danger-bg); color: var(--danger); }
     .plan-foot {
       display: flex; align-items: center; justify-content: space-between; gap: 10px;
@@ -1255,7 +1255,6 @@
           <span class="sr-only" id="currentLabel">PM Plan</span>
         </div>
         <div class="plan-actions">
-          <button id="shareBtn" class="btn-share">Share</button>
           <button id="fetchBtn" class="btn-fetch">Fetch</button>
           <button id="clearBtn" class="btn-danger">Clear</button>
         </div>
@@ -1792,7 +1791,6 @@
       // DOM Elements
       const tray = document.getElementById('tray');
       const input = document.getElementById('tileText');
-      const shareBtn = document.getElementById('shareBtn');
       const fetchBtn = document.getElementById('fetchBtn');
       const clearBtn = document.getElementById('clearBtn');
       const transmitBtn = document.getElementById('transmitBtn');
@@ -1832,7 +1830,6 @@
         const online = navigator.onLine;
         statusDot.classList.toggle('offline', !online);
         onlineStatus.textContent = online ? 'Online' : 'Offline';
-        shareBtn.disabled = !online;
         fetchBtn.disabled = !online;
         updateTransmitControls();
       }
@@ -2327,9 +2324,9 @@
         }
       }
 
-      // FIXED 2026-07-20 — two silent-failure gaps that made Share look "dead":
+      // FIXED 2026-07-20 — two silent-failure gaps in the Stage-press share:
       //   1. No timeout. If the Apps Script call hung (it is the slowest hop in
-      //      the app), the button sat on "☁️ Sharing..." DISABLED for ever, with
+      //      the app), the automatic share launched by Stage stayed pending, with
       //      no error and no way back short of a page reload — indistinguishable
       //      from a broken button. Now aborted at 30s, matching route_sender.js.
       //   2. Any response counted as success. savePlan answers with a plain
@@ -2345,9 +2342,23 @@
         return { action: 'savePlan', state: planState, planId: planId, source: 'share' };
       }
 
+      let shareInFlight = false;
+
+      function shareOnStagePress(evt) {
+        try {
+          if (navigator.onLine === false) return;
+          const stageButton = evt.target.closest('.route-controls .send-route-btn');
+          if (!stageButton || stageButton.disabled) return;
+          cloudShare();
+        } catch (error) {
+          console.warn('Stage-triggered share failed to start:', error);
+        }
+      }
+      document.addEventListener('click', shareOnStagePress, true);
+
       async function cloudShare() {
-        shareBtn.disabled = true;
-        shareBtn.textContent = "Sharing…";
+        if (shareInFlight) return;
+        shareInFlight = true;
         let controller = null;
         let timer = null;
         try {
@@ -2406,8 +2417,7 @@
           showToast(`Share FAILED (${reason}) — the plan was NOT saved to the cloud. Try again.`, 'error');
         } finally {
           if (timer) clearTimeout(timer);
-          shareBtn.disabled = false;
-          shareBtn.textContent = "Share";
+          shareInFlight = false;
         }
       }
       
@@ -2433,8 +2443,8 @@
       // Load-Plan ↔ staged-store alignment (2026-08-02, Kam): after a plan
       // loads or is fetched, overlay the grid READ-SIDE from the ReorderQueue
       // (stop order + kennel positions — the store is the always-current
-      // shared truth; the cloud snapshot is only as fresh as the last manual
-      // Share). Deferred a tick so the boot-time call runs AFTER
+      // shared truth; each Stage press now publishes the current cloud snapshot).
+      // Deferred a tick so the boot-time call runs AFTER
       // RouteSender.init has wired the write-back hooks. Never writes the
       // cloud store.
       let storeOverlayTimer = null;
@@ -3338,7 +3348,6 @@
         }
       });
       
-      shareBtn.onclick = cloudShare;
       fetchBtn.onclick = cloudFetch;
       transmitBtn.onclick = transmitPlan;
       const reorderViewForTransmit = document.getElementById('reorderView');
