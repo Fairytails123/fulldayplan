@@ -2781,7 +2781,7 @@
         } catch (witnessErr) {}
         if (!pinResult || pinResult.pinned !== true) {
           try {
-            toast('Final plan NOT saved to cloud — other devices will not see it. Press Share to retry.', 'error');
+            toast('Final plan NOT saved to cloud — other devices will not see it. It will publish on the next Stage or Send Final press.', 'error');
           } catch (pinToastErr) {}
         }
         setTimeout(function () { if (slots[slotKey]) setBtn(btn, 'idle'); }, SENT_RESET_MS);
