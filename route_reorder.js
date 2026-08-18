@@ -97,7 +97,7 @@
     PM:       { p: 'PM',      rt: 'FD', t: '15:00' },
     NEXT_AM:  { p: 'NEXT_AM', rt: '',   t: '08:00' }
   };
-  var NEXT_AM_DEPART = { BV: '08:30', BVX: '08:30', SV: '07:30' }; // NEXT_AM default depart per van
+  var NEXT_AM_DEPART = { BV: '08:30', BVX: '07:30', SV: '08:30' }; // NEXT_AM default depart per van
   var STAGING_LS_KEY = 'reorder_staging_v1';
 
   // ---- map ("Check on Map") --------------------------------------
