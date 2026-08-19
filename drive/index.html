@@ -1889,6 +1889,15 @@
     if (state.data.tap_mode === 'live') { reloadSoon(); }
   }
 
+  function performSkip(s, seq) {
+    setOverlay(seq, 'skip');
+    sendTap('skip', seq);
+    state.expandedId = null;
+    render();
+    toast('Stop ' + seq + ' skipped');
+    scrollToCurrent();
+  }
+
   function doSkipConfirm(s, seq) {
     var name = String(s.dog_name || ('Stop ' + seq));
     var dev = state.data.tap_mode === 'dev' ? '<p class="dim">Test mode — nothing moves on the office record.</p>' : '';
@@ -1903,7 +1912,7 @@
     }
     dialog('Skip ' + esc(name) + '?', body + dev,
       [['Skip stop', 'skip', 'soft'], ['Cancel', '', 'neutral']],
-      function (c) { if (c === 'skip') { setOverlay(seq, 'skip'); sendTap('skip', seq); state.expandedId = null; render(); toast('Stop ' + seq + ' skipped'); scrollToCurrent(); } });
+      function (c) { if (c === 'skip') { performSkip(s, seq); } });
   }
 
   /* ── take a dog off a route that has already been sent (2026-07-29, Kam) ──
@@ -1923,6 +1932,16 @@
       dialog('Not coming today?',
         '<p>Stop ' + seq + ' is a two-dog call: <b>' + esc(name) + '</b>.</p><p>The app can only drop the whole stop, so taking it off would mean neither dog is collected.</p><p>If only one of them is off today, leave the stop on and ring the office.</p>',
         [['Back', '', 'neutral']], function () {});
+      return;
+    }
+    var working = (state.data.stops || []).filter(function (x) { return effStatus(x).st !== 'removed'; });
+    var otherOpen = working.some(function (x) { return seqEff(x) !== seq && CLOSED.indexOf(effStatus(x).st) < 0; });
+    if (CLOSED.indexOf(effStatus(s).st) < 0 && !otherOpen) {
+      var dev = state.data.tap_mode === 'dev' ? '<p class="dim">Test mode — nothing moves on the office record.</p>' : '';
+      dialog('Not coming today?',
+        '<p><b>' + esc(name) + '</b> is the last stop left, so it can’t be taken off the route — a route can never be emptied.</p><p><b>Skip</b> marks ' + esc(name) + ' not collected instead. Then tap <b>End route</b> as usual.</p>' + dev,
+        [['Skip this stop', 'skip', 'soft'], ['Back', '', 'neutral']],
+        function (c) { if (c === 'skip') { performSkip(s, seq); } });
       return;
     }
     var lw = legWords(s.leg_code);
