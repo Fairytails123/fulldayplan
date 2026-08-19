@@ -3673,7 +3673,7 @@
             stamp = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }).format(d);
           } catch (err) {}
           title.textContent = 'Next day AM' + (stamp ? ' · ' + stamp : '');
-          note.textContent = 'Morning pick-ups. Small van leaves at 07:30, big vans at 08:30.';
+          note.textContent = 'Morning pick-ups. Big van X-ray leaves at 07:30, other vans at 08:30.';
         } else {
           title.textContent = 'PM plan · today';
           note.textContent = 'Drop-offs after daycare. Vans leave at 15:00 unless you change the time.';
