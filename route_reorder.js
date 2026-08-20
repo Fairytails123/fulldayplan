@@ -1632,12 +1632,20 @@
   function overlayFromStore(planId, opts) {
     opts = opts || {};
     planId = String(planId || '').toUpperCase() === 'NEXT_AM' ? 'NEXT_AM' : 'PM';
-    if (!window.RouteSender || !RouteSender.applyKennelFromReorder ||
-        !RouteSender.applyReturnedStops) return Promise.resolve(null);
-    return getStaged().then(function (body) {
-      if (!body || body.ok !== true || !Array.isArray(body.slots)) return null;
-      return applyStoreOverlay(planId, body.slots, body.cleared, opts);
-    }).catch(function () { /* offline / store error → grid stays as loaded */ });
+    if (!window.RouteSender || !window.RouteSender.applyKennelFromReorder ||
+        !window.RouteSender.applyReturnedStops) {
+      return Promise.resolve({ ok: false, reason: 'sender-unwired' });
+    }
+    return Promise.resolve().then(function () {
+      return getStaged();
+    }).then(function (body) {
+      if (!body || body.ok !== true || !Array.isArray(body.slots)) {
+        return { ok: false, reason: 'store-unavailable' };
+      }
+      return { ok: true, result: applyStoreOverlay(planId, body.slots, body.cleared, opts) };
+    }).catch(function () {
+      return { ok: false, reason: 'store-error' };
+    });
   }
 
   function applyStoreOverlay(planId, slotRecs, clearedKeys, opts) {
@@ -2606,6 +2614,18 @@
     } catch (e) { return Promise.resolve({ pinned: false }); }
   }
 
+  function overlayRestoreFailed(outcome) {
+    return !outcome || outcome.ok !== true || !outcome.result || outcome.result.vans === 0;
+  }
+
+  function announceOverlayOutcome(outcome, toastFn) {
+    if (!overlayRestoreFailed(outcome)) return false;
+    try {
+      toastFn('Load Plan NOT re-aligned — check the grid, then use Stage Route or Send Final.', 'error');
+    } catch (e) { /* the warning must never fail a completed send */ }
+    return true;
+  }
+
   // ⚠️ MIRROR RULE (2026-07-11): the VAN-ETA driver app (fulldayplan repo,
   // drive/index.html, queuePayload()) carries a faithful PORT of this payload
   // build so drivers can send-and-open a staged route themselves. Any change to
@@ -2753,7 +2773,14 @@
           window.VanPlanSync.preparePlanForFinalSync(sentPlan);
         }
       } catch (prepareErr) { /* redraw remains best-effort */ }
-      return Promise.resolve(overlayFromStore(sentPlan, { rebuild: true })).catch(function () { return null; }).then(function () {
+      return Promise.resolve().then(function () {
+        return overlayFromStore(sentPlan, { rebuild: true });
+      }).catch(function () {
+        return { ok: false, reason: 'store-error' };
+      }).then(function (overlayOutcome) {
+        try {
+          announceOverlayOutcome(overlayOutcome, toast);
+        } catch (overlayToastErr) { /* warning remains best-effort */ }
         return autoPinAfterSend(sentPlan, {
           getState: function () {
             return window.VanPlanSync && window.VanPlanSync.getPlanState
