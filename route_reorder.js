@@ -1651,6 +1651,8 @@
   function applyStoreOverlay(planId, slotRecs, clearedKeys, opts) {
     opts = opts || {};
     var kennelMoves = 0, stopWrites = 0, vansAligned = 0, removedMoves = 0;
+    var purged = 0, purgeOk = true, purgeRefused = 0, purgedNames = [];
+    var claimedTileIds = {};
     function laneForRec(rec) {
       if (planId !== 'PM') return null;
       return rec && (rec.section === 'HALF_DAY' || (rec.ctx && rec.ctx.rt === 'HD')) ? 'HD' : 'FD';
@@ -1696,11 +1698,52 @@
           var owners = routedLanesByDog[normKey(m)] || {};
           if (RouteSender.applyKennelFromReorder(planId, rec.van, m, code || '',
               { storeOverlay: true, createMissing: opts.rebuild === true, lane: lane || undefined,
-                allowLaneAdoption: planId !== 'PM' || Object.keys(owners).length === 1 })) kennelMoves++;
+                allowLaneAdoption: planId !== 'PM' || Object.keys(owners).length === 1,
+                onClaim: function (tileId) { if (tileId) claimedTileIds[String(tileId)] = true; } })) kennelMoves++;
           stopsByVanLane[laneKey].stops.push({ name: m, stop: i + 1 });
         });
       });
     });
+
+    // Send Final is authoritative for every active staged van/lane. The keep
+    // set is plan-wide so a routed tile survives even when a cross-van move is
+    // refused and leaves it sitting in another staged van's kennel.
+    if (opts.rebuild === true) {
+      var purgeUnavailable = typeof RouteSender.purgeUnroutedTiles !== 'function';
+      if (purgeUnavailable) purgeOk = false;
+      Object.keys(stopsByVanLane).forEach(function (key) {
+        if (purgeUnavailable) return;
+        var group = stopsByVanLane[key];
+        try {
+          var purgeResult = RouteSender.purgeUnroutedTiles(planId, group.van,
+            group.lane || undefined, Object.keys(claimedTileIds));
+          purgeResult = purgeResult || {};
+          purged += Number(purgeResult.purged) || 0;
+          purgeRefused += Number(purgeResult.refused) || 0;
+          if (Array.isArray(purgeResult.names)) {
+            purgedNames = purgedNames.concat(purgeResult.names);
+          }
+        } catch (purgeErr) {
+          purgeOk = false;
+        }
+      });
+      if (!purgeOk) {
+        try {
+          toast('Could not purge stale tiles — the load plan may not be re-aligned to the sent route.', 'error');
+        } catch (purgeToastErr) {}
+      }
+      if (purgeRefused > 0) {
+        try {
+          toast('Could not remove ' + purgeRefused + ' stale tile(s) — the load plan may still contain dogs not on the sent route.', 'error');
+        } catch (refusedToastErr) {}
+      }
+      if (purged > 0) {
+        try {
+          toast('Removed ' + purged + ' dog(s) not on the sent route: ' + purgedNames.join(', '), 'warning');
+        } catch (removedToastErr) {}
+      }
+    }
+
     Object.keys(stopsByVanLane).forEach(function (key) {
       var group = stopsByVanLane[key];
       if (!group.stops.length) return;
@@ -1747,9 +1790,11 @@
     if (vansAligned) {
       console.log('[RouteReorder] Grid aligned to the staged store (' + planId + '): ' +
         vansAligned + ' van(s), ' + stopWrites + ' stop write(s), ' + kennelMoves +
-        ' kennel move(s), ' + removedMoves + ' removed dog(s) trayed.');
+        ' kennel move(s), ' + removedMoves + ' removed dog(s) trayed, ' + purged +
+        ' stale tile(s) purged.');
     }
-    return { vans: vansAligned, stops: stopWrites, kennels: kennelMoves, removed: removedMoves };
+    return { vans: vansAligned, stops: stopWrites, kennels: kennelMoves, removed: removedMoves,
+      purged: purged, purgeOk: purgeOk, purgeRefused: purgeRefused };
   }
 
   function buildCard(rec) {
