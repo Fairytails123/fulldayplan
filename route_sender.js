@@ -175,6 +175,8 @@
   var hostMoveTileToBox = null;
   var hostCreateTileInBox = null;
   var hostMoveTileToTray = null;
+  var hostDeleteTile = null;
+  var hostSaveUndoState = null;
 
   function safeState() {
     try { return hostGetState ? hostGetState() : null; } catch (e) { return null; }
@@ -362,6 +364,10 @@
   // The other plan and Add-Dog dogs without a tile remain silent no-ops.
   function applyKennelFromReorder(planKey, van, dogName, posCode, opts) {
     opts = opts || {};
+    function claim(tileId) {
+      if (!tileId || typeof opts.onClaim !== 'function') return;
+      try { opts.onClaim(tileId); } catch (claimErr) {}
+    }
     if (typeof hostMoveTileToBox !== 'function') return false;
     if (String(planKey || '').toUpperCase() !== String(getCurrentPeriod()).toUpperCase()) return false;
     var st = safeState();
@@ -386,9 +392,10 @@
     if (adopting) {
       // A strict match in another lane is adoption, never creation. The store
       // overlay suppresses adoption when that tile's own lane also routes it.
-      if (opts.allowLaneAdoption === false) return false;
       tileId = otherLaneTileId;
     }
+    claim(tileId);
+    if (adopting && opts.allowLaneAdoption === false) return false;
     var targetVan = String(van || '').toUpperCase().trim();
     var prefix = targetVan.toLowerCase() + '-';
     var boxes = collectTargetVanBoxes(targetVan, st, useLane ? lane : undefined);
@@ -403,15 +410,21 @@
           .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
       }
       var foldedWant = foldCreateName(want);
+      var tolerantTileId = null;
       var hasTolerantTile = Object.keys(st.tiles).some(function (tid) {
         var t = st.tiles[tid];
         if (useLane && (t && t.rt === 'HD' ? 'HD' : 'FD') !== lane) return false;
         var foldedTile = t && t.text ? foldCreateName(normName(t.text)) : '';
-        return !!foldedTile && (foldedTile === foldedWant ||
+        var matches = !!foldedTile && (foldedTile === foldedWant ||
           foldedTile.indexOf(foldedWant + ' ') === 0 ||
           foldedWant.indexOf(foldedTile + ' ') === 0);
+        if (matches) tolerantTileId = tid;
+        return matches;
       });
-      if (hasTolerantTile) return false;
+      if (hasTolerantTile) {
+        claim(tolerantTileId);
+        return false;
+      }
       var missingDecision = planCrossVanPlacement(targetVan, code, boxes, null);
       if (!missingDecision || missingDecision.refused || !missingDecision.boxId) return false;
       // Preserve the staged display casing while reusing normName's canonical
@@ -425,8 +438,11 @@
         tileText = withoutLast;
       }
       try {
-        return typeof hostCreateTileInBox(tileText, missingDecision.boxId,
-          { auto: missingDecision.auto === true, rt: useLane ? lane : undefined }) === 'string';
+        var createdTileId = hostCreateTileInBox(tileText, missingDecision.boxId,
+          { auto: missingDecision.auto === true, rt: useLane ? lane : undefined });
+        if (typeof createdTileId !== 'string') return false;
+        claim(createdTileId);
+        return true;
       } catch (createErr) { return false; }
     }
     var placement = findTilePlacement(st, tileId);
@@ -481,6 +497,76 @@
     if (!tileId) return false;
     try { return hostMoveTileToTray(tileId, 'removed-from-route') === true; }
     catch (e) { return false; }
+  }
+
+  function purgeUnroutedTiles(planKey, van, lane, claimedIds) {
+    var result = { purged: 0, names: [], refused: 0 };
+    // D12: an unwired claim producer means applyKennelFromReorder returned
+    // before claiming anything, so the keep-set cannot be trusted — whether or
+    // not it happens to be non-empty. Never purge on it.
+    if (typeof hostMoveTileToBox !== 'function') return result;
+    if (String(planKey || '').toUpperCase() !== String(getCurrentPeriod()).toUpperCase()) return result;
+    var st = safeState();
+    if (!st || !st.tiles || !st.placements) return result;
+    var useLane = getCurrentPeriod() === 'PM';
+    var wantedLane = String(lane || '').toUpperCase() === 'HD' ? 'HD' : 'FD';
+    var prefix = String(van || '').toLowerCase() + '-';
+    var claimed = {};
+    (Array.isArray(claimedIds) ? claimedIds : []).forEach(function (tileId) {
+      claimed[String(tileId)] = true;
+    });
+    var snapshotTaken = false, stopsCleared = false;
+    var boxIds = Object.keys(st.placements).slice();
+    boxIds.forEach(function (boxId) {
+      if (boxId.indexOf(prefix) !== 0) return;
+      var boxTouched = false;
+      var ids = (st.placements[boxId] || []).slice();
+      ids.forEach(function (tileId) {
+        var tile = st.tiles[tileId];
+        if (!tile || claimed[String(tileId)]) return;
+        if (useLane && (tile.rt === 'HD' ? 'HD' : 'FD') !== wantedLane) return;
+        if (typeof hostDeleteTile !== 'function') {
+          result.refused++;
+          return;
+        }
+        if (!snapshotTaken) {
+          if (typeof hostSaveUndoState === 'function') {
+            try { hostSaveUndoState(); } catch (snapshotErr) {}
+          }
+          snapshotTaken = true;
+        }
+        var deleted = false;
+        try { deleted = hostDeleteTile(tileId, 'not-on-sent-route') === true; }
+        catch (deleteErr) { deleted = false; }
+        if (!deleted) {
+          result.refused++;
+          return;
+        }
+        boxTouched = true;
+        result.purged++;
+        result.names.push(String(tile.text || '').trim());
+      });
+
+      var remaining = (st.placements[boxId] || []).filter(function (tileId) {
+        if (!useLane) return true;
+        var tile = st.tiles[tileId];
+        return tile && (tile.rt === 'HD' ? 'HD' : 'FD') === wantedLane;
+      });
+      if ((!remaining.length || (boxTouched && remaining.length < 2)) &&
+          typeof hostSetStopValue === 'function') {
+        try {
+          if (!remaining.length) {
+            hostSetStopValue(boxId, 'primary', '', useLane ? wantedLane : undefined);
+          }
+          hostSetStopValue(boxId, 'secondary', '', useLane ? wantedLane : undefined);
+          stopsCleared = true;
+        } catch (stopErr) {}
+      }
+    });
+    if (stopsCleared && typeof hostHydrate === 'function') {
+      try { hostHydrate(); } catch (hydrateErr) {}
+    }
+    return result;
   }
 
   function clearVanStops(planKey, van, lane) {
@@ -1253,6 +1339,8 @@
       hostMoveTileToBox = typeof opts.moveTileToBox === 'function' ? opts.moveTileToBox : null;
       hostCreateTileInBox = typeof opts.createTileInBox === 'function' ? opts.createTileInBox : null;
       hostMoveTileToTray = typeof opts.moveTileToTray === 'function' ? opts.moveTileToTray : null;
+      hostDeleteTile = typeof opts.deleteTile === 'function' ? opts.deleteTile : null;
+      hostSaveUndoState = typeof opts.saveUndoState === 'function' ? opts.saveUndoState : null;
       bindButtons();
       bindToggles();
       console.log('[RouteSender] Initialised. State accessor wired:',
@@ -1275,6 +1363,7 @@
     planCrossVanPlacement: planCrossVanPlacement,
     classifyOverlayDog: classifyOverlayDog,
     moveRemovedDogToTray: moveRemovedDogToTray,
+    purgeUnroutedTiles: purgeUnroutedTiles,
     clearVanStops: clearVanStops,
     // Staging-tray nudge helpers (2026-07-19) — getTrayDogsForPlan is read by
     // route_reorder.js sendFinal (plan-matched left-behind guard).
