@@ -3479,6 +3479,17 @@
         return true;
       }
 
+      function deleteTileHost(tileId, reason) {
+        if (!state.tiles || !state.tiles[tileId]) return false;
+        Object.keys(state.placements || {}).forEach(function (boxId) {
+          state.placements[boxId] = (state.placements[boxId] || []).filter(function (id) { return id !== tileId; });
+        });
+        delete state.tiles[tileId];
+        localSave();
+        hydrate();
+        return true;
+      }
+
       // Final-send rebuild seam: create a routed dog that no longer has a
       // grid tile, while preserving the same cap, undo and marker semantics
       // as moveTileToBoxHost. Ordinary overlays never call this hook.
@@ -3791,7 +3802,9 @@
           // shared with the tap-to-select layer.
           moveTileToBox: function (tileId, boxId, opts) { return moveTileToBoxHost(tileId, boxId, opts); },
           createTileInBox: function (text, boxId, opts) { return createTileInBoxHost(text, boxId, opts); },
-          moveTileToTray: function (tileId, marker) { return moveTileToTrayHost(tileId, marker); }
+          moveTileToTray: function (tileId, marker) { return moveTileToTrayHost(tileId, marker); },
+          deleteTile: function (tileId, reason) { return deleteTileHost(tileId, reason); },
+          saveUndoState: function () { saveUndoState(); }
         });
       }
     })();
