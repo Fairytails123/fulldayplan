@@ -256,6 +256,18 @@
     });
   }
 
+  function validatePinResponse(pinText) {
+    var time = (pinText || '').trim();
+    if (!time) throw new Error('empty pin response');
+    if (/^Error\b/i.test(time)) throw new Error(time);
+    if (time.charCodeAt(0) === 123) {
+      var parsed = null;
+      try { parsed = JSON.parse(time); } catch (ignore) {}
+      if (parsed && parsed.error) throw new Error(parsed.error);
+    }
+    return time;
+  }
+
   function getStaged() {
     return fetchWithTimeout(REORDER_URL + '?action=loadStaged&token=' + encodeURIComponent(TOKEN),
       { method: 'GET', cache: 'no-cache', redirect: 'follow' }, STORE_TIMEOUT_MS)
@@ -2600,6 +2612,7 @@
     btn.classList.remove('is-sending', 'is-success', 'is-failed');
     var lbl = btn.querySelector('.send-route-btn__label') || btn;
     if (s === 'sending') { btn.disabled = true; btn.classList.add('is-sending'); lbl.textContent = '⏳ Sending…'; }
+    else if (s === 'saving') { btn.disabled = true; btn.classList.add('is-sending'); lbl.textContent = '✅ Sent — saving plan…'; }
     else if (s === 'success') { btn.disabled = true; btn.classList.add('is-success'); lbl.textContent = '✅ Sent'; }
     else if (s === 'failed') { btn.disabled = false; btn.classList.add('is-failed'); lbl.textContent = '⚠️ Failed — retry'; }
     else { btn.disabled = false; lbl.textContent = '📍 Send Final Route'; }
@@ -2653,8 +2666,8 @@
       function attempt() {
         return Promise.resolve().then(function () { return deps.postPlan(payload); });
       }
-      return attempt().catch(function () { return attempt(); }).then(function () {
-        return { pinned: true };
+      return attempt().catch(function () { return attempt(); }).then(function (pinResult) {
+        return { pinned: true, time: typeof pinResult === 'string' ? pinResult.trim() : '' };
       }).catch(function () { return { pinned: false }; });
     } catch (e) { return Promise.resolve({ pinned: false }); }
   }
@@ -2680,7 +2693,7 @@
     if (!st) return;
     var btn = st.card.querySelector('.reorder-send');
     if (!btn || btn.disabled) return;
-    if (st.finalFlushInFlight) return;
+    if (st.finalFlushInFlight) { toast('Previous send still finishing — try again in a moment', 'info'); return; }
     st.finalFlushInFlight = true;
     return flushPendingReorderSaves(slotKey).then(function () {
     var ctx = st.record.ctx || {};
@@ -2808,11 +2821,13 @@
       setBtn(btn, 'success');
       markCardSent(st);
       toast('✅ ' + ctx.v + ' route sent to Telegram — it stays here so you can reorder & resend', 'success');
+      setBtn(btn, 'saving');
       // Align this device's Load Plan grid with what was just sent (store →
       // grid, 2026-08-02). Self-guards: applyKennelFromReorder /
       // applyReturnedStops skip when the sent slot's plan isn't the loaded
       // one — the next plan load overlays it then.
       var sentPlan = (st.record && st.record.section === 'NEXT_AM') ? 'NEXT_AM' : 'PM';
+      var overlayWarned = false;
       try {
         if (window.VanPlanSync && window.VanPlanSync.preparePlanForFinalSync) {
           window.VanPlanSync.preparePlanForFinalSync(sentPlan);
@@ -2824,7 +2839,7 @@
         return { ok: false, reason: 'store-error' };
       }).then(function (overlayOutcome) {
         try {
-          announceOverlayOutcome(overlayOutcome, toast);
+          overlayWarned = announceOverlayOutcome(overlayOutcome, toast);
         } catch (overlayToastErr) { /* warning remains best-effort */ }
         return autoPinAfterSend(sentPlan, {
           getState: function () {
@@ -2832,14 +2847,13 @@
               ? window.VanPlanSync.getPlanState(sentPlan) : {};
           },
           postPlan: function (pinPayload) {
-            return fetch(REORDER_URL, {
+            return fetchWithTimeout(REORDER_URL, {
               method: 'POST', body: JSON.stringify(pinPayload), redirect: 'follow'
-            }).then(function (pinRes) {
+            }, STORE_TIMEOUT_MS).then(function (pinRes) {
               if (!pinRes.ok) throw new Error('pin responded ' + pinRes.status);
               return pinRes.text();
             }).then(function (pinText) {
-              if (!pinText || /^Error\b/i.test(pinText)) throw new Error(pinText || 'empty pin response');
-              return pinText;
+              return validatePinResponse(pinText);
             });
           }
         });
@@ -2851,10 +2865,18 @@
               .catch(function () { return null; });
           }
         } catch (witnessErr) {}
+        if (pinResult && pinResult.pinned === true) {
+          setBtn(btn, 'success');
+          try {
+            toast('☁️ Final plan saved to cloud' + (pinResult.time ? ' at ' + pinResult.time : '') +
+              (overlayWarned ? '' : ' — Fetch on any device now shows this plan'), 'success');
+          } catch (pinSuccessToastErr) {}
+        }
         if (!pinResult || pinResult.pinned !== true) {
           try {
             toast('Final plan NOT saved to cloud — other devices will not see it. It will publish on the next Stage or Send Final press.', 'error');
           } catch (pinToastErr) {}
+          setBtn(btn, 'success');
         }
         setTimeout(function () { if (slots[slotKey]) setBtn(btn, 'idle'); }, SENT_RESET_MS);
       });
