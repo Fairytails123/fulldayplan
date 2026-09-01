@@ -1218,7 +1218,7 @@
   <div id="routePlanStaleWarning" class="rp-stale-warn" role="alert" hidden>
     <div id="rpStaleText"></div>
     <div class="rp-stale-actions">
-      <button type="button" id="rpStaleForce">Send anyway</button>
+      <button type="button" id="rpStaleForce">Send to the other vans</button>
       <button type="button" id="rpStaleCancel">Cancel</button>
     </div>
   </div>
@@ -2160,11 +2160,22 @@
       function showStalePlanWarning(result) {
         return new Promise(function (resolve) {
           const banner = document.getElementById('routePlanStaleWarning');
-          const lines = (result.staleVans || []).map(function (item) {
-            return item.van + ': latest plan ' + item.latestDate;
+          const fleetOrder = { BV: 0, SV: 1, BVX: 2 };
+          const staleVans = (result.staleVans || []).slice().sort(function (a, b) {
+            return fleetOrder[a.van] - fleetOrder[b.van];
           });
+          const plans = staleVans.map(function (item) {
+            return item.van + ' (latest plan ' + item.latestDate + ')';
+          });
+          const planList = plans.length < 2
+            ? (plans[0] || '')
+            : plans.slice(0, -1).join(', ') + ' or ' + plans[plans.length - 1];
+          const householdWarning = staleVans.length === 1
+            ? staleVans[0].van + ' will be skipped - no emails will go to its households.'
+            : 'Those vans will be skipped - no emails will go to their households.';
           document.getElementById('rpStaleText').textContent =
-            '⚠️ Stale route plan detected. Nothing has been queued. ' + lines.join(' · ') + '. Send anyway using those latest plans?';
+            'No route has been sent for tomorrow for ' + planList + '. Nothing has been queued. ' +
+            'Send to the other vans only? ' + householdWarning;
           banner.hidden = false;
           const finish = function (answer) {
             banner.hidden = true;
